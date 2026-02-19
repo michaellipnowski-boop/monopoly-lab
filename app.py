@@ -52,11 +52,11 @@ PROPERTIES = {
     39: {"name": "Boardwalk", "type": "Street", "color": "Dark Blue", "rent": [50, 200, 600, 1400, 1700, 2000]}
 }
 
-#Decks
+#16-card Decks
 CHANCE_DECK_DATA = [{"text": "Advance to GO", "effect": "move", "pos": 0}, {"text": "Advance to Illinois Ave", "effect": "move", "pos": 24}, {"text": "Advance to St. Charles Place", "effect": "move", "pos": 11}, {"text": "Advance to nearest Utility", "effect": "move_nearest_util"}, {"text": "Advance to nearest Railroad", "effect": "move_nearest_rr"}, {"text": "Bank pays dividend $50", "effect": "cash", "amt": 50}, {"text": "Get Out of Jail Free", "effect": "noop"}, {"text": "Go Back 3 Spaces", "effect": "move_relative", "amt": -3}, {"text": "Go to Jail", "effect": "move", "pos": 10}, {"text": "General repairs: $25/house, $100/hotel", "effect": "repairs", "h": 25, "H": 100}, {"text": "Speeding fine $15", "effect": "cash", "amt": -15}, {"text": "Trip to Reading Railroad", "effect": "move", "pos": 5}, {"text": "Advance to Boardwalk", "effect": "move", "pos": 39}, {"text": "Elected Chairman. Pay each player $50", "effect": "birthday", "amt": -50}, {"text": "Building loan matures. Collect $150", "effect": "cash", "amt": 150}, {"text": "Crossword competition prize. Collect $100", "effect": "cash", "amt": 100}]
 CHEST_DECK_DATA = [{"text": "Advance to GO", "effect": "move", "pos": 0}, {"text": "Bank error $200", "effect": "cash", "amt": 200}, {"text": "Doctor's fee. Pay $50", "effect": "cash", "amt": -50}, {"text": "From sale of stock get $50", "effect": "cash", "amt": 50}, {"text": "Get Out of Jail Free", "effect": "noop"}, {"text": "Go to Jail", "effect": "move", "pos": 10}, {"text": "Holiday fund matures. Receive $100", "effect": "cash", "amt": 100}, {"text": "Income tax refund. Collect $20", "effect": "cash", "amt": 20}, {"text": "Birthday. Collect $10 from every player", "effect": "birthday", "amt": 10}, {"text": "Life insurance matures. Collect $100", "effect": "cash", "amt": 100}, {"text": "Hospital Fees. Pay $100", "effect": "cash", "amt": -100}, {"text": "School fees. Pay $50", "effect": "cash", "amt": -50}, {"text": "Consultancy fee. Collect $25", "effect": "cash", "amt": 25}, {"text": "Street repairs: $40/house, $115/hotel", "effect": "repairs", "h": 40, "H": 115}, {"text": "Beauty contest prize. Collect $10", "effect": "cash", "amt": 10}, {"text": "You inherit $100", "effect": "cash", "amt": 100}]
 
-#Groups
+#Grouping Logic
 COLOR_GROUPS = {}
 RAILROADS, UTILITIES = [], []
 for pid, info in PROPERTIES.items():
@@ -64,10 +64,11 @@ for pid, info in PROPERTIES.items():
     elif info.get('type') == "Railroad": RAILROADS.append(pid)
     elif info.get('type') == "Utility": UTILITIES.append(pid)
 
+#Initializing Session State Safely
 if "phase" not in st.session_state:
     st.session_state.phase = "INIT"
     st.session_state.p_count = 2
-    st.session_state.p_names = []
+    st.session_state.p_names = ["Student A", "Student B"]
     st.session_state.players = []
     st.session_state.ownership = {pid: "Bank" for pid in PROPERTIES if "rent" in PROPERTIES[pid] or PROPERTIES[pid].get("type") in ["Railroad", "Utility"]}
     st.session_state.houses = {pid: 0 for pid in PROPERTIES if PROPERTIES[pid].get("type") == "Street"}
@@ -145,18 +146,26 @@ def run_turn():
     st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
     return p['cash'] < 0
 
-#UI
+#--- PHASE 1: INIT ---
 if st.session_state.phase == "INIT":
     st.title("🎲 Monopoly Stats Lab")
-    st.session_state.p_count = st.number_input("Players", 1, 8, st.session_state.p_count)
-    if not st.session_state.p_names or len(st.session_state.p_names) != st.session_state.p_count:
-        st.session_state.p_names = [f"Student {chr(65+i)}" for i in range(st.session_state.p_count)]
+    st.session_state.p_count = st.number_input("Players", 1, 8, value=st.session_state.p_count)
+    
+    # Sync name list length with p_count
+    while len(st.session_state.p_names) < st.session_state.p_count:
+        st.session_state.p_names.append(f"Student {chr(65+len(st.session_state.p_names))}")
+    
+    temp_names = []
     for i in range(st.session_state.p_count):
-        st.session_state.p_names[i] = st.text_input(f"P{i+1}", st.session_state.p_names[i], key=f"n_{i}")
+        name = st.text_input(f"P{i+1}", st.session_state.p_names[i], key=f"n_{i}")
+        temp_names.append(name)
+    
     if st.button("Continue"):
-        st.session_state.players = [{"name": n, "cash": 1500, "pos": 0} for n in st.session_state.p_names]
+        st.session_state.p_names = temp_names
+        st.session_state.players = [{"name": n, "cash": 1500, "pos": 0} for n in temp_names]
         st.session_state.phase = "CHOICE"; st.rerun()
 
+#--- PHASE 2: CHOICE ---
 elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Mode Select")
     c1, c2 = st.columns(2)
@@ -164,6 +173,7 @@ elif st.session_state.phase == "CHOICE":
     if c2.button("Customization"): st.session_state.phase = "SETUP"; st.rerun()
     if st.button("← Back to Players"): st.session_state.phase = "INIT"; st.rerun()
 
+#--- PHASE 3: SETUP ---
 elif st.session_state.phase == "SETUP":
     st.title("🏗️ Customization")
     t1, t2, t3 = st.tabs(["Properties Owned", "Houses Built", "Cash"])
@@ -190,11 +200,11 @@ elif st.session_state.phase == "SETUP":
                     h_counts = [st.session_state.houses[p] for p in pids]
                     c1, c2, c3 = st.columns([3, 1, 1])
                     c1.write(PROPERTIES[pid]['name'])
-                    # Even build subtraction: can only subtract if current count is the maximum in the set
+                    # Even Build logic for subtraction
                     if c2.button("➖", key=f"m_{pid}", disabled=st.session_state.houses[pid] == 0 or st.session_state.houses[pid] < max(h_counts)):
                         st.session_state.houses[pid] -= 1; st.rerun()
                     c2.write(f"{st.session_state.houses[pid]}")
-                    # Even build addition: can only add if current count is the minimum in the set
+                    # Even Build logic for addition
                     if c3.button("➕", key=f"p_{pid}", disabled=st.session_state.houses[pid] == 5 or st.session_state.houses[pid] > min(h_counts)):
                         st.session_state.houses[pid] += 1; st.rerun()
 
@@ -206,6 +216,7 @@ elif st.session_state.phase == "SETUP":
     if sc1.button("← Back"): st.session_state.phase = "CHOICE"; st.rerun()
     if sc2.button("🚀 Start"): st.session_state.phase = "LIVE"; st.rerun()
 
+#--- PHASE 4: LIVE ---
 elif st.session_state.phase == "LIVE":
     st.sidebar.title("📊 Ledger")
     for p in st.session_state.players:
@@ -225,5 +236,3 @@ elif st.session_state.phase == "LIVE":
                 if run_turn(): break
             st.rerun()
     st.code("\n".join(st.session_state.log[:15]))
-
-# END OF CODE
