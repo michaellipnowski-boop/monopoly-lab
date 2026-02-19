@@ -313,17 +313,20 @@ elif st.session_state.phase == "LIVE":
     bottom_row = list(range(10, -1, -1))
     left_col = list(range(19, 10, -1))
 
-    # Board Rendering with Offset Sidebars
-    for idx, r_idx in enumerate(range(11)):
-        # We use 13 columns now: 1 for left tokens, 11 for board, 1 for right tokens
+    # Header Gutter for Top Row tokens
+    cols_top = st.columns([1] + [1]*11 + [1])
+    for i, cell in enumerate(top_row):
+        cols_top[i+1].write(board_markers[cell])
+
+    # Main Grid Rendering
+    for r_idx in range(11):
         cols = st.columns([1] + [1]*11 + [1])
         
-        # 1. Left Token Sidebar (Offsets for the Orange/Pink row)
+        # 1. Left Token Sidebar (Vertical)
         if 1 <= r_idx <= 9:
-            left_cell = left_col[r_idx-1]
-            cols[0].write(board_markers[left_cell])
+            cols[0].write(board_markers[left_col[r_idx-1]])
         
-        # 2. Main 11x11 Grid
+        # 2. Grid Body
         row_data = []
         if r_idx == 0: row_data = top_row
         elif r_idx == 10: row_data = bottom_row
@@ -336,16 +339,14 @@ elif st.session_state.phase == "LIVE":
                 bg = COLOR_MAP.get(sq.get('color'), "#eee")
                 with target_col.container():
                     st.markdown(f'<div style="background:{bg}; height:10px; border:0.5px solid #000;"></div>', unsafe_allow_html=True)
-                    # Expanded Names (Up to 10 chars)
                     st.caption(sq['name'][:10])
-                    # Only show tokens in-cell for top and bottom rows
-                    if r_idx == 0 or r_idx == 10:
+                    # Tokens only for bottom row (Top row is in header gutter)
+                    if r_idx == 10:
                         st.write(board_markers[cell])
         
-        # 3. Right Token Sidebar (Offsets for Green/Yellow row)
+        # 3. Right Token Sidebar (Vertical)
         if 1 <= r_idx <= 9:
-            right_cell = right_col[r_idx-1]
-            cols[12].write(board_markers[right_cell])
+            cols[12].write(board_markers[right_col[r_idx-1]])
 
     st.markdown("---")
     lc1, lc2 = st.columns([1, 2])
