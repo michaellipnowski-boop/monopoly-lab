@@ -10,50 +10,51 @@ COLOR_MAP = {
 
 PROPERTIES = {
     0: {"name": "GO", "type": "Safe"},
-    1: {"name": "Mediterranean", "type": "Street", "color": "Brown", "rent": [2, 10, 30, 90, 160, 250]},
-    2: {"name": "Comm. Chest", "type": "Action", "deck": "chest"},
-    3: {"name": "Baltic Ave", "type": "Street", "color": "Brown", "rent": [4, 20, 60, 180, 320, 450]},
+    1: {"name": "Mediterranean Avenue", "type": "Street", "color": "Brown", "rent": [2, 10, 30, 90, 160, 250]},
+    2: {"name": "Community Chest", "type": "Action", "deck": "chest"},
+    3: {"name": "Baltic Avenue", "type": "Street", "color": "Brown", "rent": [4, 20, 60, 180, 320, 450]},
     4: {"name": "Income Tax", "type": "Tax", "cost": 200},
-    5: {"name": "Reading RR", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
-    6: {"name": "Oriental Ave", "type": "Street", "color": "Light Blue", "rent": [6, 30, 90, 270, 400, 550]},
+    5: {"name": "Reading Railroad", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
+    6: {"name": "Oriental Avenue", "type": "Street", "color": "Light Blue", "rent": [6, 30, 90, 270, 400, 550]},
     7: {"name": "Chance", "type": "Action", "deck": "chance"},
-    8: {"name": "Vermont Ave", "type": "Street", "color": "Light Blue", "rent": [6, 30, 90, 270, 400, 550]},
-    9: {"name": "Conn. Ave", "type": "Street", "color": "Light Blue", "rent": [8, 40, 100, 300, 450, 600]},
-    10: {"name": "Jail", "type": "Safe"},
+    8: {"name": "Vermont Avenue", "type": "Street", "color": "Light Blue", "rent": [6, 30, 90, 270, 400, 550]},
+    9: {"name": "Connecticut Avenue", "type": "Street", "color": "Light Blue", "rent": [8, 40, 100, 300, 450, 600]},
+    10: {"name": "Jail / Just Visiting", "type": "Safe"},
     11: {"name": "St. Charles Place", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750]},
     12: {"name": "Electric Company", "type": "Utility", "color": "Utility", "rent": [4, 10]},
-    13: {"name": "States Ave", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750]},
-    14: {"name": "Virginia Ave", "type": "Street", "color": "Pink", "rent": [12, 60, 180, 500, 700, 900]},
-    15: {"name": "Penn. RR", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
+    13: {"name": "States Avenue", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750]},
+    14: {"name": "Virginia Avenue", "type": "Street", "color": "Pink", "rent": [12, 60, 180, 500, 700, 900]},
+    15: {"name": "Pennsylvania Railroad", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
     16: {"name": "St. James Place", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950]},
-    17: {"name": "Comm. Chest", "type": "Action", "deck": "chest"},
-    18: {"name": "Tennessee Ave", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950]},
-    19: {"name": "New York Ave", "type": "Street", "color": "Orange", "rent": [16, 80, 220, 600, 800, 1000]},
+    17: {"name": "Community Chest", "type": "Action", "deck": "chest"},
+    18: {"name": "Tennessee Avenue", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950]},
+    19: {"name": "New York Avenue", "type": "Street", "color": "Orange", "rent": [16, 80, 220, 600, 800, 1000]},
     20: {"name": "Free Parking", "type": "Safe"},
-    21: {"name": "Kentucky Ave", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050]},
+    21: {"name": "Kentucky Avenue", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050]},
     22: {"name": "Chance", "type": "Action", "deck": "chance"},
-    23: {"name": "Indiana Ave", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050]},
-    24: {"name": "Illinois Ave", "type": "Street", "color": "Red", "rent": [20, 100, 300, 750, 925, 1100]},
-    25: {"name": "B. & O. RR", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
-    26: {"name": "Atlantic Ave", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
-    27: {"name": "Ventnor Ave", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
+    23: {"name": "Indiana Avenue", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050]},
+    24: {"name": "Illinois Avenue", "type": "Street", "color": "Red", "rent": [20, 100, 300, 750, 925, 1100]},
+    25: {"name": "B. & O. Railroad", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
+    26: {"name": "Atlantic Avenue", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
+    27: {"name": "Ventnor Avenue", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
     28: {"name": "Water Works", "type": "Utility", "color": "Utility", "rent": [4, 10]},
     29: {"name": "Marvin Gardens", "type": "Street", "color": "Yellow", "rent": [24, 120, 360, 850, 1025, 1200]},
     30: {"name": "Go To Jail", "type": "Action"},
-    31: {"name": "Pacific Ave", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
-    32: {"name": "No. Carolina", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
-    33: {"name": "Comm. Chest", "type": "Action", "deck": "chest"},
-    34: {"name": "Penn. Ave", "type": "Street", "color": "Green", "rent": [28, 150, 450, 1000, 1200, 1400]},
-    35: {"name": "Short Line", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
+    31: {"name": "Pacific Avenue", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
+    32: {"name": "North Carolina Avenue", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
+    33: {"name": "Community Chest", "type": "Action", "deck": "chest"},
+    34: {"name": "Pennsylvania Avenue", "type": "Street", "color": "Green", "rent": [28, 150, 450, 1000, 1200, 1400]},
+    35: {"name": "Short Line Railroad", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
     36: {"name": "Chance", "type": "Action", "deck": "chance"},
     37: {"name": "Park Place", "type": "Street", "color": "Dark Blue", "rent": [35, 175, 500, 1100, 1300, 1500]},
     38: {"name": "Luxury Tax", "type": "Tax", "cost": 100},
     39: {"name": "Boardwalk", "type": "Street", "color": "Dark Blue", "rent": [50, 200, 600, 1400, 1700, 2000]}
 }
 
+#--- DECKS ---
 CHANCE_DECK = [
-    {"text": "Advance to GO", "effect": "move", "pos": 0},
-    {"text": "Advance to Illinois Ave", "effect": "move", "pos": 24},
+    {"text": "Advance to GO (Collect $200)", "effect": "move", "pos": 0},
+    {"text": "Advance to Illinois Avenue", "effect": "move", "pos": 24},
     {"text": "Advance to St. Charles Place", "effect": "move", "pos": 11},
     {"text": "Advance to nearest Utility", "effect": "move_nearest_util"},
     {"text": "Advance to nearest Railroad", "effect": "move_nearest_rr"},
@@ -63,7 +64,7 @@ CHANCE_DECK = [
     {"text": "Go to Jail", "effect": "move", "pos": 10},
     {"text": "General repairs: $25/house, $100/hotel", "effect": "repairs", "h": 25, "H": 100},
     {"text": "Speeding fine $15", "effect": "cash", "amt": -15},
-    {"text": "Trip to Reading RR", "effect": "move", "pos": 5},
+    {"text": "Trip to Reading Railroad", "effect": "move", "pos": 5},
     {"text": "Advance to Boardwalk", "effect": "move", "pos": 39},
     {"text": "Elected Chairman. Pay each player $50", "effect": "birthday", "amt": -50},
     {"text": "Building loan matures. Collect $150", "effect": "cash", "amt": 150},
@@ -71,15 +72,15 @@ CHANCE_DECK = [
 ]
 
 CHEST_DECK = [
-    {"text": "Advance to GO", "effect": "move", "pos": 0},
-    {"text": "Bank error $200", "effect": "cash", "amt": 200},
+    {"text": "Advance to GO (Collect $200)", "effect": "move", "pos": 0},
+    {"text": "Bank error in your favor. Collect $200", "effect": "cash", "amt": 200},
     {"text": "Doctor's fee. Pay $50", "effect": "cash", "amt": -50},
     {"text": "From sale of stock get $50", "effect": "cash", "amt": 50},
     {"text": "Get Out of Jail Free", "effect": "noop"},
     {"text": "Go to Jail", "effect": "move", "pos": 10},
     {"text": "Holiday fund matures. Receive $100", "effect": "cash", "amt": 100},
     {"text": "Income tax refund. Collect $20", "effect": "cash", "amt": 20},
-    {"text": "Birthday. Collect $10 from everyone", "effect": "birthday", "amt": 10},
+    {"text": "It is your birthday. Collect $10 from everyone", "effect": "birthday", "amt": 10},
     {"text": "Life insurance matures. Collect $100", "effect": "cash", "amt": 100},
     {"text": "Hospital Fees. Pay $100", "effect": "cash", "amt": -100},
     {"text": "School fees. Pay $50", "effect": "cash", "amt": -50},
@@ -89,9 +90,10 @@ CHEST_DECK = [
     {"text": "You inherit $100", "effect": "cash", "amt": 100}
 ]
 
-#Logic Groups
+#--- LOGIC GROUPS ---
 COLOR_GROUPS = {}
-RAILROADS, UTILITIES = [], []
+RAILROADS = []
+UTILITIES = []
 for pid, info in PROPERTIES.items():
     if info.get('type') == "Street":
         COLOR_GROUPS.setdefault(info['color'], []).append(pid)
@@ -119,7 +121,7 @@ def reset_lab():
         del st.session_state[k]
     st.rerun()
 
-#--- GAME LOGIC ---
+#--- HELPER LOGIC ---
 def get_rent(pid, roll=0):
     info = PROPERTIES[pid]
     owner = st.session_state.ownership[pid]
@@ -208,35 +210,38 @@ def run_turn(silent=False):
     st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
     return p['cash'] < 0
 
-#--- UI FLOW ---
+#--- PHASE 1: INIT ---
 if st.session_state.phase == "INIT":
     st.title("🎲 Monopoly Stats Lab")
-    st.session_state.p_count = st.number_input("Players", 1, 8, value=st.session_state.p_count)
+    st.session_state.p_count = st.number_input("How many players?", 1, 8, value=st.session_state.p_count)
     while len(st.session_state.p_names) < st.session_state.p_count:
         st.session_state.p_names.append(f"Student {chr(65+len(st.session_state.p_names))}")
     temp_names = []
     for i in range(st.session_state.p_count):
-        name = st.text_input(f"P{i+1}", st.session_state.p_names[i], key=f"n_{i}")
+        name = st.text_input(f"Player {i+1} Name", st.session_state.p_names[i], key=f"n_{i}")
         temp_names.append(name)
-    if st.button("Continue"):
+    if st.button("Continue to Mode Selection"):
         st.session_state.p_names = temp_names
         st.session_state.players = [{"name": n, "cash": 1500, "pos": 0} for n in temp_names]
         st.session_state.phase = "CHOICE"
         st.rerun()
 
+#--- PHASE 2: CHOICE ---
 elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Mode Select")
+    st.write("Would you like to start a fresh game or customize property ownership and cash first?")
     c1, c2 = st.columns(2)
-    if c1.button("Standard Simulation"):
+    if c1.button("Standard Simulation (All Fresh)"):
         st.session_state.phase = "LIVE"
         st.rerun()
-    if c2.button("Customization"):
+    if c2.button("Customization (Setup Scenario)"):
         st.session_state.phase = "SETUP"
         st.rerun()
-    if st.button("← Back to Players"):
+    if st.button("← Back to Player Names"):
         st.session_state.phase = "INIT"
         st.rerun()
 
+#--- PHASE 3: SETUP ---
 elif st.session_state.phase == "SETUP":
     st.title("🏗️ Customization")
     t1, t2, t3 = st.tabs(["Properties Owned", "Houses Built", "Cash"])
@@ -277,16 +282,19 @@ elif st.session_state.phase == "SETUP":
                     c2.write(f"{st.session_state.houses[pid]}")
                     if c3.button("➕", key=f"p_{pid}", disabled=st.session_state.houses[pid]==5 or st.session_state.houses[pid]>min(h_counts)):
                         st.session_state.houses[pid]+=1; st.rerun()
-            else:
-                st.caption(f"{color} group not fully owned by one player.")
 
     with t3:
         for i, p in enumerate(st.session_state.players):
-            p['cash'] = st.number_input(f"{p['name']} ($)", value=int(p['cash']), key=f"cash_input_{i}")
+            p['cash'] = st.number_input(f"Starting cash for {p['name']}", value=int(p['cash']), step=10, key=f"cash_in_{i}")
 
-    if st.button("← Back"): st.session_state.phase = "CHOICE"; st.rerun()
-    if st.button("🚀 Start Live Lab"): st.session_state.phase = "LIVE"; st.rerun()
+    if st.button("← Back to Selection"):
+        st.session_state.phase = "CHOICE"
+        st.rerun()
+    if st.button("🚀 Start Live Lab"):
+        st.session_state.phase = "LIVE"
+        st.rerun()
 
+#--- PHASE 4: LIVE ---
 elif st.session_state.phase == "LIVE":
     st.sidebar.title("📊 Ledger")
     for p in st.session_state.players:
@@ -296,19 +304,19 @@ elif st.session_state.phase == "LIVE":
                 if owned:
                     st.markdown(f'<span style="color:{COLOR_MAP[color]}">■</span> <b>{color}</b>', unsafe_allow_html=True)
                     st.write(", ".join([f"{PROPERTIES[pid]['name']} ({st.session_state.houses[pid]}🏠)" for pid in owned]))
-    
+
     st.write("### 🗺️ Board Position")
     board_markers = [""] * 40
     for p in st.session_state.players:
-        init = "".join([n[0] for n in p['name'].split()])
-        board_markers[p['pos']] += f"[{init}]"
+        initials = "".join([n[0] for n in p['name'].split()])
+        board_markers[p['pos']] += f"[{initials}]"
 
     top_row = list(range(20, 31))
     right_col = list(range(31, 40))
     bottom_row = list(range(10, -1, -1))
     left_col = list(range(19, 10, -1))
 
-    # Overhead Header for Top Row
+    # Token Gutter: Top Row
     cols_top = st.columns([1] + [1]*11 + [1])
     for i, cell in enumerate(top_row):
         cols_top[i+1].write(board_markers[cell])
@@ -317,11 +325,11 @@ elif st.session_state.phase == "LIVE":
     for r_idx in range(11):
         cols = st.columns([1] + [1]*11 + [1])
         
-        # Left Sidebar (Sidewalk)
+        # Token Gutter: Left Sidebar
         if 1 <= r_idx <= 9:
             cols[0].write(board_markers[left_col[r_idx-1]])
         
-        # Inner Grid
+        # Board Cell Data
         row_data = []
         if r_idx == 0: row_data = top_row
         elif r_idx == 10: row_data = bottom_row
@@ -335,10 +343,10 @@ elif st.session_state.phase == "LIVE":
                 with target_col.container():
                     st.markdown(f'<div style="background:{bg}; height:10px; border:0.5px solid #000;"></div>', unsafe_allow_html=True)
                     st.caption(sq['name'][:10])
-                    if r_idx == 10: # Only bottom row shows markers inside/below
+                    if r_idx == 10:
                         st.write(board_markers[cell])
         
-        # Right Sidebar (Sidewalk)
+        # Token Gutter: Right Sidebar
         if 1 <= r_idx <= 9:
             cols[12].write(board_markers[right_col[r_idx-1]])
 
@@ -348,13 +356,16 @@ elif st.session_state.phase == "LIVE":
         run_turn()
         st.rerun()
     with lc2:
-        jump = st.number_input("Jump", 1, 1000000, 100, label_visibility="collapsed")
-        if st.button(f"Jump {jump}"):
-            st.session_state.last_move = f"Simulated {jump} turns."
-            for _ in range(jump):
+        jump_val = st.number_input("Turn Jump", 1, 1000000, 100, label_visibility="collapsed")
+        if st.button(f"Jump {jump_val} Turns"):
+            st.session_state.last_move = f"Fast-forwarded {jump_val} turns."
+            for _ in range(jump_val):
                 if run_turn(silent=True): break
             st.rerun()
-    if st.session_state.last_move: st.info(st.session_state.last_move)
-    if st.sidebar.button("RESET"): reset_lab()
+    
+    if st.session_state.last_move:
+        st.info(st.session_state.last_move)
+    if st.sidebar.button("RESET SIMULATION"):
+        reset_lab()
 
 # END OF CODE
