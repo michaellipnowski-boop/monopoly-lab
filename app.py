@@ -1,11 +1,11 @@
 import streamlit as st
 import random
 
-# --- 1. DATA CONSTANTS ---
+# --- 1. DATA & COLOR MAPPING ---**
 COLOR_MAP = {
     "Brown": "#955436", "Light Blue": "#AADEFC", "Pink": "#D93A96", "Orange": "#F7941D",
     "Red": "#ED1B24", "Yellow": "#FEF200", "Green": "#1FB25A", "Dark Blue": "#0072BB",
-    "Railroad": "#000000", "Utility": "#717d7e"
+    "Railroad": "#000000", "Utility": "#717d7e", "Safe": "#FFFFFF", "Action": "#D3D3D3", "Tax": "#A9A9A9"
 }
 
 PROPERTIES = {
@@ -51,102 +51,230 @@ PROPERTIES = {
     39: {"name": "Boardwalk", "type": "Street", "color": "Dark Blue", "rent": [50, 200, 600, 1400, 1700, 2000], "price": 400, "house_cost": 200}
 }
 
-# --- 2. SESSION STATE ---
+# --- 2. DECK DEFINITIONS ---**
+CHANCE_DECK = [
+    {"text": "Advance to GO", "effect": "move", "pos": 0},
+    {"text": "Advance to Illinois Avenue", "effect": "move", "pos": 24},
+    {"text": "Advance to St. Charles Place", "effect": "move", "pos": 11},
+    {"text": "Advance to nearest Utility", "effect": "move_nearest_util"},
+    {"text": "Advance to nearest Railroad", "effect": "move_nearest_rr"},
+    {"text": "Bank pays dividend $50", "effect": "cash", "amt": 50},
+    {"text": "Get Out of Jail Free", "effect": "goo_card"},
+    {"text": "Go Back 3 Spaces", "effect": "move_relative", "amt": -3},
+    {"text": "Go to Jail", "effect": "jail"},
+    {"text": "General repairs: $25/house, $100/hotel", "effect": "repairs", "h": 25, "H": 100},
+    {"text": "Speeding fine $15", "effect": "cash", "amt": -15},
+    {"text": "Trip to Reading Railroad", "effect": "move", "pos": 5},
+    {"text": "Advance to Boardwalk", "effect": "move", "pos": 39},
+    {"text": "Elected Chairman. Pay each player $50", "effect": "birthday", "amt": -50},
+    {"text": "Building loan matures. Collect $150", "effect": "cash", "amt": 150},
+    {"text": "Crossword competition prize. Collect $100", "effect": "cash", "amt": 100}
+]
+
+CHEST_DECK = [
+    {"text": "Advance to GO", "effect": "move", "pos": 0},
+    {"text": "Bank error. Collect $200", "effect": "cash", "amt": 200},
+    {"text": "Doctor's fee. Pay $50", "effect": "cash", "amt": -50},
+    {"text": "From sale of stock get $50", "effect": "cash", "amt": 50},
+    {"text": "Get Out of Jail Free", "effect": "goo_card"},
+    {"text": "Go to Jail", "effect": "jail"},
+    {"text": "Holiday fund matures. Collect $100", "effect": "cash", "amt": 100},
+    {"text": "Income tax refund. Collect $20", "effect": "cash", "amt": 20},
+    {"text": "It is your birthday. Collect $10 from everyone", "effect": "birthday", "amt": 10},
+    {"text": "Life insurance matures. Collect $100", "effect": "cash", "amt": 100},
+    {"text": "Hospital Fees. Pay $100", "effect": "cash", "amt": -100},
+    {"text": "School fees. Pay $50", "effect": "cash", "amt": -50},
+    {"text": "Consultancy fee. Collect $25", "effect": "cash", "amt": 25},
+    {"text": "Street repairs: $40/house, $115/hotel", "effect": "repairs", "h": 40, "H": 115},
+    {"text": "Beauty contest prize. Collect $10", "effect": "cash", "amt": 10},
+    {"text": "You inherit $100", "effect": "cash", "amt": 100}
+]
+
+# --- 3. SESSION STATE ---**
 if "phase" not in st.session_state:
     st.session_state.phase = "INIT"
-    st.session_state.ownership = {pid: "Bank" for pid in PROPERTIES if "price" in PROPERTIES[pid]}
-    st.session_state.houses = {pid: 0 for pid in PROPERTIES if PROPERTIES[pid].get("type") == "Street"}
+    st.session_state.players = []
+    st.session_state.ownership = {p: "Bank" for p in PROPERTIES if "price" in PROPERTIES[p]}
+    st.session_state.houses = {p: 0 for p, d in PROPERTIES.items() if d.get("type") == "Street"}
     st.session_state.current_p = 0
-    st.session_state.last_log = "Laboratory Ready."
+    st.session_state.double_count = 0
     st.session_state.c_deck = list(range(16))
     st.session_state.ch_deck = list(range(16))
+    random.shuffle(st.session_state.c_deck)
+    random.shuffle(st.session_state.ch_deck)
 
-# --- 3. THE PROFESSOR'S JUMP ENGINE ---
-def fast_forward(n_steps):
-    for _ in range(n_steps):
-        run_turn(is_auto=True)
+# --- 4. RENT & CARD LOGIC ---**
+def get_rent_due(pid, roll):
+    owner = st.session_state.ownership[pid]
+    info = PROPERTIES[pid]
+    if info['type'] == "Street":
+        h = st.session_state.houses[pid]
+        rent = info['rent'][h]
+        if h == 0:
+            color_pids = [p for p, d in PROPERTIES.items() if d.get('color') == info['color']]
+            if all(st.session_state.ownership[cp] == owner for cp in color_pids):
+                return rent * 2
+        return rent
+    elif info['type'] == "Railroad":
+        count = sum(1 for r in [5, 15, 25, 35] if st.session_state.ownership[r] == owner)
+        return info['rent'][count-1]
+    elif info['type'] == "Utility":
+        count = sum(1 for u in [12, 28] if st.session_state.ownership[u] == owner)
+        return (4 if count == 1 else 10) * roll
+    return 0
 
-# --- 4. EVEN BUILDING LOGIC ---
+def handle_card(p, deck_type):
+    deck_indices = st.session_state.c_deck if deck_type == "chance" else st.session_state.ch_deck
+    data = CHANCE_DECK if deck_type == "chance" else CHEST_DECK
+    idx = deck_indices.pop(0)
+    card = data[idx]
+    
+    if card['effect'] == "move":
+        old = p['pos']
+        p['pos'] = card['pos']
+        if p['pos'] < old: p['cash'] += 200
+    elif card['effect'] == "jail":
+        p['pos'] = 10; p['in_jail'] = True; p['jail_turns'] = 0
+    elif card['effect'] == "move_relative":
+        p['pos'] = (p['pos'] + card['amt']) % 40
+    elif card['effect'] == "cash": p['cash'] += card['amt']
+    elif card['effect'] == "birthday":
+        for other in st.session_state.players:
+            if other != p:
+                other['cash'] -= card['amt']
+                p['cash'] += card['amt']
+    elif card['effect'] == "goo_card":
+        p['goo_cards'].append({"deck": deck_type, "index": idx})
+        return
+    
+    deck_indices.append(idx)
+
+# --- 5. TURN ENGINE ---**
+def run_turn(jail_action=None):
+    p = st.session_state.players[st.session_state.current_p]
+    d1, d2 = random.randint(1, 6), random.randint(1, 6)
+    roll, is_double = d1 + d2, (d1 == d2)
+    
+    if p['in_jail']:
+        p['jail_turns'] += 1
+        if jail_action == "Pay $50": p['cash'] -= 50; p['in_jail'] = False
+        elif jail_action == "Use Card":
+            c = p['goo_cards'].pop(0)
+            (st.session_state.c_deck if c['deck'] == "chance" else st.session_state.ch_deck).append(c['index'])
+            p['in_jail'] = False
+        elif is_double: p['in_jail'] = False
+        elif p['jail_turns'] >= 3: p['cash'] -= 50; p['in_jail'] = False
+        else:
+            st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+            return
+
+    if is_double: st.session_state.double_count += 1
+    else: st.session_state.double_count = 0
+
+    if st.session_state.double_count >= 3:
+        p['pos'] = 10; p['in_jail'] = True; p['jail_turns'] = 0
+        st.session_state.double_count = 0
+        st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+    else:
+        old_pos = p['pos']
+        p['pos'] = (p['pos'] + roll) % 40
+        if p['pos'] < old_pos: p['cash'] += 200
+        
+        sq = PROPERTIES[p['pos']]
+        if "price" in sq:
+            owner = st.session_state.ownership[p['pos']]
+            if owner != "Bank" and owner != p['name']:
+                rent = get_rent_due(p['pos'], roll)
+                p['cash'] -= rent
+                for op in st.session_state.players:
+                    if op['name'] == owner: op['cash'] += rent
+        elif sq['type'] == "Action":
+            if p['pos'] == 30: p['pos'] = 10; p['in_jail'] = True; p['jail_turns'] = 0
+            else: handle_card(p, sq['deck'])
+        elif sq['type'] == "Tax": p['cash'] -= sq['cost']
+        
+        if not is_double:
+            st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+
+# --- 6. UI HELPERS ---**
 def can_build(pid, increase=True):
     info = PROPERTIES[pid]
     owner = st.session_state.ownership[pid]
-    color = info['color']
-    set_pids = [p for p,d in PROPERTIES.items() if d.get('color') == color]
-    # Must own full set
-    if not all(st.session_state.ownership[sp] == owner for sp in set_pids): return False
-    current = st.session_state.houses[pid]
-    others = [st.session_state.houses[sp] for sp in set_pids if sp != pid]
-    if increase:
-        if current >= 5: return False
-        return all(current <= o for o in others)
-    else:
-        if current <= 0: return False
-        return all(current >= o for o in others)
+    group = [p for p, d in PROPERTIES.items() if d.get('color') == info['color']]
+    if not all(st.session_state.ownership[sp] == owner for sp in group): return False
+    cur = st.session_state.houses[pid]
+    others = [st.session_state.houses[sp] for sp in group if sp != pid]
+    if increase: return cur < 5 and all(cur <= o for o in others)
+    else: return cur > 0 and all(cur >= o for o in others)
 
-# --- 5. VISUAL BOARD COMPONENT ---
-def draw_graphical_board():
-    st.write("### 🗺️ Board Visualization")
-    board_layout = [
-        list(range(20, 31)), # Top
-        [19, None, None, None, None, None, None, None, None, None, 31],
-        [18, None, None, None, None, None, None, None, None, None, 32],
-        [17, None, None, None, None, None, None, None, None, None, 33],
-        [16, None, None, None, None, None, None, None, None, None, 34],
-        [15, None, None, None, None, None, None, None, None, None, 35],
-        [14, None, None, None, None, None, None, None, None, None, 36],
-        [13, None, None, None, None, None, None, None, None, None, 37],
-        [12, None, None, None, None, None, None, None, None, None, 38],
-        [11, None, None, None, None, None, None, None, None, None, 39],
-        list(reversed(range(0, 11))) # Bottom
-    ]
-    for row in board_layout:
+def draw_board():
+    st.write("### 🗺️ Game Board View")
+    layout = [list(range(20, 31)), [19]+[None]*9+[31], [18]+[None]*9+[32], [17]+[None]*9+[33], [16]+[None]*9+[34], [15]+[None]*9+[35], [14]+[None]*9+[36], [13]+[None]*9+[37], [12]+[None]*9+[38], [11]+[None]*9+[39], list(reversed(range(0, 11)))]
+    for row in layout:
         cols = st.columns(11)
         for i, pid in enumerate(row):
             if pid is not None:
                 sq = PROPERTIES[pid]
-                clr = COLOR_MAP.get(sq.get('color'), "#eee")
-                tokens = "".join([p['name'][0] for p in st.session_state.players if p['pos'] == pid])
-                cols[i].markdown(f"<div style='background:{clr}; height:40px; border:1px solid #999; text-align:center; font-size:10px;'>{pid}
+                c = COLOR_MAP.get(sq.get("color"), "#EEE")
+                tkns = "".join([pl['name'][0] for pl in st.session_state.players if pl['pos'] == pid])
+                cols[i].markdown(f"<div style='background:{c}; border:1px solid #333; height:45px; text-align:center; font-size:9px;'>{pid}
 
 
-{tokens}</div>", unsafe_allow_p_safe=True)
-            else:
-                cols[i].write("")
 
-# --- 6. COLOR-CODED HUD ---
-def render_hud():
-    st.sidebar.title("📊 Player Stats")
+<b>{tkns}</b></div>", unsafe_allow_html=True)
+            else: cols[i].empty()
+
+# --- 7. MAIN APP ---**
+if st.session_state.phase == "INIT":
+    st.title("Monopoly Stats Lab")
+    cnt = st.number_input("How many players?", 1, 8, 2)
+    nms = [st.text_input(f"Player {i+1} Name", f"P{i+1}", key=f"nm_{i}") for i in range(cnt)]
+    if st.button("Start Simulation"):
+        st.session_state.players = [{"name": n, "cash": 1500, "pos": 0, "goo_cards": [], "in_jail": False, "jail_turns": 0} for n in nms]
+        st.session_state.phase = "LIVE"; st.rerun()
+
+elif st.session_state.phase == "LIVE":
+    # Sidebar HUD
+    st.sidebar.title("📊 Player HUD")
     for p in st.session_state.players:
         with st.sidebar.expander(f"{p['name']} - ${p['cash']}", expanded=True):
             owned = [pid for pid, o in st.session_state.ownership.items() if o == p['name']]
-            for clr_name, hex_code in COLOR_MAP.items():
-                group = [pid for pid in owned if PROPERTIES[pid].get('color') == clr_name or (clr_name == "Railroad" and PROPERTIES[pid]['type']=="Railroad") or (clr_name == "Utility" and PROPERTIES[pid]['type']=="Utility")]
+            for clr, hex_val in COLOR_MAP.items():
+                group = [pid for pid in owned if PROPERTIES[pid].get('color') == clr]
                 if group:
-                    st.markdown(f"<div style='border-left: 10px solid {hex_code}; padding-left:5px;'><b>{clr_name}</b></div>", unsafe_allow_html=True)
-                    for pid in group:
-                        h = st.session_state.houses.get(pid, 0)
-                        st.text(f"  {PROPERTIES[pid]['name']} ({h}H)")
+                    st.markdown(f"<div style='border-left: 10px solid {hex_val}; padding-left:10px; margin-top:5px;'><b>{clr}</b></div>", unsafe_allow_html=True)
+                    for pid in group: st.text(f" {PROPERTIES[pid]['name']} ({st.session_state.houses[pid]}H)")
 
-# --- 7. MAIN ENGINE (INCLUDES TURN LOGIC) ---
-
-[Rest of engine logic: run_turn, handle_card, render_cash_and_jail as specified previously]
-# --- 8. UI ELEMENTS ---
-if st.session_state.phase == "LIVE":
-    render_hud()
-    draw_graphical_board()
+    draw_board()
     
-    st.subheader("Teaching Controls")
-    c1, c2 = st.columns(2)
-    n_jump = c1.number_input("Jump Moves", 1, 1000000, 100)
-    if c2.button(f"Execute {n_jump} Moves"):
-        fast_forward(n_jump); st.rerun()
+    st.subheader("Professor's Tools")
+    t1, t2, t3 = st.tabs(["Jump Forward", "House Manager", "Setup Controls"])
     
-    with st.expander("🏗️ Manage Buildings (Even Rule)"):
+    with t1:
+        n_jump = st.number_input("Turns to Jump (up to 1,000,000)", 1, 1000000, 100)
+        if st.button(f"Execute {n_jump} Moves"):
+            for _ in range(n_jump): run_turn()
+            st.rerun()
+    
+    with t2:
         for pid, h in st.session_state.houses.items():
             if st.session_state.ownership[pid] != "Bank":
-                col1, col2, col3 = st.columns([3, 1, 1])
-                col1.write(f"{PROPERTIES[pid]['name']}")
-                if col2.button("-", key=f"m_{pid}", disabled=not can_build(pid, False)):
+                c1, c2, c3 = st.columns([3, 1, 1])
+                c1.write(PROPERTIES[pid]['name'])
+                if c2.button("-", key=f"sub_{pid}", disabled=not can_build(pid, False)):
                     st.session_state.houses[pid] -= 1; st.rerun()
-                if col3.button("+", key=f"p_{pid}", disabled=not can_build(pid, True)):
+                if c3.button("+", key=f"add_{pid}", disabled=not can_build(pid, True)):
                     st.session_state.houses[pid] += 1; st.rerun()
+    
+    with t3:
+        for pid, sq in PROPERTIES.items():
+            if "price" in sq:
+                cols = st.columns([2] + [1]*len(st.session_state.players))
+                cols[0].write(sq['name'])
+                for i, p in enumerate(st.session_state.players):
+                    is_own = (st.session_state.ownership[pid] == p['name'])
+                    if cols[i+1].button(p['name'], key=f"own_{pid}_{i}", type="primary" if is_own else "secondary"):
+                        st.session_state.ownership[pid] = "Bank" if is_own else p['name']; st.rerun()
+
+
+**Next Step:** Since we're trying a different approach, would you like me to move the **Game Log** (history of all moves) into a separate "History" tab so it doesn't clutter the main board?
