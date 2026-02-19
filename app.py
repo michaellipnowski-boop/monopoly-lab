@@ -32,6 +32,7 @@ COLOR_GROUPS = {}
 for pid, info in PROPERTIES.items():
     COLOR_GROUPS.setdefault(info['color'], []).append(pid)
 
+Initialize Session State
 if "phase" not in st.session_state:
     st.session_state.phase = "INIT"
     st.session_state.num_players = 2
@@ -96,15 +97,15 @@ def run_turn():
 #--- PHASE 1: INITIALIZATION ---
 if st.session_state.phase == "INIT":
     st.title("🎲 Monopoly Stats Lab: Initialization")
-    st.session_state.num_players = st.number_input("How many players?", 1, 8, st.session_state.num_players)
+    # Robust check for num_players
+    val = st.session_state.get("num_players", 2)
+    st.session_state.num_players = st.number_input("How many players?", 1, 8, val)
+    
     new_names = []
     for i in range(st.session_state.num_players):
-        # Check if we already have a name for this index from a previous attempt
-        existing_name = ""
+        existing_name = f"Student {chr(65+i)}"
         if i < len(st.session_state.players):
             existing_name = st.session_state.players[i]['name']
-        else:
-            existing_name = f"Student {chr(65+i)}"
         
         name = st.text_input(f"Player {i+1} Name", value=existing_name, key=f"name_input_{i}")
         new_names.append(name)
@@ -117,7 +118,7 @@ if st.session_state.phase == "INIT":
 #--- PHASE 2: CHOICE ---
 elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Choose Your Simulation Type")
-    st.write("Current Players:", ", ".join([p['name'] for p in st.session_state.players]))
+    st.write("Initialized with:", ", ".join([p['name'] for p in st.session_state.players]))
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Standard Game (Default)"):
@@ -144,7 +145,9 @@ elif st.session_state.phase == "SETUP":
             cols = st.columns([2, 5])
             cols[0].write(f"{info['name']}")
             opts = ["Bank"] + [p['name'] for p in st.session_state.players]
-            st.session_state.ownership[pid] = cols[1].radio(f"O_{pid}", opts, index=opts.index(st.session_state.ownership[pid]), horizontal=True, label_visibility="collapsed")
+            current_owner = st.session_state.ownership.get(pid, "Bank")
+            idx = opts.index(current_owner) if current_owner in opts else 0
+            st.session_state.ownership[pid] = cols[1].radio(f"O_{pid}", opts, index=idx, horizontal=True, label_visibility="collapsed")
     with tabs[1]:
         st.write("### Wave 2: Houses (Nanny Logic)")
         for color, pids in COLOR_GROUPS.items():
@@ -166,8 +169,8 @@ elif st.session_state.phase == "SETUP":
             else:
                 st.write(f"{color}: No Monopoly.")
     with tabs[2]:
-        for p in st.session_state.players:
-            p['cash'] = st.number_input(f"{p['name']} Cash", value=int(p['cash']))
+        for i, p in enumerate(st.session_state.players):
+            p['cash'] = st.number_input(f"{p['name']} Cash", value=int(p['cash']), key=f"cash_in_{i}")
     if st.button("🚀 Launch Simulation", type="primary"):
         st.session_state.phase = "LIVE"
         st.rerun()
@@ -184,9 +187,10 @@ elif st.session_state.phase == "LIVE":
         st.rerun()
     jump_n = c2.number_input("Jump", 1, 1000, 100)
     if c3.button(f"Go {jump_n}"):
-        for _ in range(jump_n): run_turn()
+        for _ in range(jump_n):
+            run_turn()
         st.rerun()
     st.write(f"### Log (Turn {st.session_state.turn_count})")
     st.code("\n".join(st.session_state.log[:20]))
 
-#END OF CODE
+END OF CODE
