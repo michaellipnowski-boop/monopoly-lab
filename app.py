@@ -1,14 +1,13 @@
 import streamlit as st
 import random
 
-#Complete Color Mapping
+#--- DATA CONSTANTS ---
 COLOR_MAP = {
     "Brown": "#955436", "Light Blue": "#AAE0FA", "Pink": "#D93A96", "Orange": "#F7941D",
     "Red": "#ED1B24", "Yellow": "#FEF200", "Green": "#1FB25A", "Dark Blue": "#0072BB",
     "Railroad": "#000000", "Utility": "#808080", "Action": "#FFFFFF", "Tax": "#D3D3D3", "Safe": "#FFFFFF"
 }
 
-#Complete Property and Square Data
 PROPERTIES = {
     0: {"name": "GO", "type": "Safe"},
     1: {"name": "Mediterranean", "type": "Street", "color": "Brown", "rent": [2, 10, 30, 90, 160, 250]},
@@ -21,14 +20,14 @@ PROPERTIES = {
     8: {"name": "Vermont Ave", "type": "Street", "color": "Light Blue", "rent": [6, 30, 90, 270, 400, 550]},
     9: {"name": "Conn. Ave", "type": "Street", "color": "Light Blue", "rent": [8, 40, 100, 300, 450, 600]},
     10: {"name": "Jail", "type": "Safe"},
-    11: {"name": "St. Charles", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750]},
-    12: {"name": "Electric Co", "type": "Utility", "color": "Utility", "rent": [4, 10]},
+    11: {"name": "St. Charles Place", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750]},
+    12: {"name": "Electric Company", "type": "Utility", "color": "Utility", "rent": [4, 10]},
     13: {"name": "States Ave", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750]},
     14: {"name": "Virginia Ave", "type": "Street", "color": "Pink", "rent": [12, 60, 180, 500, 700, 900]},
     15: {"name": "Penn. RR", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
-    16: {"name": "St. James Pl", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950]},
+    16: {"name": "St. James Place", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950]},
     17: {"name": "Comm. Chest", "type": "Action", "deck": "chest"},
-    18: {"name": "Tenn. Ave", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950]},
+    18: {"name": "Tennessee Ave", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950]},
     19: {"name": "New York Ave", "type": "Street", "color": "Orange", "rent": [16, 80, 220, 600, 800, 1000]},
     20: {"name": "Free Parking", "type": "Safe"},
     21: {"name": "Kentucky Ave", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050]},
@@ -39,10 +38,10 @@ PROPERTIES = {
     26: {"name": "Atlantic Ave", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
     27: {"name": "Ventnor Ave", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
     28: {"name": "Water Works", "type": "Utility", "color": "Utility", "rent": [4, 10]},
-    29: {"name": "Marvin Gard.", "type": "Street", "color": "Yellow", "rent": [24, 120, 360, 850, 1025, 1200]},
+    29: {"name": "Marvin Gardens", "type": "Street", "color": "Yellow", "rent": [24, 120, 360, 850, 1025, 1200]},
     30: {"name": "Go To Jail", "type": "Action"},
     31: {"name": "Pacific Ave", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
-    32: {"name": "N. Carolina", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
+    32: {"name": "No. Carolina", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
     33: {"name": "Comm. Chest", "type": "Action", "deck": "chest"},
     34: {"name": "Penn. Ave", "type": "Street", "color": "Green", "rent": [28, 150, 450, 1000, 1200, 1400]},
     35: {"name": "Short Line", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
@@ -52,7 +51,6 @@ PROPERTIES = {
     39: {"name": "Boardwalk", "type": "Street", "color": "Dark Blue", "rent": [50, 200, 600, 1400, 1700, 2000]}
 }
 
-#16-card Decks
 CHANCE_DECK = [
     {"text": "Advance to GO", "effect": "move", "pos": 0},
     {"text": "Advance to Illinois Ave", "effect": "move", "pos": 24},
@@ -71,6 +69,7 @@ CHANCE_DECK = [
     {"text": "Building loan matures. Collect $150", "effect": "cash", "amt": 150},
     {"text": "Crossword competition prize. Collect $100", "effect": "cash", "amt": 100}
 ]
+
 CHEST_DECK = [
     {"text": "Advance to GO", "effect": "move", "pos": 0},
     {"text": "Bank error $200", "effect": "cash", "amt": 200},
@@ -101,7 +100,7 @@ for pid, info in PROPERTIES.items():
     elif info.get('type') == "Utility":
         UTILITIES.append(pid)
 
-#Session State Persistence
+#--- SESSION STATE ---
 if "phase" not in st.session_state:
     st.session_state.phase = "INIT"
     st.session_state.p_count = 2
@@ -120,6 +119,7 @@ def reset_lab():
         del st.session_state[k]
     st.rerun()
 
+#--- GAME LOGIC ---
 def get_rent(pid, roll=0):
     info = PROPERTIES[pid]
     owner = st.session_state.ownership[pid]
@@ -178,6 +178,7 @@ def run_turn(silent=False):
     p['pos'] = (p['pos'] + roll) % 40
     sq = PROPERTIES.get(p['pos'], {"name": "Safe Square", "type": "Safe"})
     msg = f"{p['name']} rolled {roll} -> {sq['name']}. "
+    
     if sq['type'] in ["Street", "Railroad", "Utility"]:
         owner = st.session_state.ownership.get(p['pos'], "Bank")
         if owner != "Bank" and owner != p['name']:
@@ -207,7 +208,7 @@ def run_turn(silent=False):
     st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
     return p['cash'] < 0
 
-#--- UI PHASE 1: INIT ---
+#--- UI FLOW ---
 if st.session_state.phase == "INIT":
     st.title("🎲 Monopoly Stats Lab")
     st.session_state.p_count = st.number_input("Players", 1, 8, value=st.session_state.p_count)
@@ -223,7 +224,6 @@ if st.session_state.phase == "INIT":
         st.session_state.phase = "CHOICE"
         st.rerun()
 
-#--- UI PHASE 2: CHOICE ---
 elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Mode Select")
     c1, c2 = st.columns(2)
@@ -237,61 +237,56 @@ elif st.session_state.phase == "CHOICE":
         st.session_state.phase = "INIT"
         st.rerun()
 
-#--- UI PHASE 3: SETUP ---
 elif st.session_state.phase == "SETUP":
     st.title("🏗️ Customization")
     t1, t2, t3 = st.tabs(["Properties Owned", "Houses Built", "Cash"])
     player_names = [p['name'] for p in st.session_state.players]
 
     with t1:
-        def render_ownership_row(pid, label, color):
-            st.markdown(f'<div style="background:{color}; padding:2px; border-radius:4px; margin-top:5px;"></div>', unsafe_allow_html=True)
-            cols = st.columns([2] + [1]*len(player_names))
-            cols[0].write(label)
-            for i, p_name in enumerate(player_names):
-                is_owner = (st.session_state.ownership[pid] == p_name)
-                if cols[i+1].button(p_name, key=f"b_{pid}_{p_name}", type="primary" if is_owner else "secondary"):
-                    st.session_state.ownership[pid] = "Bank" if is_owner else p_name
-                    st.rerun()
-
         for color, pids in COLOR_GROUPS.items():
             for pid in pids:
-                render_ownership_row(pid, PROPERTIES[pid]['name'], COLOR_MAP[color])
-        for pid in RAILROADS:
-            render_ownership_row(pid, PROPERTIES[pid]['name'], "#000")
-        for pid in UTILITIES:
-            render_ownership_row(pid, PROPERTIES[pid]['name'], "#808080")
+                st.markdown(f'<div style="background:{COLOR_MAP[color]}; height:4px; border-radius:2px;"></div>', unsafe_allow_html=True)
+                cols = st.columns([2] + [1]*len(player_names))
+                cols[0].write(PROPERTIES[pid]['name'])
+                for i, p_name in enumerate(player_names):
+                    is_owner = (st.session_state.ownership[pid] == p_name)
+                    if cols[i+1].button(p_name, key=f"own_{pid}{p_name}", type="primary" if is_owner else "secondary"):
+                        st.session_state.ownership[pid] = "Bank" if is_owner else p_name
+                        st.rerun()
+        for pid in RAILROADS + UTILITIES:
+            st.markdown(f'<div style="background:#000; height:4px; border-radius:2px;"></div>', unsafe_allow_html=True)
+            cols = st.columns([2] + [1]*len(player_names))
+            cols[0].write(PROPERTIES[pid]['name'])
+            for i, p_name in enumerate(player_names):
+                is_owner = (st.session_state.ownership[pid] == p_name)
+                if cols[i+1].button(p_name, key=f"own{pid}_{p_name}", type="primary" if is_owner else "secondary"):
+                    st.session_state.ownership[pid] = "Bank" if is_owner else p_name
+                    st.rerun()
 
     with t2:
         for color, pids in COLOR_GROUPS.items():
             owners = [st.session_state.ownership[p] for p in pids]
             if len(set(owners)) == 1 and owners[0] != "Bank":
-                st.write(f"{color} ({owners[0]})")
+                st.markdown(f'<div style="background:{COLOR_MAP[color]}; padding:5px; color:white; font-weight:bold; border-radius:5px;">{color} Group ({owners[0]})</div>', unsafe_allow_html=True)
                 for pid in pids:
                     h_counts = [st.session_state.houses[p] for p in pids]
                     c1, c2, c3 = st.columns([3, 1, 1])
                     c1.write(PROPERTIES[pid]['name'])
                     if c2.button("➖", key=f"m_{pid}", disabled=st.session_state.houses[pid]==0 or st.session_state.houses[pid]<max(h_counts)):
-                        st.session_state.houses[pid]-=1
-                        st.rerun()
+                        st.session_state.houses[pid]-=1; st.rerun()
                     c2.write(f"{st.session_state.houses[pid]}")
                     if c3.button("➕", key=f"p_{pid}", disabled=st.session_state.houses[pid]==5 or st.session_state.houses[pid]>min(h_counts)):
-                        st.session_state.houses[pid]+=1
-                        st.rerun()
+                        st.session_state.houses[pid]+=1; st.rerun()
+            else:
+                st.caption(f"{color} group not fully owned by one player.")
 
     with t3:
         for i, p in enumerate(st.session_state.players):
-            p['cash'] = st.number_input(f"{p['name']} ($)", value=int(p['cash']), key=f"c_{i}")
+            p['cash'] = st.number_input(f"{p['name']} ($)", value=int(p['cash']), key=f"cash_input_{i}")
 
-    sc1, sc2 = st.columns([1,4])
-    if sc1.button("← Back"):
-        st.session_state.phase = "CHOICE"
-        st.rerun()
-    if sc2.button("🚀 Start"):
-        st.session_state.phase = "LIVE"
-        st.rerun()
+    if st.button("← Back"): st.session_state.phase = "CHOICE"; st.rerun()
+    if st.button("🚀 Start Live Lab"): st.session_state.phase = "LIVE"; st.rerun()
 
-#--- UI PHASE 4: LIVE ---
 elif st.session_state.phase == "LIVE":
     st.sidebar.title("📊 Ledger")
     for p in st.session_state.players:
@@ -313,20 +308,20 @@ elif st.session_state.phase == "LIVE":
     bottom_row = list(range(10, -1, -1))
     left_col = list(range(19, 10, -1))
 
-    # Header Gutter for Top Row tokens
+    # Overhead Header for Top Row
     cols_top = st.columns([1] + [1]*11 + [1])
     for i, cell in enumerate(top_row):
         cols_top[i+1].write(board_markers[cell])
 
-    # Main Grid Rendering
+    # Main Board Construction
     for r_idx in range(11):
         cols = st.columns([1] + [1]*11 + [1])
         
-        # 1. Left Token Sidebar (Vertical)
+        # Left Sidebar (Sidewalk)
         if 1 <= r_idx <= 9:
             cols[0].write(board_markers[left_col[r_idx-1]])
         
-        # 2. Grid Body
+        # Inner Grid
         row_data = []
         if r_idx == 0: row_data = top_row
         elif r_idx == 10: row_data = bottom_row
@@ -340,11 +335,10 @@ elif st.session_state.phase == "LIVE":
                 with target_col.container():
                     st.markdown(f'<div style="background:{bg}; height:10px; border:0.5px solid #000;"></div>', unsafe_allow_html=True)
                     st.caption(sq['name'][:10])
-                    # Tokens only for bottom row (Top row is in header gutter)
-                    if r_idx == 10:
+                    if r_idx == 10: # Only bottom row shows markers inside/below
                         st.write(board_markers[cell])
         
-        # 3. Right Token Sidebar (Vertical)
+        # Right Sidebar (Sidewalk)
         if 1 <= r_idx <= 9:
             cols[12].write(board_markers[right_col[r_idx-1]])
 
@@ -358,13 +352,9 @@ elif st.session_state.phase == "LIVE":
         if st.button(f"Jump {jump}"):
             st.session_state.last_move = f"Simulated {jump} turns."
             for _ in range(jump):
-                if run_turn(silent=True):
-                    break
+                if run_turn(silent=True): break
             st.rerun()
-    
-    if st.session_state.last_move:
-        st.info(st.session_state.last_move)
-    if st.sidebar.button("RESET"):
-        reset_lab()
+    if st.session_state.last_move: st.info(st.session_state.last_move)
+    if st.sidebar.button("RESET"): reset_lab()
 
 # END OF CODE
