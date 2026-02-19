@@ -70,7 +70,7 @@ if "phase" not in st.session_state:
     st.session_state.turn_count = 0
     st.session_state.current_player_idx = 0
 
-#Helper function to reset the app state
+#Helper function to reset app state
 def reset_lab():
     for key in list(st.session_state.keys()):
         del st.session_state[key]
@@ -104,13 +104,11 @@ def run_turn():
     if player['cash'] < 0:
         st.session_state.current_player_idx = (p_idx + 1) % len(st.session_state.players)
         return False
-    
     die1, die2 = random.randint(1, 6), random.randint(1, 6)
     roll = die1 + die2
     player['pos'] = (player['pos'] + roll) % 40
     landed_id = player['pos']
     msg = f"{player['name']} rolled {roll} and landed on "
-    
     if landed_id in PROPERTIES:
         prop = PROPERTIES[landed_id]
         owner = st.session_state.ownership[landed_id]
@@ -128,7 +126,6 @@ def run_turn():
             msg += "GO! +$200."
             player['cash'] += 200
         else: msg += "a non-property square."
-    
     st.session_state.log.insert(0, f"Turn {st.session_state.turn_count}: {msg}")
     st.session_state.turn_count += 1
     st.session_state.current_player_idx = (p_idx + 1) % len(st.session_state.players)
@@ -152,7 +149,7 @@ if st.session_state.phase == "INIT":
         st.session_state.phase = "CHOICE"
         st.rerun()
 
-#UI PHASE 2: Choice between Default and Custom
+#UI PHASE 2: Route Choice
 elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Simulation Selection")
     c1, c2 = st.columns(2)
@@ -175,8 +172,6 @@ elif st.session_state.phase == "SETUP":
     tabs = st.tabs(["Ownership", "Development", "Cash"])
     with tabs[0]:
         opts = ["Bank"] + [p['name'] for p in st.session_state.players]
-        
-        # Loop through streets by color
         for color, pids in COLOR_GROUPS.items():
             st.markdown(f'<div style="border-left: 10px solid {COLOR_MAP[color]}; padding-left:10px; margin-bottom:10px;"><b>{color} Group</b></div>', unsafe_allow_html=True)
             for pid in pids:
@@ -184,16 +179,12 @@ elif st.session_state.phase == "SETUP":
                 c[0].write(PROPERTIES[pid]['name'])
                 curr = st.session_state.ownership.get(pid, "Bank")
                 st.session_state.ownership[pid] = c[1].radio(f"O_{pid}", opts, index=opts.index(curr), horizontal=True, label_visibility="collapsed")
-        
-        # Loop through railroads
         st.markdown('<div style="border-left: 10px solid #000; padding-left:10px; margin-bottom:10px;"><b>Railroads</b></div>', unsafe_allow_html=True)
         for pid in RAILROADS:
             c = st.columns([3, 5])
             c[0].write(PROPERTIES[pid]['name'])
             curr = st.session_state.ownership.get(pid, "Bank")
             st.session_state.ownership[pid] = c[1].radio(f"O_{pid}", opts, index=opts.index(curr), horizontal=True, label_visibility="collapsed")
-        
-        # Loop through utilities
         st.markdown('<div style="border-left: 10px solid #BDBDBD; padding-left:10px; margin-bottom:10px;"><b>Utilities</b></div>', unsafe_allow_html=True)
         for pid in UTILITIES:
             c = st.columns([3, 5])
@@ -202,24 +193,24 @@ elif st.session_state.phase == "SETUP":
             st.session_state.ownership[pid] = c[1].radio(f"O_{pid}", opts, index=opts.index(curr), horizontal=True, label_visibility="collapsed")
 
     with tabs[1]:
-        # Development controls for house building
         for color, pids in COLOR_GROUPS.items():
             owners = [st.session_state.ownership[pid] for pid in pids]
             if len(set(owners)) == 1 and owners[0] != "Bank":
                 st.markdown(f"#### {color} Group ({owners[0]})")
                 for pid in pids:
-                    c1, c2, c3 = st.columns([3, 1, 1])
+                    c1, c2, c_num, c3 = st.columns([3, 0.5, 0.5, 0.5])
                     c1.write(PROPERTIES[pid]['name'])
                     curr = st.session_state.houses[pid]
-                    can_sub, can_add = (curr > 0 and all(curr >= st.session_state.houses[o] for o in pids)), (curr < 5 and all(curr <= st.session_state.houses[o] for o in pids))
+                    can_sub = (curr > 0 and all(curr >= st.session_state.houses[o] for o in pids))
+                    can_add = (curr < 5 and all(curr <= st.session_state.houses[o] for o in pids))
                     if c2.button("➖", key=f"s_{pid}", disabled=not can_sub):
                         st.session_state.houses[pid] -= 1
                         st.rerun()
+                    c_num.write(f"{curr}")
                     if c3.button("➕", key=f"a_{pid}", disabled=not can_add):
                         st.session_state.houses[pid] += 1
                         st.rerun()
     with tabs[2]:
-        # Manual cash adjustment
         for i, p in enumerate(st.session_state.players):
             p['cash'] = st.number_input(f"{p['name']} Cash", value=int(p['cash']), key=f"c_{i}")
     if st.button("🚀 Launch Simulation", type="primary"):
@@ -242,3 +233,5 @@ elif st.session_state.phase == "LIVE":
                 if run_turn(): break
             st.rerun()
     st.code("\n".join(st.session_state.log[:20]))
+
+# END OF CODE
