@@ -130,7 +130,7 @@ st.title("🎲 Monopoly Probability & Stats Lab")
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.header("Simulation Settings")
-sim_turns = st.sidebar.slider("Number of Turns", 50, 1000, 200)
+sim_turns = st.sidebar.number_input("Number of Turns", min_value = 1, max_value = 1000000)
 start_cash = st.sidebar.number_input("Starting Cash ($)", value=1500)
 player_count = st.sidebar.radio("Number of Players", [2, 3, 4])
 
