@@ -113,6 +113,7 @@ if "phase" not in st.session_state:
     st.session_state.last_move = ""
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
+    st.session_state.double_count = 0
     c = list(range(16)); random.shuffle(c); st.session_state.c_deck_idx = c
     ch = list(range(16)); random.shuffle(ch); st.session_state.ch_deck_idx = ch
 
@@ -173,41 +174,67 @@ def draw_card(p, deck_type):
 
 def run_turn(silent=False):
     p = st.session_state.players[st.session_state.current_p]
+    
     if p['cash'] < 0:
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+        st.session_state.double_count = 0
         return False
-    roll = random.randint(1,6) + random.randint(1,6)
-    p['pos'] = (p['pos'] + roll) % 40
-    sq = PROPERTIES.get(p['pos'], {"name": "Safe Square", "type": "Safe"})
-    msg = f"{p['name']} rolled {roll} -> {sq['name']}. "
+
+    # Dice Roll with Doubles Detection
+    d1 = random.randint(1, 6)
+    d2 = random.randint(1, 6)
+    roll_sum = d1 + d2
+    is_double = (d1 == d2)
     
-    if sq['type'] in ["Street", "Railroad", "Utility"]:
-        owner = st.session_state.ownership.get(p['pos'], "Bank")
-        if owner != "Bank" and owner != p['name']:
-            rent = get_rent(p['pos'], roll)
-            p['cash'] -= rent
-            for op in st.session_state.players:
-                if op['name'] == owner:
-                    op['cash'] += rent
-            msg += f"Paid ${rent} rent."
-    elif sq['type'] == "Tax":
-        tax = sq.get('cost', 100)
-        p['cash'] -= tax
-        msg += f"Paid ${tax} tax."
-    elif sq['type'] == "Action":
-        if p['pos'] == 30:
-            p['pos'] = 10
-            msg += "Go To Jail!"
+    if is_double:
+        st.session_state.double_count += 1
+    else:
+        st.session_state.double_count = 0
+
+    # Jail Penalty for 3 Doubles
+    if st.session_state.double_count >= 3:
+        p['pos'] = 10
+        msg = f"{p['name']} rolled doubles for the 3rd time! Go to Jail! 🚔"
+        st.session_state.double_count = 0
+        st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+    else:
+        p['pos'] = (p['pos'] + roll_sum) % 40
+        sq = PROPERTIES.get(p['pos'])
+        double_text = " (DOUBLES!)" if is_double else ""
+        msg = f"{p['name']} rolled {d1}+{d2}={roll_sum}{double_text} -> {sq['name']}. "
+        
+        if sq['type'] in ["Street", "Railroad", "Utility"]:
+            owner = st.session_state.ownership.get(p['pos'], "Bank")
+            if owner != "Bank" and owner != p['name']:
+                rent = get_rent(p['pos'], roll_sum)
+                p['cash'] -= rent
+                for op in st.session_state.players:
+                    if op['name'] == owner: op['cash'] += rent
+                msg += f"Paid ${rent} rent."
+        elif sq['type'] == "Tax":
+            tax = sq.get('cost', 100)
+            p['cash'] -= tax
+            msg += f"Paid ${tax} tax."
+        elif sq['type'] == "Action":
+            if p['pos'] == 30:
+                p['pos'] = 10
+                msg += "Go To Jail!"
+                st.session_state.double_count = 0
+            else:
+                msg += draw_card(p, sq.get('deck', 'chance'))
+        elif p['pos'] == 0:
+            p['cash'] += 200
+            msg += "Passed GO +$200."
+
+        # Advancement Logic
+        if not is_double:
+            st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         else:
-            msg += draw_card(p, sq.get('deck', 'chance'))
-    elif p['pos'] == 0:
-        p['cash'] += 200
-        msg += "Passed GO +$200."
-    
+            msg += " Roll again!"
+
     if not silent:
         st.session_state.last_move = msg
     st.session_state.turn_count += 1
-    st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
     return p['cash'] < 0
 
 #--- PHASE 1: INIT ---
@@ -316,20 +343,15 @@ elif st.session_state.phase == "LIVE":
     bottom_row = list(range(10, -1, -1))
     left_col = list(range(19, 10, -1))
 
-    # Token Gutter: Top Row
     cols_top = st.columns([1] + [1]*11 + [1])
     for i, cell in enumerate(top_row):
         cols_top[i+1].write(board_markers[cell])
 
-    # Main Board Construction
     for r_idx in range(11):
         cols = st.columns([1] + [1]*11 + [1])
-        
-        # Token Gutter: Left Sidebar
         if 1 <= r_idx <= 9:
             cols[0].write(board_markers[left_col[r_idx-1]])
         
-        # Board Cell Data
         row_data = []
         if r_idx == 0: row_data = top_row
         elif r_idx == 10: row_data = bottom_row
@@ -346,7 +368,6 @@ elif st.session_state.phase == "LIVE":
                     if r_idx == 10:
                         st.write(board_markers[cell])
         
-        # Token Gutter: Right Sidebar
         if 1 <= r_idx <= 9:
             cols[12].write(board_markers[right_col[r_idx-1]])
 
@@ -358,7 +379,6 @@ elif st.session_state.phase == "LIVE":
     with lc2:
         jump_val = st.number_input("Turn Jump", 1, 1000000, 100, label_visibility="collapsed")
         if st.button(f"Jump {jump_val} Turns"):
-            st.session_state.last_move = f"Fast-forwarded {jump_val} turns."
             for _ in range(jump_val):
                 if run_turn(silent=True): break
             st.rerun()
