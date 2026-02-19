@@ -59,7 +59,7 @@ CHANCE_DECK = [
     {"text": "Advance to nearest Utility", "effect": "move_nearest_util"},
     {"text": "Advance to nearest Railroad", "effect": "move_nearest_rr"},
     {"text": "Bank pays dividend $50", "effect": "cash", "amt": 50},
-    {"text": "Get Out of Jail Free", "effect": "noop"},
+    {"text": "Get Out of Jail Free", "effect": "goo_card"},
     {"text": "Go Back 3 Spaces", "effect": "move_relative", "amt": -3},
     {"text": "Go to Jail", "effect": "move", "pos": 10},
     {"text": "General repairs: $25/house, $100/hotel", "effect": "repairs", "h": 25, "H": 100},
@@ -76,7 +76,7 @@ CHEST_DECK = [
     {"text": "Bank error in your favor. Collect $200", "effect": "cash", "amt": 200},
     {"text": "Doctor's fee. Pay $50", "effect": "cash", "amt": -50},
     {"text": "From sale of stock get $50", "effect": "cash", "amt": 50},
-    {"text": "Get Out of Jail Free", "effect": "noop"},
+    {"text": "Get Out of Jail Free", "effect": "goo_card"},
     {"text": "Go to Jail", "effect": "move", "pos": 10},
     {"text": "Holiday fund matures. Receive $100", "effect": "cash", "amt": 100},
     {"text": "Income tax refund. Collect $20", "effect": "cash", "amt": 20},
@@ -114,8 +114,11 @@ if "phase" not in st.session_state:
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
     st.session_state.double_count = 0
-    c = list(range(16)); random.shuffle(c); st.session_state.c_deck_idx = c
-    ch = list(range(16)); random.shuffle(ch); st.session_state.ch_deck_idx = ch
+    # Decks are now lists of indices available to be drawn
+    st.session_state.c_deck_idx = list(range(16))
+    random.shuffle(st.session_state.c_deck_idx)
+    st.session_state.ch_deck_idx = list(range(16))
+    random.shuffle(st.session_state.ch_deck_idx)
 
 def reset_lab():
     for k in list(st.session_state.keys()):
@@ -143,33 +146,48 @@ def get_rent(pid, roll=0):
 def draw_card(p, deck_type):
     if deck_type == "chance":
         idx = st.session_state.c_deck_idx.pop(0)
-        st.session_state.c_deck_idx.append(idx)
         card = CHANCE_DECK[idx]
         name = "Chance"
     else:
         idx = st.session_state.ch_deck_idx.pop(0)
-        st.session_state.ch_deck_idx.append(idx)
         card = CHEST_DECK[idx]
         name = "Community Chest"
     
     if card['effect'] == "move":
         p['pos'] = card['pos']
+        if deck_type == "chance": st.session_state.c_deck_idx.append(idx)
+        else: st.session_state.ch_deck_idx.append(idx)
     elif card['effect'] == "move_relative":
         p['pos'] = (p['pos'] + card['amt']) % 40
+        if deck_type == "chance": st.session_state.c_deck_idx.append(idx)
+        else: st.session_state.ch_deck_idx.append(idx)
     elif card['effect'] == "cash":
         p['cash'] += card['amt']
+        if deck_type == "chance": st.session_state.c_deck_idx.append(idx)
+        else: st.session_state.ch_deck_idx.append(idx)
     elif card['effect'] == "birthday":
         for op in st.session_state.players:
             if op['name'] != p['name']:
                 op['cash'] -= card['amt']
                 p['cash'] += card['amt']
+        if deck_type == "chance": st.session_state.c_deck_idx.append(idx)
+        else: st.session_state.ch_deck_idx.append(idx)
     elif card['effect'] == "repairs":
         cost = sum((st.session_state.houses[pid]*(card['H'] if st.session_state.houses[pid]==5 else card['h'])) for pid in st.session_state.houses if st.session_state.ownership.get(pid) == p['name'])
         p['cash'] -= cost
+        if deck_type == "chance": st.session_state.c_deck_idx.append(idx)
+        else: st.session_state.ch_deck_idx.append(idx)
     elif card['effect'] == "move_nearest_rr":
         p['pos'] = min([r for r in [5,15,25,35] if r > p['pos']] or [5])
+        if deck_type == "chance": st.session_state.c_deck_idx.append(idx)
+        else: st.session_state.ch_deck_idx.append(idx)
     elif card['effect'] == "move_nearest_util":
         p['pos'] = min([u for u in [12,28] if u > p['pos']] or [12])
+        if deck_type == "chance": st.session_state.c_deck_idx.append(idx)
+        else: st.session_state.ch_deck_idx.append(idx)
+    elif card['effect'] == "goo_card":
+        p['goo_cards'].append({"deck": deck_type, "index": idx})
+        # NOTE: Card is NOT added back to index list while held by player
     return f"drew {name}: '{card['text']}'"
 
 def run_turn(silent=False):
@@ -180,7 +198,7 @@ def run_turn(silent=False):
         st.session_state.double_count = 0
         return False
 
-    # Dice Roll with Doubles Detection
+    # Dice Roll
     d1 = random.randint(1, 6)
     d2 = random.randint(1, 6)
     roll_sum = d1 + d2
@@ -191,7 +209,7 @@ def run_turn(silent=False):
     else:
         st.session_state.double_count = 0
 
-    # Jail Penalty for 3 Doubles
+    # Speeding Rule
     if st.session_state.double_count >= 3:
         p['pos'] = 10
         msg = f"{p['name']} rolled doubles for the 3rd time! Go to Jail! 🚔"
@@ -226,7 +244,6 @@ def run_turn(silent=False):
             p['cash'] += 200
             msg += "Passed GO +$200."
 
-        # Advancement Logic
         if not is_double:
             st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         else:
@@ -249,50 +266,46 @@ if st.session_state.phase == "INIT":
         temp_names.append(name)
     if st.button("Continue to Mode Selection"):
         st.session_state.p_names = temp_names
-        st.session_state.players = [{"name": n, "cash": 1500, "pos": 0} for n in temp_names]
+        st.session_state.players = [{"name": n, "cash": 1500, "pos": 0, "goo_cards": []} for n in temp_names]
         st.session_state.phase = "CHOICE"
         st.rerun()
 
 #--- PHASE 2: CHOICE ---
 elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Mode Select")
-    st.write("Would you like to start a fresh game or customize property ownership and cash first?")
     c1, c2 = st.columns(2)
-    if c1.button("Standard Simulation (All Fresh)"):
+    if c1.button("Standard Simulation"):
         st.session_state.phase = "LIVE"
         st.rerun()
-    if c2.button("Customization (Setup Scenario)"):
+    if c2.button("Customization"):
         st.session_state.phase = "SETUP"
-        st.rerun()
-    if st.button("← Back to Player Names"):
-        st.session_state.phase = "INIT"
         st.rerun()
 
 #--- PHASE 3: SETUP ---
 elif st.session_state.phase == "SETUP":
     st.title("🏗️ Customization")
     t1, t2, t3 = st.tabs(["Properties Owned", "Houses Built", "Cash"])
-    player_names = [p['name'] for p in st.session_state.players]
+    p_names = [p['name'] for p in st.session_state.players]
 
     with t1:
         for color, pids in COLOR_GROUPS.items():
             for pid in pids:
                 st.markdown(f'<div style="background:{COLOR_MAP[color]}; height:4px; border-radius:2px;"></div>', unsafe_allow_html=True)
-                cols = st.columns([2] + [1]*len(player_names))
+                cols = st.columns([2] + [1]*len(p_names))
                 cols[0].write(PROPERTIES[pid]['name'])
-                for i, p_name in enumerate(player_names):
-                    is_owner = (st.session_state.ownership[pid] == p_name)
-                    if cols[i+1].button(p_name, key=f"own_{pid}{p_name}", type="primary" if is_owner else "secondary"):
-                        st.session_state.ownership[pid] = "Bank" if is_owner else p_name
+                for i, p_n in enumerate(p_names):
+                    is_own = (st.session_state.ownership[pid] == p_n)
+                    if cols[i+1].button(p_n, key=f"o_{pid}{p_n}", type="primary" if is_own else "secondary"):
+                        st.session_state.ownership[pid] = "Bank" if is_own else p_n
                         st.rerun()
         for pid in RAILROADS + UTILITIES:
             st.markdown(f'<div style="background:#000; height:4px; border-radius:2px;"></div>', unsafe_allow_html=True)
-            cols = st.columns([2] + [1]*len(player_names))
+            cols = st.columns([2] + [1]*len(p_names))
             cols[0].write(PROPERTIES[pid]['name'])
-            for i, p_name in enumerate(player_names):
-                is_owner = (st.session_state.ownership[pid] == p_name)
-                if cols[i+1].button(p_name, key=f"own{pid}_{p_name}", type="primary" if is_owner else "secondary"):
-                    st.session_state.ownership[pid] = "Bank" if is_owner else p_name
+            for i, p_n in enumerate(p_names):
+                is_own = (st.session_state.ownership[pid] == p_n)
+                if cols[i+1].button(p_n, key=f"o{pid}_{p_n}", type="primary" if is_own else "secondary"):
+                    st.session_state.ownership[pid] = "Bank" if is_own else p_n
                     st.rerun()
 
     with t2:
@@ -312,11 +325,8 @@ elif st.session_state.phase == "SETUP":
 
     with t3:
         for i, p in enumerate(st.session_state.players):
-            p['cash'] = st.number_input(f"Starting cash for {p['name']}", value=int(p['cash']), step=10, key=f"cash_in_{i}")
+            p['cash'] = st.number_input(f"Cash for {p['name']}", value=int(p['cash']), step=10, key=f"ci_{i}")
 
-    if st.button("← Back to Selection"):
-        st.session_state.phase = "CHOICE"
-        st.rerun()
     if st.button("🚀 Start Live Lab"):
         st.session_state.phase = "LIVE"
         st.rerun()
@@ -326,6 +336,8 @@ elif st.session_state.phase == "LIVE":
     st.sidebar.title("📊 Ledger")
     for p in st.session_state.players:
         with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
+            if p['goo_cards']:
+                st.warning(f"🎟️ {len(p['goo_cards'])} Get Out of Jail Free Card(s)")
             for color, pids in COLOR_GROUPS.items():
                 owned = [pid for pid in pids if st.session_state.ownership[pid] == p['name']]
                 if owned:
@@ -349,14 +361,8 @@ elif st.session_state.phase == "LIVE":
 
     for r_idx in range(11):
         cols = st.columns([1] + [1]*11 + [1])
-        if 1 <= r_idx <= 9:
-            cols[0].write(board_markers[left_col[r_idx-1]])
-        
-        row_data = []
-        if r_idx == 0: row_data = top_row
-        elif r_idx == 10: row_data = bottom_row
-        else: row_data = [left_col[r_idx-1]] + [""]*9 + [right_col[r_idx-1]]
-        
+        if 1 <= r_idx <= 9: cols[0].write(board_markers[left_col[r_idx-1]])
+        row_data = top_row if r_idx == 0 else (bottom_row if r_idx == 10 else [left_col[r_idx-1]] + [""]*9 + [right_col[r_idx-1]])
         for c_idx, cell in enumerate(row_data):
             target_col = cols[c_idx + 1]
             if cell != "":
@@ -365,11 +371,8 @@ elif st.session_state.phase == "LIVE":
                 with target_col.container():
                     st.markdown(f'<div style="background:{bg}; height:10px; border:0.5px solid #000;"></div>', unsafe_allow_html=True)
                     st.caption(sq['name'][:10])
-                    if r_idx == 10:
-                        st.write(board_markers[cell])
-        
-        if 1 <= r_idx <= 9:
-            cols[12].write(board_markers[right_col[r_idx-1]])
+                    if r_idx == 10: st.write(board_markers[cell])
+        if 1 <= r_idx <= 9: cols[12].write(board_markers[right_col[r_idx-1]])
 
     st.markdown("---")
     lc1, lc2 = st.columns([1, 2])
@@ -387,5 +390,3 @@ elif st.session_state.phase == "LIVE":
         st.info(st.session_state.last_move)
     if st.sidebar.button("RESET SIMULATION"):
         reset_lab()
-
-# END OF CODE
