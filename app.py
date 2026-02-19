@@ -5,7 +5,7 @@ import random
 COLOR_MAP = {
     "Brown": "#955436", "Light Blue": "#AAE0FA", "Pink": "#D93A96", "Orange": "#F7941D",
     "Red": "#ED1B24", "Yellow": "#FEF200", "Green": "#1FB25A", "Dark Blue": "#0072BB",
-    "Railroad": "#000000", "Utility": "#BDBDBD"
+    "Railroad": "#000000", "Utility": "#808080"
 }
 
 #Full Property and Special Square Data
@@ -40,7 +40,7 @@ PROPERTIES = {
     27: {"name": "Ventnor Ave", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
     28: {"name": "Water Works", "type": "Utility", "color": "Utility", "rent": [4, 10]},
     29: {"name": "Marvin Gardens", "type": "Street", "color": "Yellow", "rent": [24, 120, 360, 850, 1025, 1200]},
-    30: {"name": "Go To Jail", "type": "Action", "deck": "jail"},
+    30: {"name": "Go To Jail", "type": "Action"},
     31: {"name": "Pacific Ave", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
     32: {"name": "North Carolina Ave", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
     33: {"name": "Community Chest", "type": "Action", "deck": "chest"},
@@ -52,47 +52,11 @@ PROPERTIES = {
     39: {"name": "Boardwalk", "type": "Street", "color": "Dark Blue", "rent": [50, 200, 600, 1400, 1700, 2000]}
 }
 
-#Classic 16-card Chance Deck
-CHANCE_DECK_DATA = [
-    {"text": "Advance to GO", "effect": "move", "pos": 0},
-    {"text": "Advance to Illinois Ave", "effect": "move", "pos": 24},
-    {"text": "Advance to St. Charles Place", "effect": "move", "pos": 11},
-    {"text": "Advance to nearest Utility", "effect": "move_nearest_util"},
-    {"text": "Advance to nearest Railroad", "effect": "move_nearest_rr"},
-    {"text": "Bank pays you dividend of $50", "effect": "cash", "amt": 50},
-    {"text": "Get Out of Jail Free", "effect": "noop"},
-    {"text": "Go Back 3 Spaces", "effect": "move_relative", "amt": -3},
-    {"text": "Go to Jail", "effect": "move", "pos": 10},
-    {"text": "General repairs: $25/house, $100/hotel", "effect": "repairs", "h": 25, "H": 100},
-    {"text": "Speeding fine $15", "effect": "cash", "amt": -15},
-    {"text": "Take a trip to Reading Railroad", "effect": "move", "pos": 5},
-    {"text": "Advance to Boardwalk", "effect": "move", "pos": 39},
-    {"text": "Elected Chairman. Pay each player $50", "effect": "birthday", "amt": -50},
-    {"text": "Building loan matures. Collect $150", "effect": "cash", "amt": 150},
-    {"text": "Won crossword competition. Collect $100", "effect": "cash", "amt": 100}
-]
+#Decks
+CHANCE_DECK_DATA = [{"text": "Advance to GO", "effect": "move", "pos": 0}, {"text": "Advance to Illinois Ave", "effect": "move", "pos": 24}, {"text": "Advance to St. Charles Place", "effect": "move", "pos": 11}, {"text": "Advance to nearest Utility", "effect": "move_nearest_util"}, {"text": "Advance to nearest Railroad", "effect": "move_nearest_rr"}, {"text": "Bank pays dividend $50", "effect": "cash", "amt": 50}, {"text": "Get Out of Jail Free", "effect": "noop"}, {"text": "Go Back 3 Spaces", "effect": "move_relative", "amt": -3}, {"text": "Go to Jail", "effect": "move", "pos": 10}, {"text": "General repairs: $25/house, $100/hotel", "effect": "repairs", "h": 25, "H": 100}, {"text": "Speeding fine $15", "effect": "cash", "amt": -15}, {"text": "Trip to Reading Railroad", "effect": "move", "pos": 5}, {"text": "Advance to Boardwalk", "effect": "move", "pos": 39}, {"text": "Elected Chairman. Pay each player $50", "effect": "birthday", "amt": -50}, {"text": "Building loan matures. Collect $150", "effect": "cash", "amt": 150}, {"text": "Crossword competition prize. Collect $100", "effect": "cash", "amt": 100}]
+CHEST_DECK_DATA = [{"text": "Advance to GO", "effect": "move", "pos": 0}, {"text": "Bank error $200", "effect": "cash", "amt": 200}, {"text": "Doctor's fee. Pay $50", "effect": "cash", "amt": -50}, {"text": "From sale of stock get $50", "effect": "cash", "amt": 50}, {"text": "Get Out of Jail Free", "effect": "noop"}, {"text": "Go to Jail", "effect": "move", "pos": 10}, {"text": "Holiday fund matures. Receive $100", "effect": "cash", "amt": 100}, {"text": "Income tax refund. Collect $20", "effect": "cash", "amt": 20}, {"text": "Birthday. Collect $10 from every player", "effect": "birthday", "amt": 10}, {"text": "Life insurance matures. Collect $100", "effect": "cash", "amt": 100}, {"text": "Hospital Fees. Pay $100", "effect": "cash", "amt": -100}, {"text": "School fees. Pay $50", "effect": "cash", "amt": -50}, {"text": "Consultancy fee. Collect $25", "effect": "cash", "amt": 25}, {"text": "Street repairs: $40/house, $115/hotel", "effect": "repairs", "h": 40, "H": 115}, {"text": "Beauty contest prize. Collect $10", "effect": "cash", "amt": 10}, {"text": "You inherit $100", "effect": "cash", "amt": 100}]
 
-#Classic 16-card Community Chest Deck
-CHEST_DECK_DATA = [
-    {"text": "Advance to GO", "effect": "move", "pos": 0},
-    {"text": "Bank error in your favor. Collect $200", "effect": "cash", "amt": 200},
-    {"text": "Doctor's fee. Pay $50", "effect": "cash", "amt": -50},
-    {"text": "From sale of stock you get $50", "effect": "cash", "amt": 50},
-    {"text": "Get Out of Jail Free", "effect": "noop"},
-    {"text": "Go to Jail", "effect": "move", "pos": 10},
-    {"text": "Holiday Fund matures. Receive $100", "effect": "cash", "amt": 100},
-    {"text": "Income tax refund. Collect $20", "effect": "cash", "amt": 20},
-    {"text": "Birthday. Collect $10 from every player", "effect": "birthday", "amt": 10},
-    {"text": "Life insurance matures. Collect $100", "effect": "cash", "amt": 100},
-    {"text": "Hospital Fees. Pay $100", "effect": "cash", "amt": -100},
-    {"text": "School fees. Pay $50", "effect": "cash", "amt": -50},
-    {"text": "Receive $25 consultancy fee", "effect": "cash", "amt": 25},
-    {"text": "Street repairs: $40/house, $115/hotel", "effect": "repairs", "h": 40, "H": 115},
-    {"text": "Won beauty contest. Collect $10", "effect": "cash", "amt": 10},
-    {"text": "You inherit $100", "effect": "cash", "amt": 100}
-]
-
-#Grouping Logic
+#Groups
 COLOR_GROUPS = {}
 RAILROADS, UTILITIES = [], []
 for pid, info in PROPERTIES.items():
@@ -100,7 +64,6 @@ for pid, info in PROPERTIES.items():
     elif info.get('type') == "Railroad": RAILROADS.append(pid)
     elif info.get('type') == "Utility": UTILITIES.append(pid)
 
-#State Management
 if "phase" not in st.session_state:
     st.session_state.phase = "INIT"
     st.session_state.p_count = 2
@@ -134,29 +97,26 @@ def get_rent(pid, roll=0):
         return (4 if count == 1 else 10) * roll
     return 0
 
-def draw_card(player, deck_type):
+def draw_card(p, deck_type):
     if deck_type == "chance":
         i = st.session_state.c_deck.pop(0); st.session_state.c_deck.append(i)
         card = CHANCE_DECK_DATA[i]; name = "Chance"
     else:
         i = st.session_state.ch_deck.pop(0); st.session_state.ch_deck.append(i)
         card = CHEST_DECK_DATA[i]; name = "Community Chest"
-    
-    if card['effect'] == "move": player['pos'] = card['pos']
-    elif card['effect'] == "move_relative": player['pos'] = (player['pos'] + card['amt']) % 40
-    elif card['effect'] == "cash": player['cash'] += card['amt']
+    if card['effect'] == "move": p['pos'] = card['pos']
+    elif card['effect'] == "move_relative": p['pos'] = (p['pos'] + card['amt']) % 40
+    elif card['effect'] == "cash": p['cash'] += card['amt']
     elif card['effect'] == "birthday":
-        for p in st.session_state.players:
-            if p['name'] != player['name']: p['cash'] -= card['amt']; player['cash'] += card['amt']
+        for op in st.session_state.players:
+            if op['name'] != p['name']: op['cash'] -= card['amt']; p['cash'] += card['amt']
     elif card['effect'] == "repairs":
-        cost = sum((st.session_state.houses[pid]*(card['H'] if st.session_state.houses[pid]==5 else card['h'])) for pid in st.session_state.houses if st.session_state.ownership.get(pid) == player['name'])
-        player['cash'] -= cost
+        cost = sum((st.session_state.houses[pid]*(card['H'] if st.session_state.houses[pid]==5 else card['h'])) for pid in st.session_state.houses if st.session_state.ownership.get(pid) == p['name'])
+        p['cash'] -= cost
     elif card['effect'] == "move_nearest_rr":
-        rrs = [5, 15, 25, 35]
-        player['pos'] = min([r for r in rrs if r > player['pos']] or [5])
+        p['pos'] = min([r for r in [5,15,25,35] if r > p['pos']] or [5])
     elif card['effect'] == "move_nearest_util":
-        utils = [12, 28]
-        player['pos'] = min([u for u in utils if u > player['pos']] or [12])
+        p['pos'] = min([u for u in [12,28] if u > p['pos']] or [12])
     return f"drew {name}: '{card['text']}'"
 
 def run_turn():
@@ -168,41 +128,31 @@ def run_turn():
     p['pos'] = (p['pos'] + roll) % 40
     sq = PROPERTIES.get(p['pos'], {"name": "Safe Square", "type": "Safe"})
     msg = f"{p['name']} rolled {roll} -> {sq['name']}. "
-    
     if sq['type'] in ["Street", "Railroad", "Utility"]:
         owner = st.session_state.ownership.get(p['pos'], "Bank")
         if owner != "Bank" and owner != p['name']:
-            rent = get_rent(p['pos'], roll)
-            p['cash'] -= rent
+            rent = get_rent(p['pos'], roll); p['cash'] -= rent
             for op in st.session_state.players:
                 if op['name'] == owner: op['cash'] += rent
             msg += f"Paid ${rent} rent."
-    elif sq['type'] == "Tax":
-        p['cash'] -= sq['cost']
-        msg += f"Paid ${sq['cost']} {sq['name']}."
+    elif sq['type'] == "Tax": p['cash'] -= sq['cost']; msg += f"Paid ${sq['cost']} tax."
     elif sq['type'] == "Action":
-        if p['pos'] == 30: p['pos'] = 10; msg += "Go to Jail!"
-        else: msg += draw_card(p, sq['deck'])
-    elif p['pos'] == 0:
-        p['cash'] += 200; msg += "Passed GO +$200."
-    
+        if p['pos'] == 30: p['pos'] = 10; msg += "Go To Jail!"
+        else: msg += draw_card(p, sq.get('deck', 'chance'))
+    elif p['pos'] == 0: p['cash'] += 200; msg += "Passed GO +$200."
     st.session_state.log.insert(0, f"T{st.session_state.turn_count}: {msg}")
     st.session_state.turn_count += 1
     st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
     return p['cash'] < 0
 
-#--- UI LOGIC ---
+#UI
 if st.session_state.phase == "INIT":
     st.title("🎲 Monopoly Stats Lab")
-    st.session_state.p_count = st.number_input("How many players?", 1, 8, st.session_state.p_count)
-    
-    # Pre-fill logic for names
+    st.session_state.p_count = st.number_input("Players", 1, 8, st.session_state.p_count)
     if not st.session_state.p_names or len(st.session_state.p_names) != st.session_state.p_count:
         st.session_state.p_names = [f"Student {chr(65+i)}" for i in range(st.session_state.p_count)]
-    
     for i in range(st.session_state.p_count):
-        st.session_state.p_names[i] = st.text_input(f"Player {i+1} Name", st.session_state.p_names[i], key=f"n_{i}")
-    
+        st.session_state.p_names[i] = st.text_input(f"P{i+1}", st.session_state.p_names[i], key=f"n_{i}")
     if st.button("Continue"):
         st.session_state.players = [{"name": n, "cash": 1500, "pos": 0} for n in st.session_state.p_names]
         st.session_state.phase = "CHOICE"; st.rerun()
@@ -211,50 +161,50 @@ elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Mode Select")
     c1, c2 = st.columns(2)
     if c1.button("Standard Simulation"): st.session_state.phase = "LIVE"; st.rerun()
-    if c2.button("Customization (God Mode)"): st.session_state.phase = "SETUP"; st.rerun()
-    st.markdown("---")
-    if st.button("← Back to Player Setup"): st.session_state.phase = "INIT"; st.rerun()
+    if c2.button("Customization"): st.session_state.phase = "SETUP"; st.rerun()
+    if st.button("← Back to Players"): st.session_state.phase = "INIT"; st.rerun()
 
 elif st.session_state.phase == "SETUP":
-    st.title("🏗️ Customization Interface")
+    st.title("🏗️ Customization")
     t1, t2, t3 = st.tabs(["Properties Owned", "Houses Built", "Cash"])
     opts = ["Bank"] + [p['name'] for p in st.session_state.players]
 
     with t1:
         for color, pids in COLOR_GROUPS.items():
-            st.markdown(f'<div style="background:{COLOR_MAP[color]}; padding:10px; border-radius:5px; color:black; margin-bottom:5px;"><b>{color} Set</b></div>', unsafe_allow_html=True)
-            # Bulk radio
-            bulk = st.radio(f"Assign all {color} to:", opts, horizontal=True, key=f"bulk_{color}")
-            if bulk != st.session_state.ownership[pids[0]]:
-                for pid in pids: st.session_state.ownership[pid] = bulk
-            # Individual radios
+            st.markdown(f'<div style="background:{COLOR_MAP[color]}; padding:5px; border-radius:5px; color:black; margin-top:10px;"><b>{color} Set</b></div>', unsafe_allow_html=True)
             for pid in pids:
                 st.session_state.ownership[pid] = st.radio(PROPERTIES[pid]['name'], opts, index=opts.index(st.session_state.ownership[pid]), horizontal=True, key=f"o_{pid}")
-        st.markdown("---")
-        st.write("Railroads & Utilities")
-        for pid in (RAILROADS + UTILITIES):
-            st.session_state.ownership[pid] = st.radio(PROPERTIES[pid]['name'], opts, index=opts.index(st.session_state.ownership[pid]), horizontal=True, key=f"o_{pid}")
+        st.markdown(f'<div style="background:{COLOR_MAP["Railroad"]}; padding:5px; border-radius:5px; color:white; margin-top:10px;"><b>Railroads</b></div>', unsafe_allow_html=True)
+        for pid in RAILROADS:
+            st.session_state.ownership[pid] = st.radio(PROPERTIES[pid]['name'], opts, index=opts.index(st.session_state.ownership[pid]), horizontal=True, key=f"r_{pid}")
+        st.markdown(f'<div style="background:{COLOR_MAP["Utility"]}; padding:5px; border-radius:5px; color:white; margin-top:10px;"><b>Utilities</b></div>', unsafe_allow_html=True)
+        for pid in UTILITIES:
+            st.session_state.ownership[pid] = st.radio(PROPERTIES[pid]['name'], opts, index=opts.index(st.session_state.ownership[pid]), horizontal=True, key=f"u_{pid}")
 
     with t2:
         for color, pids in COLOR_GROUPS.items():
             owners = [st.session_state.ownership[p] for p in pids]
             if len(set(owners)) == 1 and owners[0] != "Bank":
-                st.markdown(f'<div style="border-left: 10px solid {COLOR_MAP[color]}; padding-left:10px;"><b>{color} Group ({owners[0]})</b></div>', unsafe_allow_html=True)
-                total_h = st.number_input(f"Total houses for {color}", 0, len(pids)*5, sum(st.session_state.houses[p] for p in pids), key=f"h_total_{color}")
-                if st.button(f"Apply Even Build: {color}", key=f"h_btn_{color}"):
-                    base = total_h // len(pids); extra = total_h % len(pids)
-                    for i, pid in enumerate(pids): st.session_state.houses[pid] = base + (1 if i < extra else 0)
-                    st.rerun()
-            else: st.caption(f"{color} group must be owned by one player to build.")
+                st.markdown(f'<div style="border-left: 10px solid {COLOR_MAP[color]}; padding-left:10px;"><b>{color} ({owners[0]})</b></div>', unsafe_allow_html=True)
+                for pid in pids:
+                    h_counts = [st.session_state.houses[p] for p in pids]
+                    c1, c2, c3 = st.columns([3, 1, 1])
+                    c1.write(PROPERTIES[pid]['name'])
+                    # Even build subtraction: can only subtract if current count is the maximum in the set
+                    if c2.button("➖", key=f"m_{pid}", disabled=st.session_state.houses[pid] == 0 or st.session_state.houses[pid] < max(h_counts)):
+                        st.session_state.houses[pid] -= 1; st.rerun()
+                    c2.write(f"{st.session_state.houses[pid]}")
+                    # Even build addition: can only add if current count is the minimum in the set
+                    if c3.button("➕", key=f"p_{pid}", disabled=st.session_state.houses[pid] == 5 or st.session_state.houses[pid] > min(h_counts)):
+                        st.session_state.houses[pid] += 1; st.rerun()
 
     with t3:
         for i, p in enumerate(st.session_state.players):
-            p['cash'] = st.number_input(f"{p['name']} Cash ($)", value=int(p['cash']), key=f"cash_input_{i}")
-
+            p['cash'] = st.number_input(f"{p['name']} Cash ($)", value=int(p['cash']), key=f"c_in_{i}")
     st.markdown("---")
     sc1, sc2 = st.columns([1,4])
     if sc1.button("← Back"): st.session_state.phase = "CHOICE"; st.rerun()
-    if sc2.button("🚀 Start Simulation"): st.session_state.phase = "LIVE"; st.rerun()
+    if sc2.button("🚀 Start"): st.session_state.phase = "LIVE"; st.rerun()
 
 elif st.session_state.phase == "LIVE":
     st.sidebar.title("📊 Ledger")
@@ -265,14 +215,15 @@ elif st.session_state.phase == "LIVE":
                 if owned:
                     h_list = [f"{PROPERTIES[pid]['name']} ({st.session_state.houses[pid]}🏠)" for pid in owned]
                     st.write(f"{color}: " + ", ".join(h_list))
-    if st.sidebar.button("RESET LAB"): reset_lab()
-    
+    if st.sidebar.button("RESET"): reset_lab()
     lc1, lc2 = st.columns([1, 2])
     if lc1.button("Next Turn"): run_turn(); st.rerun()
     with lc2:
         jump = st.number_input("Jump", 1, 1000, 100, label_visibility="collapsed")
-        if st.button(f"Jump {jump} Turns"):
+        if st.button(f"Jump {jump}"):
             for _ in range(jump):
                 if run_turn(): break
             st.rerun()
     st.code("\n".join(st.session_state.log[:15]))
+
+# END OF CODE
