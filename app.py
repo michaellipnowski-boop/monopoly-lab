@@ -368,4 +368,3 @@ elif st.session_state.phase == "LIVE":
 
     if st.session_state.last_move: st.info(st.session_state.last_move)
     if st.sidebar.button("RESET"): reset_lab()
-Would you like to move on to the Bankruptcy and Auction system, or should we refine the Visual Board to show house counts directly on the tiles?
