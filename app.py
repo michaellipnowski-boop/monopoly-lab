@@ -11,8 +11,8 @@ COLOR_MAP = {
 #Complete Property and Square Data
 PROPERTIES = {
     0: {"name": "GO", "type": "Safe"},
-    1: {"name": "Med. Ave", "type": "Street", "color": "Brown", "rent": [2, 10, 30, 90, 160, 250]},
-    2: {"name": "Chest", "type": "Action", "deck": "chest"},
+    1: {"name": "Mediterranean", "type": "Street", "color": "Brown", "rent": [2, 10, 30, 90, 160, 250]},
+    2: {"name": "Comm. Chest", "type": "Action", "deck": "chest"},
     3: {"name": "Baltic Ave", "type": "Street", "color": "Brown", "rent": [4, 20, 60, 180, 320, 450]},
     4: {"name": "Income Tax", "type": "Tax", "cost": 200},
     5: {"name": "Reading RR", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
@@ -26,24 +26,24 @@ PROPERTIES = {
     13: {"name": "States Ave", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750]},
     14: {"name": "Virginia Ave", "type": "Street", "color": "Pink", "rent": [12, 60, 180, 500, 700, 900]},
     15: {"name": "Penn. RR", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
-    16: {"name": "St. James", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950]},
-    17: {"name": "Chest", "type": "Action", "deck": "chest"},
+    16: {"name": "St. James Pl", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950]},
+    17: {"name": "Comm. Chest", "type": "Action", "deck": "chest"},
     18: {"name": "Tenn. Ave", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950]},
-    19: {"name": "NY Ave", "type": "Street", "color": "Orange", "rent": [16, 80, 220, 600, 800, 1000]},
+    19: {"name": "New York Ave", "type": "Street", "color": "Orange", "rent": [16, 80, 220, 600, 800, 1000]},
     20: {"name": "Free Parking", "type": "Safe"},
-    21: {"name": "Kentucky", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050]},
+    21: {"name": "Kentucky Ave", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050]},
     22: {"name": "Chance", "type": "Action", "deck": "chance"},
-    23: {"name": "Indiana", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050]},
-    24: {"name": "Illinois", "type": "Street", "color": "Red", "rent": [20, 100, 300, 750, 925, 1100]},
+    23: {"name": "Indiana Ave", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050]},
+    24: {"name": "Illinois Ave", "type": "Street", "color": "Red", "rent": [20, 100, 300, 750, 925, 1100]},
     25: {"name": "B. & O. RR", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
-    26: {"name": "Atlantic", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
-    27: {"name": "Ventnor", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
+    26: {"name": "Atlantic Ave", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
+    27: {"name": "Ventnor Ave", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150]},
     28: {"name": "Water Works", "type": "Utility", "color": "Utility", "rent": [4, 10]},
     29: {"name": "Marvin Gard.", "type": "Street", "color": "Yellow", "rent": [24, 120, 360, 850, 1025, 1200]},
     30: {"name": "Go To Jail", "type": "Action"},
-    31: {"name": "Pacific", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
+    31: {"name": "Pacific Ave", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
     32: {"name": "N. Carolina", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275]},
-    33: {"name": "Chest", "type": "Action", "deck": "chest"},
+    33: {"name": "Comm. Chest", "type": "Action", "deck": "chest"},
     34: {"name": "Penn. Ave", "type": "Street", "color": "Green", "rent": [28, 150, 450, 1000, 1200, 1400]},
     35: {"name": "Short Line", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200]},
     36: {"name": "Chance", "type": "Action", "deck": "chance"},
@@ -313,24 +313,39 @@ elif st.session_state.phase == "LIVE":
     bottom_row = list(range(10, -1, -1))
     left_col = list(range(19, 10, -1))
 
-    grid_rows = [top_row]
-    for i in range(9):
-        grid_rows.append([left_col[i]] + [""] * 9 + [right_col[i]])
-    grid_rows.append(bottom_row)
-
-    # SAFE BOARD RENDER: NO F-STRINGS ON LINE 329/330
-    for r in grid_rows:
-        cols = st.columns(11)
-        for i, cell in enumerate(r):
+    # Board Rendering with Offset Sidebars
+    for idx, r_idx in enumerate(range(11)):
+        # We use 13 columns now: 1 for left tokens, 11 for board, 1 for right tokens
+        cols = st.columns([1] + [1]*11 + [1])
+        
+        # 1. Left Token Sidebar (Offsets for the Orange/Pink row)
+        if 1 <= r_idx <= 9:
+            left_cell = left_col[r_idx-1]
+            cols[0].write(board_markers[left_cell])
+        
+        # 2. Main 11x11 Grid
+        row_data = []
+        if r_idx == 0: row_data = top_row
+        elif r_idx == 10: row_data = bottom_row
+        else: row_data = [left_col[r_idx-1]] + [""]*9 + [right_col[r_idx-1]]
+        
+        for c_idx, cell in enumerate(row_data):
+            target_col = cols[c_idx + 1]
             if cell != "":
-                sq_data = PROPERTIES[cell]
-                bg = COLOR_MAP.get(sq_data.get('color'), "#eee")
-                with cols[i].container():
-                    st.markdown(f'<div style="background:{bg}; height:10px;"></div>', unsafe_allow_html=True)
-                    st.caption(sq_data['name'][:6])
-                    st.write(board_markers[cell])
-            else:
-                cols[i].write("")
+                sq = PROPERTIES[cell]
+                bg = COLOR_MAP.get(sq.get('color'), "#eee")
+                with target_col.container():
+                    st.markdown(f'<div style="background:{bg}; height:10px; border:0.5px solid #000;"></div>', unsafe_allow_html=True)
+                    # Expanded Names (Up to 10 chars)
+                    st.caption(sq['name'][:10])
+                    # Only show tokens in-cell for top and bottom rows
+                    if r_idx == 0 or r_idx == 10:
+                        st.write(board_markers[cell])
+        
+        # 3. Right Token Sidebar (Offsets for Green/Yellow row)
+        if 1 <= r_idx <= 9:
+            right_cell = right_col[r_idx-1]
+            cols[12].write(board_markers[right_cell])
 
     st.markdown("---")
     lc1, lc2 = st.columns([1, 2])
