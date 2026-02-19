@@ -32,7 +32,7 @@ COLOR_GROUPS = {}
 for pid, info in PROPERTIES.items():
     COLOR_GROUPS.setdefault(info['color'], []).append(pid)
 
-Initialize Session State
+#Initialize Session State
 if "phase" not in st.session_state:
     st.session_state.phase = "INIT"
     st.session_state.num_players = 2
