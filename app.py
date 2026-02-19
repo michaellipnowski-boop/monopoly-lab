@@ -129,7 +129,7 @@ def handle_action(player, square_name):
                 player['cash'] += card['amt']
     return msg
 
-Main game turn logic
+#Main game turn logic
 def run_turn():
     p_idx = st.session_state.current_player_idx
     player = st.session_state.players[p_idx]
