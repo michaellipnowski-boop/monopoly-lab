@@ -90,19 +90,41 @@ def run_turn():
     st.session_state.turn_count += 1
     st.session_state.current_player_idx = (p_idx + 1) % len(st.session_state.players)
 
+#--- PHASE 1: INITIALIZATION ---
 if st.session_state.phase == "INIT":
-    st.title("🎲 Monopoly Stats Lab")
+    st.title("🎲 Monopoly Stats Lab: Initialization")
     num_p = st.number_input("How many players?", 1, 8, 2)
     names = []
     for i in range(num_p):
         names.append(st.text_input(f"Player {i+1} Name", f"Student {chr(65+i)}"))
-    if st.button("Proceed to Scenario Builder"):
+    if st.button("Continue to Game Options"):
         st.session_state.players = [{"name": n, "cash": 1500, "pos": 0} for n in names]
-        st.session_state.phase = "SETUP"
+        st.session_state.phase = "CHOICE"
         st.rerun()
 
+#--- PHASE 2: CHOICE (The New Page) ---
+elif st.session_state.phase == "CHOICE":
+    st.title("⚖️ Choose Your Simulation Type")
+    st.write("You have initialized a game with:", ", ".join([p['name'] for p in st.session_state.players]))
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Standard Game (Default)"):
+            st.session_state.phase = "LIVE"
+            st.rerun()
+    with col2:
+        if st.button("Custom Scenario (God Mode)"):
+            st.session_state.phase = "SETUP"
+            st.rerun()
+    if st.button("← Back to Player Names"):
+        st.session_state.phase = "INIT"
+        st.rerun()
+
+#--- PHASE 3: SETUP (God Mode) ---
 elif st.session_state.phase == "SETUP":
     st.title("🏗️ Scenario Builder (God Mode)")
+    if st.button("← Back to Selection"):
+        st.session_state.phase = "CHOICE"
+        st.rerun()
     tabs = st.tabs(["Ownership", "Development", "Cash"])
     with tabs[0]:
         st.write("### Wave 1: Assign Deeds")
@@ -138,6 +160,7 @@ elif st.session_state.phase == "SETUP":
         st.session_state.phase = "LIVE"
         st.rerun()
 
+#--- PHASE 4: LIVE ---
 elif st.session_state.phase == "LIVE":
     st.sidebar.title("📊 Ledger")
     for p in st.session_state.players:
