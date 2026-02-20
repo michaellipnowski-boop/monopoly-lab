@@ -322,7 +322,7 @@ if st.session_state.phase == "INIT":
 
 elif st.session_state.phase == "SETUP":
     st.title("🏗️ Customization")
-    t1, t2, t3 = st.tabs(["Properties owned", "Houses built", "Cash and jail"])
+    t1, t2, t3 = st.tabs(["Properties owned", "Houses built", "Cash, jail, and position"])
     p_names = [p['name'] for p in st.session_state.players]
     
     with t1:
@@ -356,51 +356,48 @@ elif st.session_state.phase == "SETUP":
                     c1.write(PROPERTIES[pid]['name'])
                     h = st.session_state.houses[pid]
                     others = [st.session_state.houses[p] for p in pids if p != pid]
-                    
-                    # Even building logic: can't be more than 1 house apart
                     can_down = h > 0 and all(h >= o for o in others)
                     can_up = h < 5 and all(h <= o for o in others)
-                    
                     if c2.button("➖", key=f"hm{pid}", disabled=not can_down):
                         st.session_state.houses[pid] -= 1; st.rerun()
                     c3.write(f"**{h}**")
                     if c4.button("➕", key=f"hp_{pid}", disabled=not can_up):
                         st.session_state.houses[pid] += 1; st.rerun()
-            else:
-                st.caption(f"_{color}: Group not fully owned by one player._")
     
     with t3:
         for i, p in enumerate(st.session_state.players):
             st.markdown(f"### {p['name']}")
             p['cash'] = st.number_input(f"Cash Amount for {p['name']}", value=int(p['cash']), step=50, key=f"set_c_{i}")
+            p['pos'] = st.slider(f"Position for {p['name']}", 0, 39, value=p['pos'], key=f"set_p_{i}")
             p['in_jail'] = st.checkbox(f"Is {p['name']} currently in Jail?", value=p['in_jail'], key=f"set_j_{i}")
             
-            # GOOJF Logic
             has_ch = any(c['deck'] == "chance" for c in p['goo_cards'])
             has_cc = any(c['deck'] == "chest" for c in p['goo_cards'])
-            
             c1, c2 = st.columns(2)
             if c1.checkbox("Has Chance GOOJF Card", value=has_ch, key=f"goojf_ch_{i}"):
                 if not has_ch:
-                    if 6 in st.session_state.c_deck_idx:
-                        st.session_state.c_deck_idx.remove(6)
-                        p['goo_cards'].append({"deck": "chance", "index": 6})
+                    for op in st.session_state.players:
+                        op['goo_cards'] = [c for c in op['goo_cards'] if c['deck'] != "chance"]
+                    if 6 in st.session_state.c_deck_idx: st.session_state.c_deck_idx.remove(6)
+                    p['goo_cards'].append({"deck": "chance", "index": 6})
+                    st.rerun()
             else:
                 if has_ch:
                     p['goo_cards'] = [c for c in p['goo_cards'] if c['deck'] != "chance"]
-                    if 6 not in st.session_state.c_deck_idx:
-                        st.session_state.c_deck_idx.append(6)
-            
+                    if 6 not in st.session_state.c_deck_idx: st.session_state.c_deck_idx.append(6)
+                    st.rerun()
             if c2.checkbox("Has Community Chest GOOJF Card", value=has_cc, key=f"goojf_cc_{i}"):
                 if not has_cc:
-                    if 4 in st.session_state.ch_deck_idx:
-                        st.session_state.ch_deck_idx.remove(4)
-                        p['goo_cards'].append({"deck": "chest", "index": 4})
+                    for op in st.session_state.players:
+                        op['goo_cards'] = [c for c in op['goo_cards'] if c['deck'] != "chest"]
+                    if 4 in st.session_state.ch_deck_idx: st.session_state.ch_deck_idx.remove(4)
+                    p['goo_cards'].append({"deck": "chest", "index": 4})
+                    st.rerun()
             else:
                 if has_cc:
                     p['goo_cards'] = [c for c in p['goo_cards'] if c['deck'] != "chest"]
-                    if 4 not in st.session_state.ch_deck_idx:
-                        st.session_state.ch_deck_idx.append(4)
+                    if 4 not in st.session_state.ch_deck_idx: st.session_state.ch_deck_idx.append(4)
+                    st.rerun()
     
     if st.button("Start Live Simulation"):
         st.session_state.phase = "LIVE"
@@ -419,12 +416,13 @@ elif st.session_state.phase == "LIVE":
     for p in st.session_state.players:
         with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
             if p.get('in_jail'): st.error("IN JAIL 🚔")
-            if p['goo_cards']: st.success(f"GOOJF Cards: {len(p['goo_cards'])}")
+            for c in p['goo_cards']: st.success(f"GOOJF: {c['deck'].capitalize()}")
             for color, pids in COLOR_GROUPS.items():
                 owned = [pid for pid in pids if st.session_state.ownership[pid] == p['name']]
                 if owned:
                     st.markdown(f'<span style="color:{COLOR_MAP[color]}">■</span> <b>{color}</b>', unsafe_allow_html=True)
-                    st.write(", ".join([f"{PROPERTIES[pid]['name']} ({st.session_state.houses[pid]}🏠)" for pid in owned]))
+                    is_mono = all(st.session_state.ownership[pid] == p['name'] for pid in pids)
+                    st.write(", ".join([f"{PROPERTIES[pid]['name']}{' ('+str(st.session_state.houses[pid])+'🏠)' if is_mono else ''}" for pid in owned]))
 
     board_markers = [""] * 40
     for p in st.session_state.players:
@@ -442,12 +440,10 @@ elif st.session_state.phase == "LIVE":
     for r in range(11):
         cols = st.columns([1] + [1]*11 + [1])
         if 1 <= r <= 9: cols[0].write(board_markers[left_col[r-1]])
-        
         row_data = []
         if r == 0: row_data = top_row
         elif r == 10: row_data = bottom_row
         else: row_data = [left_col[r-1]] + [""]*9 + [right_col[r-1]]
-        
         for c, cell in enumerate(row_data):
             if cell != "":
                 sq = PROPERTIES[cell]
@@ -456,7 +452,6 @@ elif st.session_state.phase == "LIVE":
                     st.markdown(f'<div style="background:{bg}; height:8px;"></div>', unsafe_allow_html=True)
                     st.caption(sq['name'][:8])
                     if r == 10: st.write(board_markers[cell])
-        
         if 1 <= r <= 9: cols[12].write(board_markers[right_col[r-1]])
 
     st.markdown("---")
