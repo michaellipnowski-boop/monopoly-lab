@@ -365,39 +365,74 @@ elif st.session_state.phase == "SETUP":
                         st.session_state.houses[pid] += 1; st.rerun()
     
     with t3:
-        for i, p in enumerate(st.session_state.players):
-            st.markdown(f"### {p['name']}")
-            p['cash'] = st.number_input(f"Cash Amount for {p['name']}", value=int(p['cash']), step=50, key=f"set_c_{i}")
-            p['pos'] = st.slider(f"Position for {p['name']}", 0, 39, value=p['pos'], key=f"set_p_{i}")
-            p['in_jail'] = st.checkbox(f"Is {p['name']} currently in Jail?", value=p['in_jail'], key=f"set_j_{i}")
+        # --- GOOJF Card Management (Single Owner Logic) ---
+        st.markdown("### 🎫 Get Out of Jail Free Cards")
+        for deck in ["chance", "chest"]:
+            label = "Chance (Orange)" if deck == "chance" else "Community Chest (Yellow)"
+            cols = st.columns([2] + [1]*len(p_names))
+            cols[0].write(f"**{label}**")
             
-            has_ch = any(c['deck'] == "chance" for c in p['goo_cards'])
-            has_cc = any(c['deck'] == "chest" for c in p['goo_cards'])
-            c1, c2 = st.columns(2)
-            if c1.checkbox("Has Chance GOOJF Card", value=has_ch, key=f"goojf_ch_{i}"):
-                if not has_ch:
-                    for op in st.session_state.players:
-                        op['goo_cards'] = [c for c in op['goo_cards'] if c['deck'] != "chance"]
-                    if 6 in st.session_state.c_deck_idx: st.session_state.c_deck_idx.remove(6)
-                    p['goo_cards'].append({"deck": "chance", "index": 6})
+            # Find current owner index for visual state
+            current_owner_name = "Bank"
+            for p in st.session_state.players:
+                if any(c['deck'] == deck for c in p['goo_cards']):
+                    current_owner_name = p['name']
+                    break
+            
+            for i, p_n in enumerate(p_names):
+                is_holder = (current_owner_name == p_n)
+                if cols[i+1].button(p_n, key=f"goojf_{deck}_{p_n}", type="primary" if is_holder else "secondary"):
+                    # 1. Clear this specific deck card from ALL players
+                    for p in st.session_state.players:
+                        p['goo_cards'] = [c for c in p['goo_cards'] if c['deck'] != deck]
+                    
+                    # 2. Add to Bank (return to deck) or assign to player
+                    target_idx = 6 if deck == "chance" else 4
+                    if is_holder: # Clicking self means returning to Bank
+                        if deck == "chance": 
+                            if target_idx not in st.session_state.c_deck_idx: st.session_state.c_deck_idx.append(target_idx)
+                        else:
+                            if target_idx not in st.session_state.ch_deck_idx: st.session_state.ch_deck_idx.append(target_idx)
+                    else: # Assigning to new player
+                        for p in st.session_state.players:
+                            if p['name'] == p_n:
+                                p['goo_cards'].append({"deck": deck, "index": target_idx})
+                                # Remove from drawing deck
+                                if deck == "chance":
+                                    if target_idx in st.session_state.c_deck_idx: st.session_state.c_deck_idx.remove(target_idx)
+                                else:
+                                    if target_idx in st.session_state.ch_deck_idx: st.session_state.ch_deck_idx.remove(target_idx)
                     st.rerun()
-            else:
-                if has_ch:
-                    p['goo_cards'] = [c for c in p['goo_cards'] if c['deck'] != "chance"]
-                    if 6 not in st.session_state.c_deck_idx: st.session_state.c_deck_idx.append(6)
-                    st.rerun()
-            if c2.checkbox("Has Community Chest GOOJF Card", value=has_cc, key=f"goojf_cc_{i}"):
-                if not has_cc:
-                    for op in st.session_state.players:
-                        op['goo_cards'] = [c for c in op['goo_cards'] if c['deck'] != "chest"]
-                    if 4 in st.session_state.ch_deck_idx: st.session_state.ch_deck_idx.remove(4)
-                    p['goo_cards'].append({"deck": "chest", "index": 4})
-                    st.rerun()
-            else:
-                if has_cc:
-                    p['goo_cards'] = [c for c in p['goo_cards'] if c['deck'] != "chest"]
-                    if 4 not in st.session_state.ch_deck_idx: st.session_state.ch_deck_idx.append(4)
-                    st.rerun()
+        
+        st.markdown("---")
+        # --- Player Specific Settings ---
+        for i, p in enumerate(st.session_state.players):
+            st.markdown(f"#### 👤 {p['name']}")
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                p['cash'] = st.number_input(f"Cash", value=int(p['cash']), step=50, key=f"set_c_{i}")
+                p['in_jail'] = st.checkbox(f"In Jail?", value=p['in_jail'], key=f"set_j_{i}")
+            with c2:
+                # Helper for Slider Labeling
+                def get_square_label(pos):
+                    base_name = PROPERTIES[pos]['name']
+                    # Label sequential repeats
+                    if base_name in ["Chance", "Community Chest"]:
+                        count = 0
+                        for j in range(pos + 1):
+                            if PROPERTIES[j]['name'] == base_name:
+                                count += 1
+                        suffix = " (first)" if count == 1 else " (second)" if count == 2 else " (third)"
+                        return f"{base_name}{suffix}"
+                    return base_name
+
+                p['pos'] = st.select_slider(
+                    f"Board Position",
+                    options=list(range(40)),
+                    format_func=get_square_label,
+                    value=p['pos'],
+                    key=f"set_p_{i}"
+                )
     
     if st.button("Start Live Simulation"):
         st.session_state.phase = "LIVE"
