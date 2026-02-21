@@ -119,7 +119,13 @@ if "phase" not in st.session_state:
     random.shuffle(st.session_state.c_deck_idx)
     st.session_state.ch_deck_idx = list(range(16))
     random.shuffle(st.session_state.ch_deck_idx)
-    st.session_state.rules = {"allow_debt": True, "double_go": False, "fp_jackpot": False, "shuffle_mode": "Cyclic"}
+    st.session_state.rules = {
+        "allow_debt": True, 
+        "double_go": False, 
+        "fp_jackpot": False, 
+        "fp_initial": 0,
+        "shuffle_mode": "Cyclic"
+    }
 
 def reset_lab():
     for k in list(st.session_state.keys()):
@@ -128,7 +134,6 @@ def reset_lab():
 
 # --- HELPER LOGIC ---
 def charge_player(p, amt):
-    """Inserted helper to respect Jackpot rules without flattening logic."""
     p['cash'] -= amt
     if st.session_state.rules["fp_jackpot"] and amt > 0:
         st.session_state.jackpot += amt
@@ -171,12 +176,10 @@ def draw_card(p, deck_type):
     
     msg = f"drew {name}: '{card['text']}'"
     
-    # --- 1. GOOJF EXCEPTION ---
     if card['effect'] == "goo_card":
         p['goo_cards'].append({"deck": deck_type, "index": idx})
-        return msg  # Exit early: Card is NOT added back to deck indices
+        return msg
     
-    # --- 2. EFFECT PROCESSING ---
     if card['effect'] == "move":
         old_pos = p['pos']
         p['pos'] = card['pos']
@@ -187,7 +190,6 @@ def draw_card(p, deck_type):
         send_to_jail(p)
         
     elif card['effect'] == "move_relative":
-        # Example: "Go Back 3 Spaces"
         p['pos'] = (p['pos'] + card['amt']) % 40
         
     elif card['effect'] == "cash":
@@ -197,7 +199,6 @@ def draw_card(p, deck_type):
             p['cash'] += card['amt']
             
     elif card['effect'] == "birthday":
-        # Collect from/Pay to everyone
         for op in st.session_state.players:
             if op['name'] != p['name']:
                 op['cash'] -= card['amt']
@@ -207,9 +208,9 @@ def draw_card(p, deck_type):
         cost = 0
         for pid, h_count in st.session_state.houses.items():
             if st.session_state.ownership.get(pid) == p['name']:
-                if h_count == 5: # Hotel
+                if h_count == 5:
                     cost += card['H']
-                else: # Houses
+                else:
                     cost += (h_count * card['h'])
         charge_player(p, cost)
         
@@ -225,7 +226,6 @@ def draw_card(p, deck_type):
         p['pos'] = min([u for u in targets if u > p['pos']] or [12])
         if p['pos'] < old_pos: p['cash'] += 200
 
-    # --- 3. RE-INSERTION LOGIC ---
     if st.session_state.rules["shuffle_mode"] == "True Random":
         if deck_type == "chance": 
             st.session_state.c_deck_idx.append(idx)
@@ -233,7 +233,7 @@ def draw_card(p, deck_type):
         else: 
             st.session_state.ch_deck_idx.append(idx)
             random.shuffle(st.session_state.ch_deck_idx)
-    else: # Cyclic
+    else:
         if deck_type == "chance": 
             st.session_state.c_deck_idx.append(idx)
         else: 
@@ -244,7 +244,6 @@ def draw_card(p, deck_type):
 def run_turn(jail_action=None, silent=False):
     p = st.session_state.players[st.session_state.current_p]
     
-    # Rule Hook: Allow Debt
     if not st.session_state.rules["allow_debt"] and p['cash'] < 0:
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         return
@@ -254,7 +253,6 @@ def run_turn(jail_action=None, silent=False):
     roll_sum = d1 + d2
     is_double = (d1 == d2)
     
-    # --- JAIL LOGIC ---
     if p.get('in_jail'):
         if jail_action is None:
             if p['goo_cards']:
@@ -274,7 +272,7 @@ def run_turn(jail_action=None, silent=False):
             else: st.session_state.ch_deck_idx.append(card['index'])
             p['in_jail'] = False
             if not silent: st.session_state.last_move = f"{p['name']} used GOOJF card."
-        else: # Try Doubles
+        else:
             if is_double:
                 p['in_jail'] = False
                 if not silent: st.session_state.last_move = f"{p['name']} rolled doubles and escaped!"
@@ -289,7 +287,6 @@ def run_turn(jail_action=None, silent=False):
                 st.session_state.turn_count += 1
                 return
     
-    # --- MOVEMENT ---
     if is_double and not p.get('in_jail'):
         st.session_state.double_count += 1
     else:
@@ -303,7 +300,6 @@ def run_turn(jail_action=None, silent=False):
         old_pos = p['pos']
         p['pos'] = (p['pos'] + roll_sum) % 40
         
-        # Rule Hook: Double GO
         if p['pos'] < old_pos:
             if st.session_state.rules["double_go"] and p['pos'] == 0:
                 p['cash'] += 400
@@ -330,12 +326,11 @@ def run_turn(jail_action=None, silent=False):
                 msg += "Go To Jail!"
             else:
                 msg += draw_card(p, sq.get('deck', 'chance'))
-        # Rule Hook: Jackpot
         elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
             if st.session_state.jackpot > 0:
                 p['cash'] += st.session_state.jackpot
                 msg += f"Collected Jackpot of ${st.session_state.jackpot}!"
-                st.session_state.jackpot = 0
+                st.session_state.jackpot = st.session_state.rules["fp_initial"]
         
         if not silent: st.session_state.last_move = msg
         if not is_double:
@@ -361,15 +356,46 @@ if st.session_state.phase == "INIT":
 
 elif st.session_state.phase == "RULES":
     st.title("⚙️ Global Game Rules")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.session_state.rules["allow_debt"] = st.toggle("Allow Negative Balance (No Bankruptcy)", value=True)
-        st.session_state.rules["double_go"] = st.toggle("Double GO ($400 for landing exactly on GO)", value=False)
-    with c2:
-        st.session_state.rules["fp_jackpot"] = st.toggle("Free Parking Jackpot (Collect Taxes/Fines)", value=False)
-        st.session_state.rules["shuffle_mode"] = st.radio("Shuffle Mode", ["Cyclic", "True Random"])
-    if st.button("Proceed to Mode Selection"):
-        st.session_state.phase = "CHOICE"; st.rerun()
+    
+    # Navigation Back Button
+    if st.button("⬅ Back to Player Assignment"):
+        st.session_state.phase = "INIT"
+        st.rerun()
+    
+    st.markdown("---")
+    
+    # 1. Cash Rules
+    st.subheader("Cash rules")
+    st.session_state.rules["allow_debt"] = st.toggle("Allow negative balances (No Bankruptcy)", value=st.session_state.rules["allow_debt"])
+    
+    # 2. Deck Shuffling
+    st.subheader("Deck shuffling")
+    st.session_state.rules["shuffle_mode"] = st.radio(
+        "Chance and Community Chest shuffle mode", 
+        ["Cyclic", "True Random"], 
+        index=0 if st.session_state.rules["shuffle_mode"] == "Cyclic" else 1
+    )
+    
+    # 3. House Rules
+    st.subheader("House rules")
+    st.session_state.rules["double_go"] = st.toggle("Double GO ($400 for landing exactly on GO)", value=st.session_state.rules["double_go"])
+    
+    st.session_state.rules["fp_jackpot"] = st.toggle("Free parking jackpot (Collect Taxes/Fines)", value=st.session_state.rules["fp_jackpot"])
+    if st.session_state.rules["fp_jackpot"]:
+        st.session_state.rules["fp_initial"] = st.radio(
+            "Initial Jackpot Amount (Pre-collection)",
+            [0, 50, 100, 500],
+            horizontal=True,
+            key="fp_init_radio"
+        )
+        # Sync current jackpot to initial amount if it was just turned on or reset
+        if st.session_state.jackpot < st.session_state.rules["fp_initial"]:
+            st.session_state.jackpot = st.session_state.rules["fp_initial"]
+    
+    st.markdown("---")
+    if st.button("Proceed to Mode Selection", type="primary"):
+        st.session_state.phase = "CHOICE"
+        st.rerun()
 
 elif st.session_state.phase == "SETUP":
     st.title("🏗️ Customization")
@@ -494,6 +520,7 @@ elif st.session_state.phase == "LIVE":
         jail_tag = "⛓️" if p.get('in_jail') else ""
         board_markers[p['pos']] += f"[{initials}{jail_tag}]"
 
+    # Board layout logic...
     top_row = list(range(20, 31))
     right_col = list(range(31, 40))
     bottom_row = list(range(10, -1, -1))
