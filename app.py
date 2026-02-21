@@ -171,42 +171,32 @@ def draw_card(p, deck_type):
     
     msg = f"drew {name}: '{card['text']}'"
     
+    # --- GOOJF Exception ---
+    if card['effect'] == "goo_card":
+        p['goo_cards'].append({"deck": deck_type, "index": idx})
+        return msg  # Exit early so the card is NOT added back to the deck indices
+    
+    # --- Existing Card Effects ---
     if card['effect'] == "move":
         old_pos = p['pos']
         p['pos'] = card['pos']
-        if p['pos'] < old_pos:
-            p['cash'] += 200
+        if p['pos'] < old_pos: p['cash'] += 200
     elif card['effect'] == "jail":
         send_to_jail(p)
-    elif card['effect'] == "move_relative":
-        p['pos'] = (p['pos'] + card['amt']) % 40
-    elif card['effect'] == "cash":
-        if card['amt'] < 0: charge_player(p, abs(card['amt']))
-        else: p['cash'] += card['amt']
-    elif card['effect'] == "birthday":
-        for op in st.session_state.players:
-            if op['name'] != p['name']:
-                op['cash'] -= card['amt']
-                p['cash'] += card['amt']
-    elif card['effect'] == "repairs":
-        cost = 0
-        for pid in st.session_state.houses:
-            if st.session_state.ownership.get(pid) == p['name']:
-                h_count = st.session_state.houses[pid]
-                if h_count == 5:
-                    cost += card['H']
-                else:
-                    cost += (h_count * card['h'])
-        charge_player(p, cost)
-    elif card['effect'] == "move_nearest_rr":
-        targets = [5, 15, 25, 35]
-        p['pos'] = min([r for r in targets if r > p['pos']] or [5])
-    elif card['effect'] == "move_nearest_util":
-        targets = [12, 28]
-        p['pos'] = min([u for u in targets if u > p['pos']] or [12])
-    elif card['effect'] == "goo_card":
-        p['goo_cards'].append({"deck": deck_type, "index": idx})
-        return msg
+    # ... (other effects) ...
+
+    # --- Re-insertion Logic (Only runs if card wasn't GOOJF) ---
+    if st.session_state.rules["shuffle_mode"] == "True Random":
+        if deck_type == "chance": 
+            st.session_state.c_deck_idx.append(idx)
+            random.shuffle(st.session_state.c_deck_idx)
+        else: 
+            st.session_state.ch_deck_idx.append(idx)
+            random.shuffle(st.session_state.ch_deck_idx)
+    else:
+        if deck_type == "chance": st.session_state.c_deck_idx.append(idx)
+        else: st.session_state.ch_deck_idx.append(idx)
+    return msg
     
     # Shuffle Mode Logic
     if st.session_state.rules["shuffle_mode"] == "True Random":
