@@ -356,12 +356,9 @@ if st.session_state.phase == "INIT":
 
 elif st.session_state.phase == "RULES":
     st.title("⚙️ Global Game Rules")
-    
-    # Navigation Back Button
     if st.button("⬅ Back to Player Assignment"):
         st.session_state.phase = "INIT"
         st.rerun()
-    
     st.markdown("---")
     
     # 1. Cash Rules
@@ -379,18 +376,19 @@ elif st.session_state.phase == "RULES":
     # 3. House Rules
     st.subheader("House rules")
     st.session_state.rules["double_go"] = st.toggle("Double GO ($400 for landing exactly on GO)", value=st.session_state.rules["double_go"])
-    
     st.session_state.rules["fp_jackpot"] = st.toggle("Free parking jackpot (Collect Taxes/Fines)", value=st.session_state.rules["fp_jackpot"])
+    
     if st.session_state.rules["fp_jackpot"]:
-        st.session_state.rules["fp_initial"] = st.radio(
-            "Initial Jackpot Amount (Pre-collection)",
-            [0, 50, 100, 500],
-            horizontal=True,
-            key="fp_init_radio"
+        # TEXT BOX (number_input) for initial amount
+        new_initial = st.number_input(
+            "Initial Jackpot Amount (Pre-collection seed)",
+            min_value=0,
+            value=int(st.session_state.rules["fp_initial"]),
+            step=50
         )
-        # Sync current jackpot to initial amount if it was just turned on or reset
-        if st.session_state.jackpot < st.session_state.rules["fp_initial"]:
-            st.session_state.jackpot = st.session_state.rules["fp_initial"]
+        if new_initial != st.session_state.rules["fp_initial"]:
+            st.session_state.rules["fp_initial"] = new_initial
+            st.session_state.jackpot = new_initial
     
     st.markdown("---")
     if st.button("Proceed to Mode Selection", type="primary"):
@@ -520,7 +518,6 @@ elif st.session_state.phase == "LIVE":
         jail_tag = "⛓️" if p.get('in_jail') else ""
         board_markers[p['pos']] += f"[{initials}{jail_tag}]"
 
-    # Board layout logic...
     top_row = list(range(20, 31))
     right_col = list(range(31, 40))
     bottom_row = list(range(10, -1, -1))
