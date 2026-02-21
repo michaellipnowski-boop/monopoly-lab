@@ -114,10 +114,12 @@ if "phase" not in st.session_state:
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
     st.session_state.double_count = 0
+    st.session_state.jackpot = 0
     st.session_state.c_deck_idx = list(range(16))
     random.shuffle(st.session_state.c_deck_idx)
     st.session_state.ch_deck_idx = list(range(16))
     random.shuffle(st.session_state.ch_deck_idx)
+    st.session_state.rules = {"allow_debt": True, "double_go": False, "fp_jackpot": False, "shuffle_mode": "Cyclic"}
 
 def reset_lab():
     for k in list(st.session_state.keys()):
@@ -125,6 +127,12 @@ def reset_lab():
     st.rerun()
 
 # --- HELPER LOGIC ---
+def charge_player(p, amt):
+    """Inserted helper to respect Jackpot rules without flattening logic."""
+    p['cash'] -= amt
+    if st.session_state.rules["fp_jackpot"] and amt > 0:
+        st.session_state.jackpot += amt
+
 def get_rent(pid, roll=0):
     info = PROPERTIES[pid]
     owner = st.session_state.ownership[pid]
@@ -173,7 +181,8 @@ def draw_card(p, deck_type):
     elif card['effect'] == "move_relative":
         p['pos'] = (p['pos'] + card['amt']) % 40
     elif card['effect'] == "cash":
-        p['cash'] += card['amt']
+        if card['amt'] < 0: charge_player(p, abs(card['amt']))
+        else: p['cash'] += card['amt']
     elif card['effect'] == "birthday":
         for op in st.session_state.players:
             if op['name'] != p['name']:
@@ -188,7 +197,7 @@ def draw_card(p, deck_type):
                     cost += card['H']
                 else:
                     cost += (h_count * card['h'])
-        p['cash'] -= cost
+        charge_player(p, cost)
     elif card['effect'] == "move_nearest_rr":
         targets = [5, 15, 25, 35]
         p['pos'] = min([r for r in targets if r > p['pos']] or [5])
@@ -199,15 +208,20 @@ def draw_card(p, deck_type):
         p['goo_cards'].append({"deck": deck_type, "index": idx})
         return msg
     
-    if deck_type == "chance":
-        st.session_state.c_deck_idx.append(idx)
+    # Shuffle Mode Logic
+    if st.session_state.rules["shuffle_mode"] == "True Random":
+        if deck_type == "chance": st.session_state.c_deck_idx.append(idx); random.shuffle(st.session_state.c_deck_idx)
+        else: st.session_state.ch_deck_idx.append(idx); random.shuffle(st.session_state.ch_deck_idx)
     else:
-        st.session_state.ch_deck_idx.append(idx)
+        if deck_type == "chance": st.session_state.c_deck_idx.append(idx)
+        else: st.session_state.ch_deck_idx.append(idx)
     return msg
 
 def run_turn(jail_action=None, silent=False):
     p = st.session_state.players[st.session_state.current_p]
-    if p['cash'] < 0:
+    
+    # Rule Hook: Allow Debt
+    if not st.session_state.rules["allow_debt"] and p['cash'] < 0:
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         return
     
@@ -218,7 +232,6 @@ def run_turn(jail_action=None, silent=False):
     
     # --- JAIL LOGIC ---
     if p.get('in_jail'):
-        # Fix: Automatically determine action if jumping (silent mode)
         if jail_action is None:
             if p['goo_cards']:
                 jail_action = "Use Card"
@@ -228,7 +241,7 @@ def run_turn(jail_action=None, silent=False):
                 jail_action = "Try Doubles"
         
         if jail_action == "Pay $50":
-            p['cash'] -= 50
+            charge_player(p, 50)
             p['in_jail'] = False
             if not silent: st.session_state.last_move = f"{p['name']} paid $50 to exit Jail."
         elif jail_action == "Use Card":
@@ -242,7 +255,7 @@ def run_turn(jail_action=None, silent=False):
                 p['in_jail'] = False
                 if not silent: st.session_state.last_move = f"{p['name']} rolled doubles and escaped!"
             elif p['jail_turns'] >= 2:
-                p['cash'] -= 50
+                charge_player(p, 50)
                 p['in_jail'] = False
                 if not silent: st.session_state.last_move = f"{p['name']} failed 3rd double attempt, paid $50."
             else:
@@ -265,8 +278,13 @@ def run_turn(jail_action=None, silent=False):
     else:
         old_pos = p['pos']
         p['pos'] = (p['pos'] + roll_sum) % 40
+        
+        # Rule Hook: Double GO
         if p['pos'] < old_pos:
-            p['cash'] += 200
+            if st.session_state.rules["double_go"] and p['pos'] == 0:
+                p['cash'] += 400
+            else:
+                p['cash'] += 200
         
         sq = PROPERTIES.get(p['pos'])
         msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
@@ -280,7 +298,7 @@ def run_turn(jail_action=None, silent=False):
                     if op['name'] == owner: op['cash'] += rent
                 msg += f"Paid ${rent} rent."
         elif sq['type'] == "Tax":
-            p['cash'] -= sq.get('cost', 100)
+            charge_player(p, sq.get('cost', 100))
             msg += f"Paid tax."
         elif sq['type'] == "Action":
             if p['pos'] == 30:
@@ -288,6 +306,12 @@ def run_turn(jail_action=None, silent=False):
                 msg += "Go To Jail!"
             else:
                 msg += draw_card(p, sq.get('deck', 'chance'))
+        # Rule Hook: Jackpot
+        elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
+            if st.session_state.jackpot > 0:
+                p['cash'] += st.session_state.jackpot
+                msg += f"Collected Jackpot of ${st.session_state.jackpot}!"
+                st.session_state.jackpot = 0
         
         if not silent: st.session_state.last_move = msg
         if not is_double:
@@ -303,13 +327,25 @@ if st.session_state.phase == "INIT":
     for i in range(st.session_state.p_count):
         name = st.text_input(f"Player {i+1}", f"Student {chr(65+i)}", key=f"n_{i}")
         temp_names.append(name)
-    if st.button("Proceed to Mode Selection"):
+    if st.button("Proceed to Global Rules"):
         st.session_state.p_names = temp_names
         st.session_state.players = []
         for n in temp_names:
             st.session_state.players.append({"name": n, "cash": 1500, "pos": 0, "goo_cards": [], "in_jail": False, "jail_turns": 0})
-        st.session_state.phase = "CHOICE"
+        st.session_state.phase = "RULES"
         st.rerun()
+
+elif st.session_state.phase == "RULES":
+    st.title("⚙️ Global Game Rules")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.session_state.rules["allow_debt"] = st.toggle("Allow Negative Balance (No Bankruptcy)", value=True)
+        st.session_state.rules["double_go"] = st.toggle("Double GO ($400 for landing exactly on GO)", value=False)
+    with c2:
+        st.session_state.rules["fp_jackpot"] = st.toggle("Free Parking Jackpot (Collect Taxes/Fines)", value=False)
+        st.session_state.rules["shuffle_mode"] = st.radio("Shuffle Mode", ["Cyclic", "True Random"])
+    if st.button("Proceed to Mode Selection"):
+        st.session_state.phase = "CHOICE"; st.rerun()
 
 elif st.session_state.phase == "SETUP":
     st.title("🏗️ Customization")
@@ -380,7 +416,6 @@ elif st.session_state.phase == "SETUP":
             c1, c2 = st.columns([1, 2])
             with c1:
                 p['cash'] = st.number_input(f"Cash", value=int(p['cash']), step=50, key=f"set_c_{i}")
-                # Jail State Choice
                 jail_val = st.checkbox(f"In Jail?", value=p['in_jail'], key=f"set_j_{i}")
                 if jail_val:
                     p['in_jail'] = True
@@ -398,7 +433,6 @@ elif st.session_state.phase == "SETUP":
                         return f"{base} ({'1st' if count==1 else '2nd' if count==2 else '3rd'})"
                     return base
                 
-                # Logic Fix: If jail is selected, pos MUST be 10.
                 slider_pos = st.select_slider(
                     f"Board Position", options=valid_indices, format_func=get_square_label,
                     value=p['pos'] if not jail_val else 10, disabled=jail_val, key=f"set_p_{i}"
@@ -406,7 +440,6 @@ elif st.session_state.phase == "SETUP":
                 p['pos'] = 10 if jail_val else slider_pos
 
     if st.button("Start Live Simulation"):
-        # Double check synchronization before transitioning
         st.session_state.phase = "LIVE"
         st.rerun()
 
@@ -418,6 +451,8 @@ elif st.session_state.phase == "CHOICE":
 
 elif st.session_state.phase == "LIVE":
     st.sidebar.title("📊 Ledger")
+    if st.session_state.rules["fp_jackpot"]:
+        st.sidebar.metric("Free Parking Jackpot", f"${st.session_state.jackpot}")
     for p in st.session_state.players:
         with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
             if p.get('in_jail'): st.error(f"IN JAIL 🚔 (Attempts: {p['jail_turns']})")
@@ -429,7 +464,6 @@ elif st.session_state.phase == "LIVE":
                     is_mono = all(st.session_state.ownership[pid] == p['name'] for pid in pids)
                     st.write(", ".join([f"{PROPERTIES[pid]['name']}{' ('+str(st.session_state.houses[pid])+'🏠)' if is_mono else ''}" for pid in owned]))
 
-    # --- Board Marker Logic Fix ---
     board_markers = [""] * 40
     for p in st.session_state.players:
         initials = "".join([n[0] for n in p['name'].split()])
@@ -458,7 +492,6 @@ elif st.session_state.phase == "LIVE":
                 with cols[c+1].container():
                     st.markdown(f'<div style="background:{bg}; height:8px;"></div>', unsafe_allow_html=True)
                     st.caption(sq['name'][:8])
-                    # Fix: Ensure markers are printed for the bottom row correctly
                     if r == 10 or cell in left_col or cell in right_col: 
                         st.write(board_markers[cell])
         if 1 <= r <= 9: cols[12].write(board_markers[right_col[r-1]])
