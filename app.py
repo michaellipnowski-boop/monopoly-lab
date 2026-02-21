@@ -139,10 +139,7 @@ def get_rent(pid, roll=0):
         return info['rent'][count-1]
     elif info['type'] == "Utility":
         count = sum(1 for u in UTILITIES if st.session_state.ownership[u] == owner)
-        if count == 1:
-            return 4 * roll
-        else:
-            return 10 * roll
+        return (4 if count == 1 else 10) * roll
     return 0
 
 def send_to_jail(p):
@@ -166,8 +163,7 @@ def draw_card(p, deck_type):
     if card['effect'] == "move":
         old_pos = p['pos']
         p['pos'] = card['pos']
-        if p['pos'] < old_pos:
-            p['cash'] += 200
+        if p['pos'] < old_pos: p['cash'] += 200
     elif card['effect'] == "jail":
         send_to_jail(p)
     elif card['effect'] == "move_relative":
@@ -184,10 +180,7 @@ def draw_card(p, deck_type):
         for pid in st.session_state.houses:
             if st.session_state.ownership.get(pid) == p['name']:
                 h_count = st.session_state.houses[pid]
-                if h_count == 5:
-                    cost += card['H']
-                else:
-                    cost += (h_count * card['h'])
+                cost += card['H'] if h_count == 5 else (h_count * card['h'])
         p['cash'] -= cost
     elif card['effect'] == "move_nearest_rr":
         targets = [5, 15, 25, 35]
@@ -199,10 +192,8 @@ def draw_card(p, deck_type):
         p['goo_cards'].append({"deck": deck_type, "index": idx})
         return msg
     
-    if deck_type == "chance":
-        st.session_state.c_deck_idx.append(idx)
-    else:
-        st.session_state.ch_deck_idx.append(idx)
+    if deck_type == "chance": st.session_state.c_deck_idx.append(idx)
+    else: st.session_state.ch_deck_idx.append(idx)
     return msg
 
 def run_turn(jail_action=None, silent=False):
@@ -211,21 +202,15 @@ def run_turn(jail_action=None, silent=False):
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         return
     
-    d1 = random.randint(1, 6)
-    d2 = random.randint(1, 6)
+    d1, d2 = random.randint(1, 6), random.randint(1, 6)
     roll_sum = d1 + d2
     is_double = (d1 == d2)
     
-    # --- JAIL LOGIC ---
     if p.get('in_jail'):
-        # Fix: Automatically determine action if jumping (silent mode)
         if jail_action is None:
-            if p['goo_cards']:
-                jail_action = "Use Card"
-            elif p['jail_turns'] >= 2:
-                jail_action = "Pay $50"
-            else:
-                jail_action = "Try Doubles"
+            if p['goo_cards']: jail_action = "Use Card"
+            elif p['jail_turns'] >= 2: jail_action = "Pay $50"
+            else: jail_action = "Try Doubles"
         
         if jail_action == "Pay $50":
             p['cash'] -= 50
@@ -237,7 +222,7 @@ def run_turn(jail_action=None, silent=False):
             else: st.session_state.ch_deck_idx.append(card['index'])
             p['in_jail'] = False
             if not silent: st.session_state.last_move = f"{p['name']} used GOOJF card."
-        else: # Try Doubles
+        else:
             if is_double:
                 p['in_jail'] = False
                 if not silent: st.session_state.last_move = f"{p['name']} rolled doubles and escaped!"
@@ -251,12 +236,9 @@ def run_turn(jail_action=None, silent=False):
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                 st.session_state.turn_count += 1
                 return
-    
-    # --- MOVEMENT ---
-    if is_double and not p.get('in_jail'):
-        st.session_state.double_count += 1
-    else:
-        st.session_state.double_count = 0
+
+    if is_double and not p.get('in_jail'): st.session_state.double_count += 1
+    else: st.session_state.double_count = 0
     
     if st.session_state.double_count >= 3:
         send_to_jail(p)
@@ -265,8 +247,7 @@ def run_turn(jail_action=None, silent=False):
     else:
         old_pos = p['pos']
         p['pos'] = (p['pos'] + roll_sum) % 40
-        if p['pos'] < old_pos:
-            p['cash'] += 200
+        if p['pos'] < old_pos: p['cash'] += 200
         
         sq = PROPERTIES.get(p['pos'])
         msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
@@ -286,13 +267,10 @@ def run_turn(jail_action=None, silent=False):
             if p['pos'] == 30:
                 send_to_jail(p)
                 msg += "Go To Jail!"
-            else:
-                msg += draw_card(p, sq.get('deck', 'chance'))
+            else: msg += draw_card(p, sq.get('deck', 'chance'))
         
         if not silent: st.session_state.last_move = msg
-        if not is_double:
-            st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-    
+        if not is_double: st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
     st.session_state.turn_count += 1
 
 # --- UI FLOW ---
@@ -301,15 +279,11 @@ if st.session_state.phase == "INIT":
     st.session_state.p_count = st.number_input("How many players?", 1, 8, value=st.session_state.p_count)
     temp_names = []
     for i in range(st.session_state.p_count):
-        name = st.text_input(f"Player {i+1}", f"Student {chr(65+i)}", key=f"n_{i}")
-        temp_names.append(name)
+        temp_names.append(st.text_input(f"Player {i+1}", f"Student {chr(65+i)}", key=f"n_{i}"))
     if st.button("Proceed to Mode Selection"):
         st.session_state.p_names = temp_names
-        st.session_state.players = []
-        for n in temp_names:
-            st.session_state.players.append({"name": n, "cash": 1500, "pos": 0, "goo_cards": [], "in_jail": False, "jail_turns": 0})
-        st.session_state.phase = "CHOICE"
-        st.rerun()
+        st.session_state.players = [{"name": n, "cash": 1500, "pos": 0, "goo_cards": [], "in_jail": False, "jail_turns": 0} for n in temp_names]
+        st.session_state.phase = "CHOICE"; st.rerun()
 
 elif st.session_state.phase == "SETUP":
     st.title("🏗️ Customization")
@@ -319,8 +293,7 @@ elif st.session_state.phase == "SETUP":
     with t1:
         all_ownable = []
         for color, pids in COLOR_GROUPS.items(): all_ownable.extend(pids)
-        all_ownable.extend(RAILROADS)
-        all_ownable.extend(UTILITIES)
+        all_ownable.extend(RAILROADS); all_ownable.extend(UTILITIES)
         for pid in all_ownable:
             sq = PROPERTIES[pid]
             bg = COLOR_MAP.get(sq.get('color'), COLOR_MAP.get(sq['type']))
@@ -330,85 +303,42 @@ elif st.session_state.phase == "SETUP":
             for i, p_n in enumerate(p_names):
                 is_own = (st.session_state.ownership[pid] == p_n)
                 if cols[i+1].button(p_n, key=f"set_o_{pid}{p_n}", type="primary" if is_own else "secondary"):
-                    st.session_state.ownership[pid] = "Bank" if is_own else p_n
-                    st.rerun()
-    
+                    st.session_state.ownership[pid] = "Bank" if is_own else p_n; st.rerun()
     with t2:
         for color, pids in COLOR_GROUPS.items():
             owners = [st.session_state.ownership[p] for p in pids]
             if len(set(owners)) == 1 and owners[0] != "Bank":
-                st.markdown(f'<div style="background:{COLOR_MAP[color]}; padding:5px; border-radius:3px; color:white;"><b>{color} Group ({owners[0]})</b></div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="background:{COLOR_MAP[color]}; padding:5px; color:white;"><b>{color} Group ({owners[0]})</b></div>', unsafe_allow_html=True)
                 for pid in pids:
                     c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
                     c1.write(PROPERTIES[pid]['name'])
                     h = st.session_state.houses[pid]
                     others = [st.session_state.houses[p] for p in pids if p != pid]
-                    can_down = h > 0 and all(h >= o for o in others)
-                    can_up = h < 5 and all(h <= o for o in others)
-                    if c2.button("➖", key=f"hm{pid}", disabled=not can_down): st.session_state.houses[pid] -= 1; st.rerun()
+                    if c2.button("➖", key=f"hm{pid}", disabled=not (h > 0 and all(h >= o for o in others))): st.session_state.houses[pid] -= 1; st.rerun()
                     c3.write(f"**{h}**")
-                    if c4.button("➕", key=f"hp_{pid}", disabled=not can_up): st.session_state.houses[pid] += 1; st.rerun()
-    
+                    if c4.button("➕", key=f"hp_{pid}", disabled=not (h < 5 and all(h <= o for o in others))): st.session_state.houses[pid] += 1; st.rerun()
     with t3:
-        st.markdown("### 🎫 Get Out of Jail Free Cards")
-        for deck in ["chance", "chest"]:
-            label = "Chance (Orange)" if deck == "chance" else "Community Chest (Yellow)"
-            cols = st.columns([2] + [1]*len(p_names))
-            cols[0].write(f"**{label}**")
-            current_owner_name = "Bank"
-            for p in st.session_state.players:
-                if any(c['deck'] == deck for c in p['goo_cards']): current_owner_name = p['name']; break
-            for i, p_n in enumerate(p_names):
-                is_holder = (current_owner_name == p_n)
-                if cols[i+1].button(p_n, key=f"goojf_{deck}_{p_n}", type="primary" if is_holder else "secondary"):
-                    for p in st.session_state.players: p['goo_cards'] = [c for c in p['goo_cards'] if c['deck'] != deck]
-                    target_idx = 6 if deck == "chance" else 4
-                    if is_holder:
-                        if deck == "chance": st.session_state.c_deck_idx.append(target_idx)
-                        else: st.session_state.ch_deck_idx.append(target_idx)
-                    else:
-                        for p in st.session_state.players:
-                            if p['name'] == p_n:
-                                p['goo_cards'].append({"deck": deck, "index": target_idx})
-                                if deck == "chance": st.session_state.c_deck_idx.remove(target_idx)
-                                else: st.session_state.ch_deck_idx.remove(target_idx)
-                    st.rerun()
-        
-        st.markdown("---")
         for i, p in enumerate(st.session_state.players):
             st.markdown(f"#### 👤 {p['name']}")
             c1, c2 = st.columns([1, 2])
             with c1:
                 p['cash'] = st.number_input(f"Cash", value=int(p['cash']), step=50, key=f"set_c_{i}")
-                # Jail State Choice
                 jail_val = st.checkbox(f"In Jail?", value=p['in_jail'], key=f"set_j_{i}")
                 if jail_val:
-                    p['in_jail'] = True
+                    p['in_jail'] = True; p['pos'] = 10
                     p['jail_turns'] = st.radio("Failed rolls:", [0, 1, 2], index=p['jail_turns'], key=f"jail_t_{i}", horizontal=True)
-                else:
-                    p['in_jail'] = False
-                    p['jail_turns'] = 0
-
+                else: p['in_jail'] = False; p['jail_turns'] = 0
             with c2:
                 valid_indices = [idx for idx in range(40) if idx != 30]
                 def get_square_label(pos):
                     base = PROPERTIES[pos]['name']
-                    if base in ["Chance", "Community Chest"]:
+                    if "Chance" in base or "Community Chest" in base:
                         count = sum(1 for j in range(pos + 1) if PROPERTIES[j]['name'] == base)
-                        return f"{base} ({'1st' if count==1 else '2nd' if count==2 else '3rd'})"
+                        return f"{base} ({count})"
                     return base
-                
-                # Logic Fix: If jail is selected, pos MUST be 10.
-                slider_pos = st.select_slider(
-                    f"Board Position", options=valid_indices, format_func=get_square_label,
-                    value=p['pos'] if not jail_val else 10, disabled=jail_val, key=f"set_p_{i}"
-                )
+                slider_pos = st.select_slider(f"Position", options=valid_indices, format_func=get_square_label, value=p['pos'], disabled=jail_val, key=f"set_p_{i}")
                 p['pos'] = 10 if jail_val else slider_pos
-
-    if st.button("Start Live Simulation"):
-        # Double check synchronization before transitioning
-        st.session_state.phase = "LIVE"
-        st.rerun()
+    if st.button("Start Live Simulation"): st.session_state.phase = "LIVE"; st.rerun()
 
 elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Mode Selection")
@@ -417,66 +347,105 @@ elif st.session_state.phase == "CHOICE":
     if c2.button("Customization Setup"): st.session_state.phase = "SETUP"; st.rerun()
 
 elif st.session_state.phase == "LIVE":
+    # --- CSS FOR PHYSICAL BOARD ---
+    st.markdown("""
+        <style>
+        .monopoly-cell {
+            border: 1px solid #333;
+            height: 110px;
+            padding: 4px;
+            font-size: 0.7rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            background-color: #fdfdfd;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .token-area {
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: #d32f2f;
+            min-height: 20px;
+        }
+        .color-bar {
+            height: 15px;
+            width: 100%;
+            border-bottom: 1px solid #333;
+            margin-bottom: 2px;
+        }
+        .center-board {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            background-color: #f0f0f0;
+            border: 1px dashed #ccc;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.sidebar.title("📊 Ledger")
     for p in st.session_state.players:
         with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
-            if p.get('in_jail'): st.error(f"IN JAIL 🚔 (Attempts: {p['jail_turns']})")
-            for c in p['goo_cards']: st.success(f"GOOJF: {c['deck'].capitalize()}")
+            if p.get('in_jail'): st.error(f"IN JAIL 🚔 ({p['jail_turns']})")
             for color, pids in COLOR_GROUPS.items():
                 owned = [pid for pid in pids if st.session_state.ownership[pid] == p['name']]
-                if owned:
-                    st.markdown(f'<span style="color:{COLOR_MAP[color]}">■</span> <b>{color}</b>', unsafe_allow_html=True)
-                    is_mono = all(st.session_state.ownership[pid] == p['name'] for pid in pids)
-                    st.write(", ".join([f"{PROPERTIES[pid]['name']}{' ('+str(st.session_state.houses[pid])+'🏠)' if is_mono else ''}" for pid in owned]))
+                if owned: st.write(f"**{color}**: {len(owned)} owned")
 
-    # --- Board Marker Logic Fix ---
     board_markers = [""] * 40
     for p in st.session_state.players:
-        initials = "".join([n[0] for n in p['name'].split()])
-        jail_tag = "⛓️" if p.get('in_jail') else ""
-        board_markers[p['pos']] += f"[{initials}{jail_tag}]"
+        tag = "⛓️" if p.get('in_jail') else ""
+        board_markers[p['pos']] += f"[{p['name'][0]}{tag}]"
 
+    def render_square(idx):
+        if idx is None: st.markdown('<div class="center-board">STATS LAB</div>', unsafe_allow_html=True); return
+        sq = PROPERTIES[idx]
+        bg = COLOR_MAP.get(sq.get('color'), COLOR_MAP.get(sq.get('type'), "#eee"))
+        bar_html = f'<div class="color-bar" style="background:{bg}"></div>' if "color" in sq or sq['type'] in ["Street", "Railroad", "Utility"] else ""
+        st.markdown(f"""
+            <div class="monopoly-cell">
+                {bar_html}
+                <div style="flex-grow:1;">{sq['name'][:12]}</div>
+                <div class="token-area">{board_markers[idx]}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # Grid Construction
     top_row = list(range(20, 31))
-    right_col = list(range(31, 40))
+    mid_rows = []
+    for i in range(1, 10): mid_rows.append([19-i+1, None, 30+i])
     bottom_row = list(range(10, -1, -1))
-    left_col = list(range(19, 10, -1))
 
-    cols_t = st.columns([1] + [1]*11 + [1])
-    for i, cell in enumerate(top_row): cols_t[i+1].write(board_markers[cell])
-
-    for r in range(11):
-        cols = st.columns([1] + [1]*11 + [1])
-        if 1 <= r <= 9: cols[0].write(board_markers[left_col[r-1]])
-        row_data = []
-        if r == 0: row_data = top_row
-        elif r == 10: row_data = bottom_row
-        else: row_data = [left_col[r-1]] + [""]*9 + [right_col[r-1]]
-        for c, cell in enumerate(row_data):
-            if cell != "":
-                sq = PROPERTIES[cell]
-                bg = COLOR_MAP.get(sq.get('color'), COLOR_MAP.get(sq.get('type'), "#eee"))
-                with cols[c+1].container():
-                    st.markdown(f'<div style="background:{bg}; height:8px;"></div>', unsafe_allow_html=True)
-                    st.caption(sq['name'][:8])
-                    # Fix: Ensure markers are printed for the bottom row correctly
-                    if r == 10 or cell in left_col or cell in right_col: 
-                        st.write(board_markers[cell])
-        if 1 <= r <= 9: cols[12].write(board_markers[right_col[r-1]])
+    # Render Rows
+    t_cols = st.columns(11)
+    for i, idx in enumerate(top_row): 
+        with t_cols[i]: render_square(idx)
+    
+    for row in mid_rows:
+        m_cols = st.columns([1] + [9] + [1])
+        with m_cols[0]: render_square(row[0])
+        with m_cols[1]: render_square(None)
+        with m_cols[2]: render_square(row[2])
+    
+    b_cols = st.columns(11)
+    for i, idx in enumerate(bottom_row): 
+        with b_cols[i]: render_square(idx)
 
     st.markdown("---")
     curr_p = st.session_state.players[st.session_state.current_p]
-    st.write(f"👉 Current Turn: {curr_p['name']}")
+    st.write(f"👉 Current Turn: **{curr_p['name']}**")
     
     if curr_p.get('in_jail'):
         c1, c2, c3 = st.columns(3)
         if c1.button("Roll for Doubles"): run_turn(jail_action="Try Doubles"); st.rerun()
         if c2.button("Pay $50"): run_turn(jail_action="Pay $50"); st.rerun()
-        if c3.button("Use GOOJF Card", disabled=not curr_p['goo_cards']): run_turn(jail_action="Use Card"); st.rerun()
+        if c3.button("Use GOOJF", disabled=not curr_p['goo_cards']): run_turn(jail_action="Use Card"); st.rerun()
     else:
         lc1, lc2 = st.columns([1, 2])
         if lc1.button("Next Turn", use_container_width=True): run_turn(); st.rerun()
         with lc2:
-            j_val = st.number_input("Turns to Jump", 1, 10000, 100, label_visibility="collapsed")
+            j_val = st.number_input("Jump Turns", 1, 10000, 100, label_visibility="collapsed")
             if st.button(f"Jump {j_val} Turns", use_container_width=True):
                 for _ in range(j_val): run_turn(silent=True)
                 st.rerun()
