@@ -566,12 +566,25 @@ elif st.session_state.phase == "LIVE":
         with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
             if p.get('in_jail'): st.error(f"IN JAIL 🚔 (Attempts: {p['jail_turns']})")
             for c in p['goo_cards']: st.success(f"GOOJF: {c['deck'].capitalize()}")
+            # --- 1. Display Streets (Colored Blocks) ---
             for color, pids in COLOR_GROUPS.items():
                 owned = [pid for pid in pids if st.session_state.ownership[pid] == p['name']]
                 if owned:
                     st.markdown(f'<span style="color:{COLOR_MAP[color]}">■</span> <b>{color}</b>', unsafe_allow_html=True)
                     is_mono = all(st.session_state.ownership[pid] == p['name'] for pid in pids)
                     st.write(", ".join([f"{PROPERTIES[pid]['name']}{' ('+str(st.session_state.houses[pid])+'🏠)' if is_mono else ''}" for pid in owned]))
+            
+            # --- 2. Display Railroads ---
+            owned_rr = [pid for pid in RAILROADS if st.session_state.ownership[pid] == p['name']]
+            if owned_rr:
+                st.markdown(f"<b>🚂 Railroads ({len(owned_rr)})</b>", unsafe_allow_html=True)
+                st.write(", ".join([PROPERTIES[pid]['name'] for pid in owned_rr]))
+            
+            # --- 3. Display Utilities ---
+            owned_util = [pid for pid in UTILITIES if st.session_state.ownership[pid] == p['name']]
+            if owned_util:
+                st.markdown(f"<b>💡 Utilities ({len(owned_util)})</b>", unsafe_allow_html=True)
+                st.write(", ".join([PROPERTIES[pid]['name'] for pid in owned_util]))
 
     board_markers = [""] * 40
     for p in st.session_state.players:
