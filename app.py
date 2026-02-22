@@ -658,6 +658,35 @@ elif st.session_state.phase == "LIVE":
         
         if 1 <= r <= 9: cols[12].write(board_markers[right_col[r-1]])
 
+    # --- PHASE 3: ANALYTICS DASHBOARD ---
+    st.markdown("---")
+    st.header("🔬 Stats Analytics")
+    
+    t_visits, t_ends, t_fin = st.tabs(["🚶 Total Visits", "🛑 Turn Ends", "💰 Rent Flow"])
+    
+    with t_visits:
+        # Aggregate visits from all players
+        visit_data = {PROPERTIES[i]['name']: sum(p['stats']['visits'][i] for p in st.session_state.players) for i in range(40)}
+        st.bar_chart(visit_data)
+
+    with t_ends:
+        # Aggregate where turns actually finish
+        ends_data = {PROPERTIES[i]['name']: sum(p['stats']['ends'][i] for p in st.session_state.players) for i in range(40)}
+        st.bar_chart(ends_data)
+
+    with t_fin:
+        # Show Rent Paid vs Collected per player
+        fin_list = []
+        for p in st.session_state.players:
+            fin_list.append({"Player": p['name'], "Type": "Collected", "Amount": p['stats']['rent_collected']})
+            fin_list.append({"Player": p['name'], "Type": "Paid", "Amount": p['stats']['rent_paid']})
+        
+        if fin_list:
+            # We import it locally ONLY here so it doesn't mess with the rest of your app
+            import pandas as pd 
+            df_fin = pd.DataFrame(fin_list)
+            st.bar_chart(data=df_fin, x="Player", y="Amount", color="Type", stack=False)
+
     st.markdown("---")
     curr_p = st.session_state.players[st.session_state.current_p]
     st.write(f"👉 Current Turn: **{curr_p['name']}**")
