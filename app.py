@@ -869,14 +869,17 @@ elif st.session_state.phase == "LIVE":
             st.info("No major events (property buys or house builds) recorded yet.")
 
 
-# --- THE RESET BUTTONS START HERE (NO SPACES TO THE LEFT) ---
-st.sidebar.markdown("---")
-
-if st.sidebar.button("🔄 RESTART GAME (Keep Policies)", use_container_width=True):
-    if "starting_players" in st.session_state:
-        restart_game()
-    else:
-        st.sidebar.warning("No active simulation to restart!")
-
-if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
-    reset_lab()
+--- UNIVERSAL RESET BUTTONS (Only visible during Gameplay) ---
+if st.session_state.phase == "LIVE":
+    st.sidebar.markdown("---")
+    
+    # "Soft Reset" - Restarts the turn count and cash, but keeps the same players
+    if st.sidebar.button("🔄 RESTART GAME (Keep Policies)", use_container_width=True):
+        if "starting_players" in st.session_state:
+            restart_game()
+        else:
+            st.sidebar.warning("No active simulation to restart!")
+    
+    # "Hard Reset" - Wipes everything and goes back to Setup
+    if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
+        reset_lab()
