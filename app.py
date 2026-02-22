@@ -127,6 +127,42 @@ if "phase" not in st.session_state:
         "shuffle_mode": "Cyclic"
     }
 
+#--- SPREADSHEET FUNCTIONALITY ---
+def get_player_excel_data():
+    import io
+    import pandas as pd
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        for player in st.session_state.players:
+            # Gather events for this player
+            # We'll map events to the turn they happened
+            event_map = {e['turn']: e['event'] for e in player['stats']['events']}
+            
+            history = player['stats']['cash_history']
+            data = []
+            
+            for turn_idx in range(len(history)):
+                # Get the event for this turn if it exists
+                action = event_map.get(turn_idx, "")
+                
+                data.append({
+                    "Turn": turn_idx,
+                    "Cash Balance": history[turn_idx],
+                    "Action/Acquisition": action
+                })
+            
+            df = pd.DataFrame(data)
+            # Save to a dedicated tab
+            df.to_excel(writer, sheet_name=player['name'][:31], index=False)
+            
+            # Auto-adjust column width for readability
+            worksheet = writer.sheets[player['name'][:31]]
+            worksheet.set_column('C:C', 40) 
+            
+    return output.getvalue()
+
+#--- GAME RESET ---
 def reset_lab():
     for k in list(st.session_state.keys()):
         del st.session_state[k]
@@ -431,8 +467,17 @@ def run_turn(jail_action=None, silent=False):
                         if can_afford and is_lowest:
                             st.session_state.houses[target_pid] += 1
                             p['cash'] -= h_cost
+                            
+                            # Update the on-screen message
                             msg += f" Built house on {PROPERTIES[target_pid]['name']}."
-                            p['stats']['events'].append((st.session_state.turn_count, f"Built house on {PROPERTIES[target_pid]['name']}"))
+                            
+                            # --- UPDATED LOGGING FOR EXCEL ---
+                            # We use a dictionary {} to match our Excel export logic
+                            p['stats']['events'].append({
+                                "turn": st.session_state.turn_count, 
+                                "event": f"Built house on {PROPERTIES[target_pid]['name']} (-${h_cost})"
+                            })
+                            # ---------------------------------
                             break 
 
         if not silent: st.session_state.last_move = msg
@@ -794,6 +839,34 @@ elif st.session_state.phase == "LIVE":
         if history_dict:
             df_history = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in history_dict.items()]))
             st.line_chart(df_history)
+
+        # --- NEW: EXCEL DOWNLOAD BUTTON ---
+        st.markdown("### 📥 Download Lab Data")
+        excel_data = get_player_excel_data() # This calls the function from Step 1
+        st.download_button(
+            label="Download Detailed Player Spreadsheets (Excel)",
+            data=excel_data,
+            file_name=f"monopoly_wealth_turn_{st.session_state.turn_count}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+        
+        st.markdown("---")
+        st.subheader("📌 Critical Game Moments")
+        all_events = []
+        for p in st.session_state.players:
+            # FIX: Updated to handle the dictionary format from Step 2
+            for e in p['stats']['events']:
+                all_events.append({
+                    "Turn": e['turn'], 
+                    "Player": p['name'], 
+                    "Event": e['event']
+                })
+                
+        if all_events:
+            st.table(pd.DataFrame(all_events).sort_values("Turn", ascending=False))
+        else:
+            st.info("No major events (property buys or house builds) recorded yet.")
         
         st.markdown("---")
         st.subheader("📌 Critical Game Moments")
