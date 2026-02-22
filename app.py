@@ -698,12 +698,18 @@ elif st.session_state.phase == "LIVE":
     
     with t_visits:
         # Aggregate visits from all players
-        visit_data = {PROPERTIES[i]['name']: sum(p['stats']['visits'][i] for p in st.session_state.players) for i in range(40)}
+        visit_data = {
+    f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['visits'][i] for p in st.session_state.players) 
+    for i in range(40)
+}
         st.bar_chart(visit_data)
 
     with t_ends:
         # Aggregate where turns actually finish
-        ends_data = {PROPERTIES[i]['name']: sum(p['stats']['ends'][i] for p in st.session_state.players) for i in range(40)}
+        ends_data = {
+    f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['ends'][i] for p in st.session_state.players) 
+    for i in range(40)
+}
         st.bar_chart(ends_data)
 
     with t_fin:
