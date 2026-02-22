@@ -347,6 +347,7 @@ def run_turn(jail_action=None, silent=False):
                     st.session_state.ownership[p['pos']] = p['name']
                     p['cash'] -= price
                     msg += f"Bought for ${price}."
+                    p['stats']['events'].append((st.session_state.turn_count, f"Bought {sq['name']}"))
         elif sq['type'] == "Tax":
             charge_player(p, sq.get('cost', 100))
             msg += f"Paid tax."
@@ -383,6 +384,7 @@ def run_turn(jail_action=None, silent=False):
                             st.session_state.houses[target_pid] += 1
                             p['cash'] -= h_cost
                             msg += f" Built house on {PROPERTIES[target_pid]['name']}."
+                            p['stats']['events'].append((st.session_state.turn_count, f"Built house on {PROPERTIES[target_pid]['name']}"))
                             break 
 
         if not silent: st.session_state.last_move = msg
@@ -396,6 +398,15 @@ def run_turn(jail_action=None, silent=False):
             st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
     
     st.session_state.turn_count += 1
+    
+    # --- WEALTH SNAPSHOT ---
+    for player in st.session_state.players:
+        # If this is turn 0 (custom setup), update the first entry. 
+        # Otherwise, append the new total.
+        if st.session_state.turn_count <= 1:
+            player['stats']['cash_history'] = [player['cash']]
+        else:
+            player['stats']['cash_history'].append(player['cash'])
 
 # --- UI FLOW ---
 if st.session_state.phase == "INIT":
@@ -423,11 +434,13 @@ if st.session_state.phase == "INIT":
                 },
                 # --- PHASE 1: STATS BUCKET ---
                 "stats": {
-                    "visits": {i: 0 for i in range(40)}, # Every square touched (e.g., landing on Chance)
-                    "ends": {i: 0 for i in range(40)},   # Only where the player is when the turn is over
+                    "visits": {i: 0 for i in range(40)},
+                    "ends": {i: 0 for i in range(40)},
                     "rent_paid": 0,
                     "rent_collected": 0,
-                    "times_in_jail": 0
+                    "times_in_jail": 0,
+                    "cash_history": [1500], # Initial starting value
+                    "events": []            # Log for critical moments
                 }
             })
         st.session_state.phase = "RULES"
@@ -694,36 +707,50 @@ elif st.session_state.phase == "LIVE":
     st.markdown("---")
     st.header("🔬 Stats Analytics")
     
-    t_visits, t_ends, t_fin = st.tabs(["🚶 Total Visits", "🛑 Turn Ends", "💰 Rent Flow"])
+    # NEW: Added t_wealth to the unpacking and "📈 Wealth Curve" to the list
+    t_visits, t_ends, t_fin, t_wealth = st.tabs([
+        "🚶 Total Visits", "🛑 Turn Ends", "💰 Rent Flow", "📈 Wealth Curve"
+    ])
     
     with t_visits:
-        # Aggregate visits from all players
-        visit_data = {
-    f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['visits'][i] for p in st.session_state.players) 
-    for i in range(40)
-}
+        # (Your existing visit logic stays here)
+        visit_data = {f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['visits'][i] for p in st.session_state.players) for i in range(40)}
         st.bar_chart(visit_data)
 
     with t_ends:
-        # Aggregate where turns actually finish
-        ends_data = {
-    f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['ends'][i] for p in st.session_state.players) 
-    for i in range(40)
-}
+        # (Your existing ends logic stays here)
+        ends_data = {f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['ends'][i] for p in st.session_state.players) for i in range(40)}
         st.bar_chart(ends_data)
 
     with t_fin:
-        # Show Rent Paid vs Collected per player
+        # (Your existing rent logic stays here)
         fin_list = []
         for p in st.session_state.players:
             fin_list.append({"Player": p['name'], "Type": "Collected", "Amount": p['stats']['rent_collected']})
             fin_list.append({"Player": p['name'], "Type": "Paid", "Amount": p['stats']['rent_paid']})
-        
         if fin_list:
-            # We import it locally ONLY here so it doesn't mess with the rest of your app
             import pandas as pd 
             df_fin = pd.DataFrame(fin_list)
             st.bar_chart(data=df_fin, x="Player", y="Amount", color="Type", stack=False)
+
+    with t_wealth:
+        # BRAND NEW: Wealth logic and Critical Moments table
+        import pandas as pd
+        history_dict = {p['name']: p['stats']['cash_history'] for p in st.session_state.players}
+        if history_dict:
+            df_history = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in history_dict.items()]))
+            st.line_chart(df_history)
+        
+        st.markdown("---")
+        st.subheader("📌 Critical Game Moments")
+        all_events = []
+        for p in st.session_state.players:
+            for turn, desc in p['stats']['events']:
+                all_events.append({"Turn": turn, "Player": p['name'], "Event": desc})
+        if all_events:
+            st.table(pd.DataFrame(all_events).sort_values("Turn", ascending=False))
+        else:
+            st.info("No major events (property buys or house builds) recorded yet.")
     
     if st.sidebar.button("RESET SIMULATION"):
         reset_lab()
