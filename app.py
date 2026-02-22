@@ -387,11 +387,24 @@ if st.session_state.phase == "INIT":
         st.session_state.players = []
         for n in temp_names:
             st.session_state.players.append({
-                "name": n, "cash": 1500, "pos": 0, "goo_cards": [], "in_jail": False, "jail_turns": 0,
+                "name": n, 
+                "cash": 1500, 
+                "pos": 0, 
+                "goo_cards": [], 
+                "in_jail": False, 
+                "jail_turns": 0,
                 "policy": {
                     "buy_prop": "Always", "buy_res": 500, 
                     "build_house": "Always", "build_res": 500,
                     "jail_exit": "Try Doubles"
+                },
+                # --- PHASE 1: STATS BUCKET ---
+                "stats": {
+                    "visits": {i: 0 for i in range(40)}, # Every square touched (e.g., landing on Chance)
+                    "ends": {i: 0 for i in range(40)},   # Only where the player is when the turn is over
+                    "rent_paid": 0,
+                    "rent_collected": 0,
+                    "times_in_jail": 0
                 }
             })
         st.session_state.phase = "RULES"
