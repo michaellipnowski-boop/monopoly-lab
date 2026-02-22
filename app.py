@@ -463,8 +463,14 @@ elif st.session_state.phase == "SETUP":
                         for p in st.session_state.players:
                             if p['name'] == p_n:
                                 p['goo_cards'].append({"deck": deck, "index": target_idx})
-                                if deck == "chance": st.session_state.c_deck_idx.remove(target_idx)
-                                else: st.session_state.ch_deck_idx.remove(target_idx)
+                                if deck == "chance":
+                                # Only remove if it's actually still in the deck
+                                    if target_idx in st.session_state.c_deck_idx:
+                                        st.session_state.c_deck_idx.remove(target_idx)
+                                else:
+                                    # Only remove if it's actually still in the deck
+                                    if target_idx in st.session_state.ch_deck_idx:
+                                        st.session_state.ch_deck_idx.remove(target_idx)
                     st.rerun()
         st.markdown("---")
         for i, p in enumerate(st.session_state.players):
