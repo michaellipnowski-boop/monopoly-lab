@@ -869,7 +869,7 @@ elif st.session_state.phase == "LIVE":
             st.info("No major events (property buys or house builds) recorded yet.")
 
 
---- UNIVERSAL RESET BUTTONS (Only visible during Gameplay) ---
+#--- UNIVERSAL RESET BUTTONS (Only visible during Gameplay) ---
 if st.session_state.phase == "LIVE":
     st.sidebar.markdown("---")
     
