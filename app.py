@@ -132,6 +132,40 @@ def reset_lab():
         del st.session_state[k]
     st.rerun()
 
+def restart_game():
+    import copy
+    import random
+
+    # 1. Reset the Board State (Properties and Houses)
+    st.session_state.ownership = {pid: "Bank" for pid in PROPERTIES if "rent" in PROPERTIES[pid] or PROPERTIES[pid].get("type") in ["Railroad", "Utility"]}
+    st.session_state.houses = {pid: 0 for pid in PROPERTIES if PROPERTIES[pid].get("type") == "Street"}
+    
+    # 2. Reset Game Metadata
+    st.session_state.last_move = "Game Restarted - Rules and custom totals preserved."
+    st.session_state.turn_count = 0
+    st.session_state.current_p = 0
+    st.session_state.double_count = 0
+    st.session_state.jackpot = st.session_state.rules["fp_initial"]
+    
+    # 3. Reshuffle Decks for a fresh start
+    st.session_state.c_deck_idx = list(range(16))
+    random.shuffle(st.session_state.c_deck_idx)
+    st.session_state.ch_deck_idx = list(range(16))
+    random.shuffle(st.session_state.ch_deck_idx)
+    
+    # 4. RESTORE PLAYERS FROM BLUEPRINT
+    # This is where we use the copy we made in Step 1
+    if "starting_players" in st.session_state:
+        # We use deepcopy again to ensure the new game doesn't 
+        # accidentally edit the blueprint itself
+        st.session_state.players = copy.deepcopy(st.session_state.starting_players)
+        
+        # Re-initialize the cash history so the graph starts clean at Turn 0
+        for p in st.session_state.players:
+            p['stats']['cash_history'] = [p['cash']]
+    
+    st.rerun()
+
 # --- HELPER LOGIC ---
 def charge_player(p, amt):
     p['cash'] -= amt
@@ -585,9 +619,17 @@ elif st.session_state.phase == "SETUP":
                 p['pos'] = 10 if jail_val else slider_pos
 
     if st.button("Start Live Simulation"):
-        # This captures the 'Turn 0' cash balance BEFORE any turns happen
+        # --- THE CHANGE: IMPORT COPY ---
+        import copy 
+        
+        # --- THE CHANGE: CREATE THE SAVE POINT ---
+        # This takes a 'snapshot' of your custom names, cash (888), and policies
+        st.session_state.starting_players = copy.deepcopy(st.session_state.players)
+        
+        # We still initialize the first data point for the graph
         for p in st.session_state.players:
             p['stats']['cash_history'] = [p['cash']]
+            
         st.session_state.phase = "LIVE"
         st.rerun()
 
@@ -750,5 +792,13 @@ elif st.session_state.phase == "LIVE":
         else:
             st.info("No major events (property buys or house builds) recorded yet.")
     
-    if st.sidebar.button("RESET SIMULATION"):
+    # --- RESET BUTTONS ---
+    st.sidebar.markdown("---")
+    
+    # NEW: The "Soft Reset" that uses the code from Step 2
+    if st.sidebar.button("🔄 RESTART GAME (Keep Policies)", use_container_width=True):
+        restart_game()
+        
+    # The Original "Hard Reset" 
+    if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
         reset_lab()
