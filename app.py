@@ -610,11 +610,10 @@ elif st.session_state.phase == "LIVE":
     curr_p = st.session_state.players[st.session_state.current_p]
     st.write(f"👉 Current Turn: **{curr_p['name']}**")
     
-    # 1. Permanent Automation Row (Always at the top of the controls)
+    # 1. Permanent Automation Row (Always Available)
     lc1, lc2 = st.columns([1, 2])
     with lc1:
-        # This button is now first and never moves
-        if st.button("Next Turn (Auto)", use_container_width=True, type="primary"):
+        if st.button("Next Turn", use_container_width=True, type="primary"):
             run_turn()
             st.rerun()
     with lc2:
@@ -626,7 +625,7 @@ elif st.session_state.phase == "LIVE":
                 for _ in range(j_val): run_turn(silent=True)
                 st.rerun()
 
-    # 2. Contextual Jail Row (Appears below the main buttons ONLY if in jail)
+    # 2. Contextual Jail Row (Appears ONLY if the current player is in jail)
     if curr_p.get('in_jail'):
         st.markdown("---")
         st.caption(f"🛠️ Manual Override for {curr_p['name']} (In Jail)")
@@ -635,6 +634,7 @@ elif st.session_state.phase == "LIVE":
         if jc2.button("Pay $50"): run_turn(jail_action="Pay $50"); st.rerun()
         if jc3.button("Use Card", disabled=not curr_p['goo_cards']): run_turn(jail_action="Use Card"); st.rerun()
 
+    # 3. Status Message
     if st.session_state.last_move:
         st.info(st.session_state.last_move)
     if st.sidebar.button("RESET SIMULATION"):
