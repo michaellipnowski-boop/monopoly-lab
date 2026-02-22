@@ -422,6 +422,11 @@ elif st.session_state.phase == "RULES":
 
 elif st.session_state.phase == "POLICIES":
     st.title("🧠 Player Policies")
+    # --- DROP-IN BACK BUTTON ---
+    if st.button("⬅ Back to Global Rules"):
+        st.session_state.phase = "RULES"
+        st.rerun()
+    st.markdown("---")
     for i, p in enumerate(st.session_state.players):
         with st.expander(f"Strategy: {p['name']}", expanded=True):
             col1, col2, col3 = st.columns(3)
@@ -442,6 +447,11 @@ elif st.session_state.phase == "POLICIES":
 
 elif st.session_state.phase == "SETUP":
     st.title("🏗️ Customization")
+    # --- DROP-IN BACK BUTTON ---
+    if st.button("⬅ Back to Mode Selection"):
+        st.session_state.phase = "CHOICE"
+        st.rerun()
+    st.markdown("---")
     t1, t2, t3 = st.tabs(["Properties owned", "Houses built", "Cash, jail, and position"])
     p_names = [p['name'] for p in st.session_state.players]
     
@@ -536,6 +546,11 @@ elif st.session_state.phase == "SETUP":
 
 elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Mode Selection")
+    # --- DROP-IN BACK BUTTON ---
+    if st.button("⬅ Back to Player Policies"):
+        st.session_state.phase = "POLICIES"
+        st.rerun()
+    st.markdown("---")
     c1, c2 = st.columns(2)
     if c1.button("Standard Simulation"): st.session_state.phase = "LIVE"; st.rerun()
     if c2.button("Customization Setup"): st.session_state.phase = "SETUP"; st.rerun()
