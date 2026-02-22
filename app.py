@@ -557,6 +557,9 @@ elif st.session_state.phase == "CHOICE":
 
 elif st.session_state.phase == "LIVE":
     st.sidebar.title("📊 Ledger")
+    # --- TURN COUNTER ---
+    st.sidebar.metric("Total Turns Played", st.session_state.turn_count)
+    st.sidebar.markdown("---")
     if st.session_state.rules["fp_jackpot"]:
         st.sidebar.metric("Free Parking Jackpot", f"${st.session_state.jackpot}")
     for p in st.session_state.players:
