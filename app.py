@@ -366,7 +366,7 @@ def run_turn(jail_action=None, silent=False):
                             st.session_state.houses[target_pid] += 1
                             p['cash'] -= h_cost
                             msg += f" Built house on {PROPERTIES[target_pid]['name']}."
-                            break # build one house at a time per turn for simplicity
+                            break 
 
         if not silent: st.session_state.last_move = msg
         if not is_double:
@@ -566,16 +566,19 @@ elif st.session_state.phase == "LIVE":
     bottom_row = list(range(10, -1, -1))
     left_col = list(range(19, 10, -1))
 
+    # --- RENDER BOARD ---
     cols_t = st.columns([1] + [1]*11 + [1])
     for i, cell in enumerate(top_row): cols_t[i+1].write(board_markers[cell])
 
     for r in range(11):
         cols = st.columns([1] + [1]*11 + [1])
         if 1 <= r <= 9: cols[0].write(board_markers[left_col[r-1]])
+        
         row_data = []
         if r == 0: row_data = top_row
         elif r == 10: row_data = bottom_row
         else: row_data = [left_col[r-1]] + [""]*9 + [right_col[r-1]]
+        
         for c, cell in enumerate(row_data):
             if cell != "":
                 sq = PROPERTIES[cell]
@@ -583,27 +586,32 @@ elif st.session_state.phase == "LIVE":
                 with cols[c+1].container():
                     st.markdown(f'<div style="background:{bg}; height:8px;"></div>', unsafe_allow_html=True)
                     st.caption(sq['name'][:8])
-                    if r == 10 or cell in left_col or cell in right_col: 
+                    if r == 10 or cell in left_col or cell in right_col:
                         st.write(board_markers[cell])
+        
         if 1 <= r <= 9: cols[12].write(board_markers[right_col[r-1]])
 
     st.markdown("---")
     curr_p = st.session_state.players[st.session_state.current_p]
-    st.write(f"👉 Current Turn: {curr_p['name']}")
+    st.write(f"👉 Current Turn: **{curr_p['name']}**")
     
     if curr_p.get('in_jail'):
-        c1, c2, c3 = st.columns(3)
-        if c1.button("Roll for Doubles"): run_turn(jail_action="Try Doubles"); st.rerun()
-        if c2.button("Pay $50"): run_turn(jail_action="Pay $50"); st.rerun()
-        if c3.button("Use GOOJF Card", disabled=not curr_p['goo_cards']): run_turn(jail_action="Use Card"); st.rerun()
+        jc1, jc2, jc3 = st.columns(3)
+        if jc1.button("Roll for Doubles"): run_turn(jail_action="Try Doubles"); st.rerun()
+        if jc2.button("Pay $50"): run_turn(jail_action="Pay $50"); st.rerun()
+        if jc3.button("Use GOOJF Card", disabled=not curr_p['goo_cards']): run_turn(jail_action="Use Card"); st.rerun()
     else:
         lc1, lc2 = st.columns([1, 2])
-        if lc1.button("Next Turn", use_container_width=True): run_turn(); st.rerun()
+        if lc1.button("Next Turn", use_container_width=True):
+            run_turn()
+            st.rerun()
         with lc2:
             j_val = st.number_input("Turns to Jump", 1, 10000, 100, label_visibility="collapsed")
             if st.button(f"Jump {j_val} Turns", use_container_width=True):
                 for _ in range(j_val): run_turn(silent=True)
                 st.rerun()
 
-    if st.session_state.last_move: st.info(st.session_state.last_move)
-    if st.sidebar.button("RESET SIMULATION"): reset_lab()
+    if st.session_state.last_move:
+        st.info(st.session_state.last_move)
+    if st.sidebar.button("RESET SIMULATION"):
+        reset_lab()
