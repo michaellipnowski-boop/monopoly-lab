@@ -401,12 +401,7 @@ def run_turn(jail_action=None, silent=False):
     
     # --- WEALTH SNAPSHOT ---
     for player in st.session_state.players:
-        # If this is turn 0 (custom setup), update the first entry. 
-        # Otherwise, append the new total.
-        if st.session_state.turn_count <= 1:
-            player['stats']['cash_history'] = [player['cash']]
-        else:
-            player['stats']['cash_history'].append(player['cash'])
+        player['stats']['cash_history'].append(player['cash'])
 
 # --- UI FLOW ---
 if st.session_state.phase == "INIT":
@@ -593,7 +588,6 @@ elif st.session_state.phase == "SETUP":
         # This captures the 'Turn 0' cash balance BEFORE any turns happen
         for p in st.session_state.players:
             p['stats']['cash_history'] = [p['cash']]
-            
         st.session_state.phase = "LIVE"
         st.rerun()
 
