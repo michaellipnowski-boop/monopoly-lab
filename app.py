@@ -163,6 +163,9 @@ def send_to_jail(p):
     p['in_jail'] = True
     p['jail_turns'] = 0
     st.session_state.double_count = 0
+    # --- TRACK THE VISIT TO JAIL ---
+    p['stats']['visits'][10] += 1
+    p['stats']['times_in_jail'] += 1
 
 def draw_card(p, deck_type):
     if deck_type == "chance":
@@ -183,6 +186,7 @@ def draw_card(p, deck_type):
     if card['effect'] == "move":
         old_pos = p['pos']
         p['pos'] = card['pos']
+        p['stats']['visits'][p['pos']] += 1
         if p['pos'] < old_pos: 
             p['cash'] += 200
             
@@ -191,6 +195,7 @@ def draw_card(p, deck_type):
         
     elif card['effect'] == "move_relative":
         p['pos'] = (p['pos'] + card['amt']) % 40
+        p['stats']['visits'][p['pos']] += 1
         
     elif card['effect'] == "cash":
         if card['amt'] < 0: 
@@ -218,12 +223,14 @@ def draw_card(p, deck_type):
         targets = [5, 15, 25, 35]
         old_pos = p['pos']
         p['pos'] = min([r for r in targets if r > p['pos']] or [5])
+        p['stats']['visits'][p['pos']] += 1
         if p['pos'] < old_pos: p['cash'] += 200
         
     elif card['effect'] == "move_nearest_util":
         targets = [12, 28]
         old_pos = p['pos']
         p['pos'] = min([u for u in targets if u > p['pos']] or [12])
+        p['stats']['visits'][p['pos']] += 1
         if p['pos'] < old_pos: p['cash'] += 200
 
     if st.session_state.rules["shuffle_mode"] == "True Random":
