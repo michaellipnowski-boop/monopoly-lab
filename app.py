@@ -324,10 +324,19 @@ def run_turn(jail_action=None, silent=False):
             owner = st.session_state.ownership.get(p['pos'], "Bank")
             if owner != "Bank" and owner != p['name']:
                 rent = get_rent(p['pos'], roll_sum)
+                
+                # --- PRESERVE EXISTING LOGIC ---
                 p['cash'] -= rent
+                # Record the rent paid by the current player
+                p['stats']['rent_paid'] += rent 
+                
                 for op in st.session_state.players:
-                    if op['name'] == owner: op['cash'] += rent
-                msg += f"Paid ${rent} rent."
+                    if op['name'] == owner: 
+                        op['cash'] += rent
+                        # --- RECORD RENT COLLECTED BY THE OWNER ---
+                        op['stats']['rent_collected'] += rent
+                
+                msg += f"Paid ${rent} rent. "
             elif owner == "Bank":
                 # Policy-based Buying
                 price = sq.get('price', 150)
@@ -377,6 +386,12 @@ def run_turn(jail_action=None, silent=False):
                             break 
 
         if not silent: st.session_state.last_move = msg
+        # --- PHASE 2: END OF TURN TRACKER ---
+        # We record this here because the player's physical movement 
+        # for this specific roll is now complete.
+        p['stats']['ends'][p['pos']] += 1
+
+        # Your existing turn-switching logic:
         if not is_double:
             st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
     
