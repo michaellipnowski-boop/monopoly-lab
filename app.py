@@ -330,6 +330,16 @@ def run_turn(jail_action=None, silent=False):
             else:
                 p['jail_turns'] += 1
                 if not silent: st.session_state.last_move = f"{p['name']} failed doubles, stays in Jail."
+                
+                # --- STAT FIX: Track the turn spent on the Jail square (index 10) ---
+                p['stats']['visits'][10] += 1
+                p['stats']['ends'][10] += 1
+                
+                # Snapshot the cash history so the graph stays current even in jail
+                for player in st.session_state.players:
+                    player['stats']['cash_history'].append(player['cash'])
+                # ------------------------------------------------------------------
+
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                 st.session_state.turn_count += 1
                 return
