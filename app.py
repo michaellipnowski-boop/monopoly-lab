@@ -1,3 +1,4 @@
+
 import streamlit as st
 import random
 
@@ -10,45 +11,45 @@ COLOR_MAP = {
 
 PROPERTIES = {
     0: {"name": "GO", "type": "Safe"},
-    1: {"name": "Mediterranean Avenue", "type": "Street", "color": "Brown", "rent": [2, 10, 30, 90, 160, 250], "price": 60, "h_cost": 50},
+    1: {"name": "Mediterranean Avenue", "type": "Street", "color": "Brown", "rent": [2, 10, 30, 90, 160, 250], "price": 60},
     2: {"name": "Community Chest", "type": "Action", "deck": "chest"},
-    3: {"name": "Baltic Avenue", "type": "Street", "color": "Brown", "rent": [4, 20, 60, 180, 320, 450], "price": 60, "h_cost": 50},
+    3: {"name": "Baltic Avenue", "type": "Street", "color": "Brown", "rent": [4, 20, 60, 180, 320, 450], "price": 60},
     4: {"name": "Income Tax", "type": "Tax", "cost": 200},
     5: {"name": "Reading Railroad", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200], "price": 200},
-    6: {"name": "Oriental Avenue", "type": "Street", "color": "Light Blue", "rent": [6, 30, 90, 270, 400, 550], "price": 100, "h_cost": 50},
+    6: {"name": "Oriental Avenue", "type": "Street", "color": "Light Blue", "rent": [6, 30, 90, 270, 400, 550], "price": 100},
     7: {"name": "Chance", "type": "Action", "deck": "chance"},
-    8: {"name": "Vermont Avenue", "type": "Street", "color": "Light Blue", "rent": [6, 30, 90, 270, 400, 550], "price": 100, "h_cost": 50},
-    9: {"name": "Connecticut Avenue", "type": "Street", "color": "Light Blue", "rent": [8, 40, 100, 300, 450, 600], "price": 120, "h_cost": 50},
+    8: {"name": "Vermont Avenue", "type": "Street", "color": "Light Blue", "rent": [6, 30, 90, 270, 400, 550], "price": 100},
+    9: {"name": "Connecticut Avenue", "type": "Street", "color": "Light Blue", "rent": [8, 40, 100, 300, 450, 600], "price": 120},
     10: {"name": "Jail / Just Visiting", "type": "Safe"},
-    11: {"name": "St. Charles Place", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750], "price": 140, "h_cost": 100},
+    11: {"name": "St. Charles Place", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750], "price": 140},
     12: {"name": "Electric Company", "type": "Utility", "color": "Utility", "rent": [4, 10], "price": 150},
-    13: {"name": "States Avenue", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750], "price": 140, "h_cost": 100},
-    14: {"name": "Virginia Avenue", "type": "Street", "color": "Pink", "rent": [12, 60, 180, 500, 700, 900], "price": 160, "h_cost": 100},
+    13: {"name": "States Avenue", "type": "Street", "color": "Pink", "rent": [10, 50, 150, 450, 625, 750], "price": 140},
+    14: {"name": "Virginia Avenue", "type": "Street", "color": "Pink", "rent": [12, 60, 180, 500, 700, 900], "price": 160},
     15: {"name": "Pennsylvania Railroad", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200], "price": 200},
-    16: {"name": "St. James Place", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950], "price": 180, "h_cost": 100},
+    16: {"name": "St. James Place", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950], "price": 180},
     17: {"name": "Community Chest", "type": "Action", "deck": "chest"},
-    18: {"name": "Tennessee Avenue", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950], "price": 180, "h_cost": 100},
-    19: {"name": "New York Avenue", "type": "Street", "color": "Orange", "rent": [16, 80, 220, 600, 800, 1000], "price": 200, "h_cost": 100},
+    18: {"name": "Tennessee Avenue", "type": "Street", "color": "Orange", "rent": [14, 70, 200, 550, 750, 950], "price": 180},
+    19: {"name": "New York Avenue", "type": "Street", "color": "Orange", "rent": [16, 80, 220, 600, 800, 1000], "price": 200},
     20: {"name": "Free Parking", "type": "Safe"},
-    21: {"name": "Kentucky Avenue", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050], "price": 220, "h_cost": 150},
+    21: {"name": "Kentucky Avenue", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050], "price": 220},
     22: {"name": "Chance", "type": "Action", "deck": "chance"},
-    23: {"name": "Indiana Avenue", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050], "price": 220, "h_cost": 150},
-    24: {"name": "Illinois Avenue", "type": "Street", "color": "Red", "rent": [20, 100, 300, 750, 925, 1100], "price": 240, "h_cost": 150},
+    23: {"name": "Indiana Avenue", "type": "Street", "color": "Red", "rent": [18, 90, 250, 700, 875, 1050], "price": 220},
+    24: {"name": "Illinois Avenue", "type": "Street", "color": "Red", "rent": [20, 100, 300, 750, 925, 1100], "price": 240},
     25: {"name": "B. & O. Railroad", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200], "price": 200},
-    26: {"name": "Atlantic Avenue", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150], "price": 260, "h_cost": 150},
-    27: {"name": "Ventnor Avenue", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150], "price": 260, "h_cost": 150},
+    26: {"name": "Atlantic Avenue", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150], "price": 260},
+    27: {"name": "Ventnor Avenue", "type": "Street", "color": "Yellow", "rent": [22, 110, 330, 800, 975, 1150], "price": 260},
     28: {"name": "Water Works", "type": "Utility", "color": "Utility", "rent": [4, 10], "price": 150},
-    29: {"name": "Marvin Gardens", "type": "Street", "color": "Yellow", "rent": [24, 120, 360, 850, 1025, 1200], "price": 280, "h_cost": 150},
+    29: {"name": "Marvin Gardens", "type": "Street", "color": "Yellow", "rent": [24, 120, 360, 850, 1025, 1200], "price": 280},
     30: {"name": "Go To Jail", "type": "Action"},
-    31: {"name": "Pacific Avenue", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275], "price": 300, "h_cost": 200},
-    32: {"name": "North Carolina Avenue", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275], "price": 300, "h_cost": 200},
+    31: {"name": "Pacific Avenue", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275], "price": 300},
+    32: {"name": "North Carolina Avenue", "type": "Street", "color": "Green", "rent": [26, 130, 390, 900, 1100, 1275], "price": 300},
     33: {"name": "Community Chest", "type": "Action", "deck": "chest"},
-    34: {"name": "Pennsylvania Avenue", "type": "Street", "color": "Green", "rent": [28, 150, 450, 1000, 1200, 1400], "price": 320, "h_cost": 200},
+    34: {"name": "Pennsylvania Avenue", "type": "Street", "color": "Green", "rent": [28, 150, 450, 1000, 1200, 1400], "price": 320},
     35: {"name": "Short Line Railroad", "type": "Railroad", "color": "Railroad", "rent": [25, 50, 100, 200], "price": 200},
     36: {"name": "Chance", "type": "Action", "deck": "chance"},
-    37: {"name": "Park Place", "type": "Street", "color": "Dark Blue", "rent": [35, 175, 500, 1100, 1300, 1500], "price": 350, "h_cost": 200},
+    37: {"name": "Park Place", "type": "Street", "color": "Dark Blue", "rent": [35, 175, 500, 1100, 1300, 1500], "price": 350},
     38: {"name": "Luxury Tax", "type": "Tax", "cost": 100},
-    39: {"name": "Boardwalk", "type": "Street", "color": "Dark Blue", "rent": [50, 200, 600, 1400, 1700, 2000], "price": 400, "h_cost": 200}
+    39: {"name": "Boardwalk", "type": "Street", "color": "Dark Blue", "rent": [50, 200, 600, 1400, 1700, 2000], "price": 400}
 }
 
 # --- DECKS ---
@@ -241,38 +242,6 @@ def draw_card(p, deck_type):
             
     return msg
 
-def handle_auto_build(p):
-    """Executes house building based on player strategy."""
-    strat = p['policy']['build_strat']
-    if strat == "None":
-        return ""
-    
-    reserve = p['policy']['build_reserve'] if strat == "Keep Reserve" else 0
-    built_msg = ""
-    
-    # Check all color groups
-    for color, pids in COLOR_GROUPS.items():
-        if all(st.session_state.ownership[pid] == p['name'] for pid in pids):
-            # Monopolized. Try to build evenly.
-            while True:
-                min_houses = min(st.session_state.houses[pid] for pid in pids)
-                if min_houses >= 5: break # Maxed out
-                
-                # Find properties in this set that can be upgraded
-                targets = [pid for pid in pids if st.session_state.houses[pid] == min_houses]
-                building_happened = False
-                for tid in targets:
-                    cost = PROPERTIES[tid]['h_cost']
-                    if p['cash'] - cost >= reserve:
-                        st.session_state.houses[tid] += 1
-                        p['cash'] -= cost
-                        built_msg += f" Built house on {PROPERTIES[tid]['name']}."
-                        building_happened = True
-                    else:
-                        break
-                if not building_happened: break
-    return built_msg
-
 def run_turn(jail_action=None, silent=False):
     p = st.session_state.players[st.session_state.current_p]
     
@@ -280,9 +249,6 @@ def run_turn(jail_action=None, silent=False):
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         return
     
-    # --- PHASE 1: Automation (Building) ---
-    auto_msg = handle_auto_build(p)
-
     d1 = random.randint(1, 6)
     d2 = random.randint(1, 6)
     roll_sum = d1 + d2
@@ -290,10 +256,15 @@ def run_turn(jail_action=None, silent=False):
     
     if p.get('in_jail'):
         if jail_action is None:
-            if p['goo_cards']: jail_action = "Use Card"
-            elif p['policy']['jail_exit'] == "Pay Immediately" and p['cash'] >= 50: jail_action = "Pay $50"
-            elif p['jail_turns'] >= 2: jail_action = "Pay $50"
-            else: jail_action = "Try Doubles"
+            # Policy-based automation
+            if p['goo_cards']:
+                jail_action = "Use Card"
+            elif p['policy']['jail_exit'] == "Pay Immediately" and p['cash'] >= 50:
+                jail_action = "Pay $50"
+            elif p['jail_turns'] >= 2:
+                jail_action = "Pay $50"
+            else:
+                jail_action = "Try Doubles"
         
         if jail_action == "Pay $50":
             charge_player(p, 50)
@@ -334,8 +305,10 @@ def run_turn(jail_action=None, silent=False):
         p['pos'] = (p['pos'] + roll_sum) % 40
         
         if p['pos'] < old_pos:
-            if st.session_state.rules["double_go"] and p['pos'] == 0: p['cash'] += 400
-            else: p['cash'] += 200
+            if st.session_state.rules["double_go"] and p['pos'] == 0:
+                p['cash'] += 400
+            else:
+                p['cash'] += 200
         
         sq = PROPERTIES.get(p['pos'])
         msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
@@ -349,18 +322,14 @@ def run_turn(jail_action=None, silent=False):
                     if op['name'] == owner: op['cash'] += rent
                 msg += f"Paid ${rent} rent."
             elif owner == "Bank":
+                # Policy-based Buying
                 price = sq.get('price', 150)
                 pol = p['policy']['buy_prop']
-                should_buy = False
-                if pol == "Always": should_buy = True
-                elif pol == "Random (50/50)": should_buy = (random.random() > 0.5)
-                elif pol == "Keep Reserve" and p['cash'] - price >= p['policy']['buy_reserve']: should_buy = True
-                
+                should_buy = (pol == "Always") or (pol == "Keep $500 Reserve" and p['cash'] - price >= 500)
                 if should_buy and p['cash'] >= price:
                     st.session_state.ownership[p['pos']] = p['name']
                     p['cash'] -= price
                     msg += f"Bought for ${price}."
-
         elif sq['type'] == "Tax":
             charge_player(p, sq.get('cost', 100))
             msg += f"Paid tax."
@@ -376,7 +345,7 @@ def run_turn(jail_action=None, silent=False):
                 msg += f"Collected Jackpot of ${st.session_state.jackpot}!"
                 st.session_state.jackpot = st.session_state.rules["fp_initial"]
         
-        if not silent: st.session_state.last_move = msg + auto_msg
+        if not silent: st.session_state.last_move = msg
         if not is_double:
             st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
     
@@ -396,11 +365,7 @@ if st.session_state.phase == "INIT":
         for n in temp_names:
             st.session_state.players.append({
                 "name": n, "cash": 1500, "pos": 0, "goo_cards": [], "in_jail": False, "jail_turns": 0,
-                "policy": {
-                    "buy_prop": "Always", "buy_reserve": 500, 
-                    "jail_exit": "Try Doubles",
-                    "build_strat": "Aggressive", "build_reserve": 500
-                }
+                "policy": {"buy_prop": "Always", "jail_exit": "Try Doubles"}
             })
         st.session_state.phase = "RULES"
         st.rerun()
@@ -419,8 +384,10 @@ elif st.session_state.phase == "RULES":
     st.session_state.rules["double_go"] = st.toggle("Double GO ($400 for landing exactly on GO)", value=st.session_state.rules["double_go"])
     st.session_state.rules["fp_jackpot"] = st.toggle("Free parking jackpot (Collect Taxes/Fines)", value=st.session_state.rules["fp_jackpot"])
     if st.session_state.rules["fp_jackpot"]:
-        st.session_state.rules["fp_initial"] = st.number_input("Initial Jackpot Amount", min_value=0, value=int(st.session_state.rules["fp_initial"]), step=50)
-        st.session_state.jackpot = st.session_state.rules["fp_initial"]
+        new_initial = st.number_input("Initial Jackpot Amount", min_value=0, value=int(st.session_state.rules["fp_initial"]), step=50)
+        if new_initial != st.session_state.rules["fp_initial"]:
+            st.session_state.rules["fp_initial"] = new_initial
+            st.session_state.jackpot = new_initial
     st.markdown("---")
     if st.button("Proceed to Player Policies", type="primary"):
         st.session_state.phase = "POLICIES"
@@ -430,18 +397,9 @@ elif st.session_state.phase == "POLICIES":
     st.title("🧠 Player Policies")
     for i, p in enumerate(st.session_state.players):
         with st.expander(f"Strategy: {p['name']}", expanded=True):
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.subheader("Buying")
-                p['policy']['buy_prop'] = st.selectbox("Purchase Rule", ["Always", "Random (50/50)", "Keep Reserve", "Never"], key=f"pol_b_{i}")
-                if p['policy']['buy_prop'] == "Keep Reserve":
-                    p['policy']['buy_reserve'] = st.number_input("Reserve to maintain ($)", 0, 2000, p['policy']['buy_reserve'], 50, key=f"res_b_{i}")
-                p['policy']['jail_exit'] = st.selectbox("Jail Strategy", ["Try Doubles", "Pay Immediately"], key=f"pol_j_{i}")
-            with col_b:
-                st.subheader("Building")
-                p['policy']['build_strat'] = st.selectbox("Building Strategy", ["Aggressive", "Keep Reserve", "None"], key=f"pol_h_{i}")
-                if p['policy']['build_strat'] == "Keep Reserve":
-                    p['policy']['build_reserve'] = st.number_input("Reserve to maintain ($)", 0, 2000, p['policy']['build_reserve'], 50, key=f"res_h_{i}")
+            c1, c2 = st.columns(2)
+            p['policy']['buy_prop'] = c1.selectbox("Property Buying", ["Always", "Keep $500 Reserve", "Never"], key=f"pol_b_{i}")
+            p['policy']['jail_exit'] = c2.selectbox("Jail Strategy", ["Try Doubles", "Pay Immediately"], key=f"pol_j_{i}")
     if st.button("Proceed to Mode Selection"):
         st.session_state.phase = "CHOICE"
         st.rerun()
@@ -450,6 +408,7 @@ elif st.session_state.phase == "SETUP":
     st.title("🏗️ Customization")
     t1, t2, t3 = st.tabs(["Properties owned", "Houses built", "Cash, jail, and position"])
     p_names = [p['name'] for p in st.session_state.players]
+    
     with t1:
         all_ownable = []
         for color, pids in COLOR_GROUPS.items(): all_ownable.extend(pids)
@@ -466,6 +425,7 @@ elif st.session_state.phase == "SETUP":
                 if cols[i+1].button(p_n, key=f"set_o_{pid}{p_n}", type="primary" if is_own else "secondary"):
                     st.session_state.ownership[pid] = "Bank" if is_own else p_n
                     st.rerun()
+    
     with t2:
         for color, pids in COLOR_GROUPS.items():
             owners = [st.session_state.ownership[p] for p in pids]
@@ -481,19 +441,58 @@ elif st.session_state.phase == "SETUP":
                     if c2.button("➖", key=f"hm{pid}", disabled=not can_down): st.session_state.houses[pid] -= 1; st.rerun()
                     c3.write(f"**{h}**")
                     if c4.button("➕", key=f"hp_{pid}", disabled=not can_up): st.session_state.houses[pid] += 1; st.rerun()
+    
     with t3:
+        st.markdown("### 🎫 Get Out of Jail Free Cards")
+        for deck in ["chance", "chest"]:
+            label = "Chance (Orange)" if deck == "chance" else "Community Chest (Yellow)"
+            cols = st.columns([2] + [1]*len(p_names))
+            cols[0].write(f"**{label}**")
+            current_owner_name = "Bank"
+            for p in st.session_state.players:
+                if any(c['deck'] == deck for c in p['goo_cards']): current_owner_name = p['name']; break
+            for i, p_n in enumerate(p_names):
+                is_holder = (current_owner_name == p_n)
+                if cols[i+1].button(p_n, key=f"goojf_{deck}_{p_n}", type="primary" if is_holder else "secondary"):
+                    for p in st.session_state.players: p['goo_cards'] = [c for c in p['goo_cards'] if c['deck'] != deck]
+                    target_idx = 6 if deck == "chance" else 4
+                    if is_holder:
+                        if deck == "chance": st.session_state.c_deck_idx.append(target_idx)
+                        else: st.session_state.ch_deck_idx.append(target_idx)
+                    else:
+                        for p in st.session_state.players:
+                            if p['name'] == p_n:
+                                p['goo_cards'].append({"deck": deck, "index": target_idx})
+                                if deck == "chance": st.session_state.c_deck_idx.remove(target_idx)
+                                else: st.session_state.ch_deck_idx.remove(target_idx)
+                    st.rerun()
+        st.markdown("---")
         for i, p in enumerate(st.session_state.players):
             st.markdown(f"#### 👤 {p['name']}")
             c1, c2 = st.columns([1, 2])
             with c1:
                 p['cash'] = st.number_input(f"Cash", value=int(p['cash']), step=50, key=f"set_c_{i}")
                 jail_val = st.checkbox(f"In Jail?", value=p['in_jail'], key=f"set_j_{i}")
-                p['in_jail'] = jail_val
-                if jail_val: p['jail_turns'] = st.radio("Failed rolls:", [0, 1, 2], index=p['jail_turns'], key=f"jail_t_{i}", horizontal=True)
+                if jail_val:
+                    p['in_jail'] = True
+                    p['jail_turns'] = st.radio("Failed rolls:", [0, 1, 2], index=p['jail_turns'], key=f"jail_t_{i}", horizontal=True)
+                else:
+                    p['in_jail'] = False
+                    p['jail_turns'] = 0
             with c2:
                 valid_indices = [idx for idx in range(40) if idx != 30]
-                p['pos'] = st.select_slider(f"Board Position", options=valid_indices, value=p['pos'] if not jail_val else 10, disabled=jail_val, key=f"set_p_{i}")
-    if st.button("Start Live Simulation"): st.session_state.phase = "LIVE"; st.rerun()
+                def get_square_label(pos):
+                    base = PROPERTIES[pos]['name']
+                    if base in ["Chance", "Community Chest"]:
+                        count = sum(1 for j in range(pos + 1) if PROPERTIES[j]['name'] == base)
+                        return f"{base} ({'1st' if count==1 else '2nd' if count==2 else '3rd'})"
+                    return base
+                slider_pos = st.select_slider(f"Board Position", options=valid_indices, format_func=get_square_label, value=p['pos'] if not jail_val else 10, disabled=jail_val, key=f"set_p_{i}")
+                p['pos'] = 10 if jail_val else slider_pos
+
+    if st.button("Start Live Simulation"):
+        st.session_state.phase = "LIVE"
+        st.rerun()
 
 elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Mode Selection")
@@ -503,10 +502,12 @@ elif st.session_state.phase == "CHOICE":
 
 elif st.session_state.phase == "LIVE":
     st.sidebar.title("📊 Ledger")
-    if st.session_state.rules["fp_jackpot"]: st.sidebar.metric("Free Parking Jackpot", f"${st.session_state.jackpot}")
+    if st.session_state.rules["fp_jackpot"]:
+        st.sidebar.metric("Free Parking Jackpot", f"${st.session_state.jackpot}")
     for p in st.session_state.players:
         with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
-            if p.get('in_jail'): st.error(f"IN JAIL 🚔")
+            if p.get('in_jail'): st.error(f"IN JAIL 🚔 (Attempts: {p['jail_turns']})")
+            for c in p['goo_cards']: st.success(f"GOOJF: {c['deck'].capitalize()}")
             for color, pids in COLOR_GROUPS.items():
                 owned = [pid for pid in pids if st.session_state.ownership[pid] == p['name']]
                 if owned:
@@ -517,16 +518,20 @@ elif st.session_state.phase == "LIVE":
     board_markers = [""] * 40
     for p in st.session_state.players:
         initials = "".join([n[0] for n in p['name'].split()])
-        board_markers[p['pos']] += f"[{initials}{'⛓️' if p.get('in_jail') else ''}]"
+        jail_tag = "⛓️" if p.get('in_jail') else ""
+        board_markers[p['pos']] += f"[{initials}{jail_tag}]"
 
-    # Minimal board grid logic (preserved)
     top_row = list(range(20, 31))
+    right_col = list(range(31, 40))
     bottom_row = list(range(10, -1, -1))
     left_col = list(range(19, 10, -1))
-    right_col = list(range(31, 40))
+
+    cols_t = st.columns([1] + [1]*11 + [1])
+    for i, cell in enumerate(top_row): cols_t[i+1].write(board_markers[cell])
 
     for r in range(11):
         cols = st.columns([1] + [1]*11 + [1])
+        if 1 <= r <= 9: cols[0].write(board_markers[left_col[r-1]])
         row_data = []
         if r == 0: row_data = top_row
         elif r == 10: row_data = bottom_row
@@ -538,11 +543,14 @@ elif st.session_state.phase == "LIVE":
                 with cols[c+1].container():
                     st.markdown(f'<div style="background:{bg}; height:8px;"></div>', unsafe_allow_html=True)
                     st.caption(sq['name'][:8])
-                    st.write(board_markers[cell])
+                    if r == 10 or cell in left_col or cell in right_col: 
+                        st.write(board_markers[cell])
+        if 1 <= r <= 9: cols[12].write(board_markers[right_col[r-1]])
 
     st.markdown("---")
     curr_p = st.session_state.players[st.session_state.current_p]
     st.write(f"👉 Current Turn: {curr_p['name']}")
+    
     if curr_p.get('in_jail'):
         c1, c2, c3 = st.columns(3)
         if c1.button("Roll for Doubles"): run_turn(jail_action="Try Doubles"); st.rerun()
