@@ -136,34 +136,37 @@ def restart_game():
     import copy
     import random
 
-    # 1. Reset the Board State (Properties and Houses)
+    # 1. Reset Board and Game State
     st.session_state.ownership = {pid: "Bank" for pid in PROPERTIES if "rent" in PROPERTIES[pid] or PROPERTIES[pid].get("type") in ["Railroad", "Utility"]}
     st.session_state.houses = {pid: 0 for pid in PROPERTIES if PROPERTIES[pid].get("type") == "Street"}
-    
-    # 2. Reset Game Metadata
     st.session_state.last_move = "Game Restarted - Rules and custom totals preserved."
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
     st.session_state.double_count = 0
     st.session_state.jackpot = st.session_state.rules["fp_initial"]
     
-    # 3. Reshuffle Decks for a fresh start
+    # 2. Reshuffle Decks
     st.session_state.c_deck_idx = list(range(16))
     random.shuffle(st.session_state.c_deck_idx)
     st.session_state.ch_deck_idx = list(range(16))
     random.shuffle(st.session_state.ch_deck_idx)
     
-    # 4. RESTORE PLAYERS FROM BLUEPRINT
-    # This is where we use the copy we made in Step 1
+    # 3. Restore Players and Wipe Stats
     if "starting_players" in st.session_state:
-        # We use deepcopy again to ensure the new game doesn't 
-        # accidentally edit the blueprint itself
         st.session_state.players = copy.deepcopy(st.session_state.starting_players)
         
-        # Re-initialize the cash history so the graph starts clean at Turn 0
         for p in st.session_state.players:
-            p['stats']['cash_history'] = [p['cash']]
+            p['stats'] = {
+                "visits": {i: 0 for i in range(40)},
+                "ends": {i: 0 for i in range(40)},
+                "rent_paid": 0,
+                "rent_collected": 0,
+                "times_in_jail": 0,
+                "cash_history": [p['cash']], 
+                "events": []
+            }
     
+    # 4. The Final Kick
     st.rerun()
 
 # --- HELPER LOGIC ---
