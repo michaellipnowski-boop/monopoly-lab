@@ -867,25 +867,16 @@ elif st.session_state.phase == "LIVE":
             st.table(pd.DataFrame(all_events).sort_values("Turn", ascending=False))
         else:
             st.info("No major events (property buys or house builds) recorded yet.")
-        
-        st.markdown("---")
-        st.subheader("📌 Critical Game Moments")
-        all_events = []
-        for p in st.session_state.players:
-            for turn, desc in p['stats']['events']:
-                all_events.append({"Turn": turn, "Player": p['name'], "Event": desc})
-        if all_events:
-            st.table(pd.DataFrame(all_events).sort_values("Turn", ascending=False))
-        else:
-            st.info("No major events (property buys or house builds) recorded yet.")
-    
-    # --- RESET BUTTONS ---
-    st.sidebar.markdown("---")
-    
-    # NEW: The "Soft Reset" that uses the code from Step 2
-    if st.sidebar.button("🔄 RESTART GAME (Keep Policies)", use_container_width=True):
+
+
+# --- THE RESET BUTTONS START HERE (NO SPACES TO THE LEFT) ---
+st.sidebar.markdown("---")
+
+if st.sidebar.button("🔄 RESTART GAME (Keep Policies)", use_container_width=True):
+    if "starting_players" in st.session_state:
         restart_game()
-        
-    # The Original "Hard Reset" 
-    if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
-        reset_lab()
+    else:
+        st.sidebar.warning("No active simulation to restart!")
+
+if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
+    reset_lab()
