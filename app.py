@@ -610,20 +610,29 @@ elif st.session_state.phase == "LIVE":
     curr_p = st.session_state.players[st.session_state.current_p]
     st.write(f"👉 Current Turn: **{curr_p['name']}**")
     
+    # 1. Action Row: Manual Jail Controls (Visible only if in jail)
     if curr_p.get('in_jail'):
+        st.caption("Manual Jail Actions:")
         jc1, jc2, jc3 = st.columns(3)
         if jc1.button("Roll for Doubles"): run_turn(jail_action="Try Doubles"); st.rerun()
         if jc2.button("Pay $50"): run_turn(jail_action="Pay $50"); st.rerun()
         if jc3.button("Use GOOJF Card", disabled=not curr_p['goo_cards']): run_turn(jail_action="Use Card"); st.rerun()
-    else:
-        lc1, lc2 = st.columns([1, 2])
-        if lc1.button("Next Turn", use_container_width=True):
-            run_turn()
+        st.markdown("---")
+
+    # 2. Automation Row: Next Turn and Jump (Always visible now)
+    lc1, lc2 = st.columns([1, 2])
+    with lc1:
+        if st.button("Next Turn (Auto)", use_container_width=True, type="primary"):
+            run_turn() # Uses Policy automatically
             st.rerun()
-        with lc2:
-            j_val = st.number_input("Turns to Jump", 1, 10000, 100, label_visibility="collapsed")
+    with lc2:
+        col_jump_val, col_jump_btn = st.columns([1, 1])
+        with col_jump_val:
+            j_val = st.number_input("Turns to Jump", 1, 10000, 100, label_visibility="collapsed", key="jump_input")
+        with col_jump_btn:
             if st.button(f"Jump {j_val} Turns", use_container_width=True):
-                for _ in range(j_val): run_turn(silent=True)
+                for _ in range(j_val): 
+                    run_turn(silent=True)
                 st.rerun()
 
     if st.session_state.last_move:
