@@ -590,6 +590,10 @@ elif st.session_state.phase == "SETUP":
                 p['pos'] = 10 if jail_val else slider_pos
 
     if st.button("Start Live Simulation"):
+        # This captures the 'Turn 0' cash balance BEFORE any turns happen
+        for p in st.session_state.players:
+            p['stats']['cash_history'] = [p['cash']]
+            
         st.session_state.phase = "LIVE"
         st.rerun()
 
