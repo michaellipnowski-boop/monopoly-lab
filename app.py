@@ -302,6 +302,7 @@ def run_turn(jail_action=None, silent=False):
     else:
         old_pos = p['pos']
         p['pos'] = (p['pos'] + roll_sum) % 40
+        p['stats']['visits'][p['pos']] += 1
         
         if p['pos'] < old_pos:
             if st.session_state.rules["double_go"] and p['pos'] == 0:
