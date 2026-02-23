@@ -394,7 +394,6 @@ def run_turn(jail_action=None, silent=False):
     else:
         old_pos = p['pos']
         p['pos'] = (p['pos'] + roll_sum) % 40
-        p['stats']['visits'][p['pos']] += 1
         
         if p['pos'] < old_pos:
             if st.session_state.rules["double_go"] and p['pos'] == 0:
@@ -485,6 +484,7 @@ def run_turn(jail_action=None, silent=False):
         # --- PHASE 2: END OF TURN TRACKER ---
         # We record this here because the player's physical movement 
         # for this specific roll is now complete.
+        p['stats']['visits'][p['pos']] += 1
         p['stats']['ends'][p['pos']] += 1
 
         # Your existing turn-switching logic:
