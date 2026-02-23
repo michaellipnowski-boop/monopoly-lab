@@ -266,6 +266,10 @@ def draw_card(p, deck_type):
             
     elif card['effect'] == "jail":
         send_to_jail(p)
+        # --- TRACK THE ARRIVAL VIA CARD ---
+        p['stats']['visits'][10] += 1
+        p['stats']['ends'][10] += 1
+        return "Sent to Jail by card!"
         
     elif card['effect'] == "move_relative":
         p['pos'] = (p['pos'] + card['amt']) % 40
@@ -459,7 +463,16 @@ def run_turn(jail_action=None, silent=False):
                 st.session_state.turn_count += 1
                 st.rerun() 
             else:
-                msg += draw_card(p, sq.get('deck', 'chance'))
+                card_msg = draw_card(p, sq.get('deck', 'chance'))
+                msg += card_msg
+                
+                # FINAL SAFETY: If the player is now in jail, 
+                # they were sent there by the card. Stop the turn!
+                if p['in_jail']:
+                    if not silent: st.session_state.last_move = msg
+                    st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+                    st.session_state.turn_count += 1
+                    st.rerun() # Exit early!
         elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
             if st.session_state.jackpot > 0:
                 p['cash'] += st.session_state.jackpot
