@@ -702,24 +702,31 @@ elif st.session_state.phase == "CHOICE":
     st.markdown("---")
     c1, c2 = st.columns(2)
     if c1.button("Standard Simulation"):
-    import copy
-    # 1. Create the default players
-    st.session_state.players = []
-    for name in st.session_state.p_names:
-        st.session_state.players.append({
-            "name": name,
-            "cash": 1500,
-            "pos": 0,
-            "jail_turns": 0,
-            "policy": {"buy_prop": "Always", "buy_res": 500},
-            "stats": {"cash_history": [1500], "events": []}
-        })
-    
-    # 2. TAKE THE SNAPSHOT (This fixes the Restart button!)
-    st.session_state.starting_players = copy.deepcopy(st.session_state.players)
-    
-    st.session_state.phase = "LIVE"
-    st.rerun()
+        import copy
+        st.session_state.players = []
+        for name in st.session_state.p_names:
+            st.session_state.players.append({
+                "name": name,
+                "cash": 1500,
+                "pos": 0,
+                "in_jail": False,     # Added for consistency
+                "jail_turns": 0,
+                "goo_cards": [],      # Added for consistency
+                "policy": {"buy_prop": "Always", "buy_res": 500},
+                "stats": {            # FULL SYNC WITH RESTART_GAME()
+                    "visits": {i: 0 for i in range(40)},
+                    "ends": {i: 0 for i in range(40)},
+                    "rent_paid": 0,
+                    "rent_collected": 0,
+                    "times_in_jail": 0,
+                    "cash_history": [1500],
+                    "events": []
+                }
+            })
+        
+        st.session_state.starting_players = copy.deepcopy(st.session_state.players)
+        st.session_state.phase = "LIVE"
+        st.rerun()
     if c2.button("Customization Setup"): st.session_state.phase = "SETUP"; st.rerun()
 
 elif st.session_state.phase == "LIVE":
