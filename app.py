@@ -108,6 +108,7 @@ if "phase" not in st.session_state:
     st.session_state.p_count = 2
     st.session_state.p_names = ["Student A", "Student B"]
     st.session_state.players = []
+    st.session_state.starting_players = None
     st.session_state.ownership = {pid: "Bank" for pid in PROPERTIES if "rent" in PROPERTIES[pid] or PROPERTIES[pid].get("type") in ["Railroad", "Utility"]}
     st.session_state.houses = {pid: 0 for pid in PROPERTIES if PROPERTIES[pid].get("type") == "Street"}
     st.session_state.last_move = ""
@@ -700,7 +701,25 @@ elif st.session_state.phase == "CHOICE":
         st.rerun()
     st.markdown("---")
     c1, c2 = st.columns(2)
-    if c1.button("Standard Simulation"): st.session_state.phase = "LIVE"; st.rerun()
+    if c1.button("Standard Simulation"):
+    import copy
+    # 1. Create the default players
+    st.session_state.players = []
+    for name in st.session_state.p_names:
+        st.session_state.players.append({
+            "name": name,
+            "cash": 1500,
+            "pos": 0,
+            "jail_turns": 0,
+            "policy": {"buy_prop": "Always", "buy_res": 500},
+            "stats": {"cash_history": [1500], "events": []}
+        })
+    
+    # 2. TAKE THE SNAPSHOT (This fixes the Restart button!)
+    st.session_state.starting_players = copy.deepcopy(st.session_state.players)
+    
+    st.session_state.phase = "LIVE"
+    st.rerun()
     if c2.button("Customization Setup"): st.session_state.phase = "SETUP"; st.rerun()
 
 elif st.session_state.phase == "LIVE":
