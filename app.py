@@ -679,17 +679,22 @@ elif st.session_state.phase == "SETUP":
                 p['pos'] = 10 if jail_val else slider_pos
 
     if st.button("Start Live Simulation"):
-        # --- THE CHANGE: IMPORT COPY ---
         import copy 
         
+        # --- SAFE MODE: Ensure every player has the full policy set ---
+        for p in st.session_state.players:
+            # Check for keys missing from previous versions of the app
+            if 'build_res' not in p['policy']: p['policy']['build_res'] = 500
+            if 'build_house' not in p['policy']: p['policy']['build_house'] = "Aggressive"
+            if 'sell_house' not in p['policy']: p['policy']['sell_house'] = "Never"
+            
+            # Initialize the first data point for the graph
+            p['stats']['cash_history'] = [p['cash']]
+        
         # --- THE CHANGE: CREATE THE SAVE POINT ---
-        # This takes a 'snapshot' of your custom names, cash (888), and policies
+        # This now saves the policies we just verified/added above
         st.session_state.starting_players = copy.deepcopy(st.session_state.players)
         
-        # We still initialize the first data point for the graph
-        for p in st.session_state.players:
-            p['stats']['cash_history'] = [p['cash']]
-            
         st.session_state.phase = "LIVE"
         st.rerun()
 
@@ -715,7 +720,8 @@ elif st.session_state.phase == "CHOICE":
                 "policy": {
                     "buy_prop": "Always", 
                     "buy_res": 500,
-                    "build_house": "Aggressive", # <--- ADD THIS LINE
+                    "build_res": 500,      
+                    "build_house": "Aggressive", 
                     "sell_house": "Never"        # <--- ADD THIS FOR SAFETY TOO
                 },
                 "stats": {            # FULL SYNC WITH RESTART_GAME()
