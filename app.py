@@ -712,7 +712,12 @@ elif st.session_state.phase == "CHOICE":
                 "in_jail": False,     # Added for consistency
                 "jail_turns": 0,
                 "goo_cards": [],      # Added for consistency
-                "policy": {"buy_prop": "Always", "buy_res": 500},
+                "policy": {
+                    "buy_prop": "Always", 
+                    "buy_res": 500,
+                    "build_house": "Aggressive", # <--- ADD THIS LINE
+                    "sell_house": "Never"        # <--- ADD THIS FOR SAFETY TOO
+                },
                 "stats": {            # FULL SYNC WITH RESTART_GAME()
                     "visits": {i: 0 for i in range(40)},
                     "ends": {i: 0 for i in range(40)},
