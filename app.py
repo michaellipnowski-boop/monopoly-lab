@@ -393,8 +393,8 @@ def run_turn(jail_action=None, silent=False):
         send_to_jail(p)
         if not silent: st.session_state.last_move = f"{p['name']} rolled 3 doubles! Go to Jail!"
         
-        p['stats']['visits'][p['pos']] += 1
-        p['stats']['ends'][p['pos']] += 1
+        p['stats']['visits'][10] += 1
+        p['stats']['ends'][10] += 1
         
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         
@@ -448,13 +448,18 @@ def run_turn(jail_action=None, silent=False):
             msg += f"Paid tax."
         elif sq['type'] == "Action":
             if p['pos'] == 30:
+                # 1. Record the visit to Square 30 BEFORE moving
+                p['stats']['visits'][30] += 1 
+                # (Note: We don't record an 'end' here because they don't stay on 30)
+
+                # 2. Move the player to 10
                 send_to_jail(p)
                 msg += "Go To Jail!"
-                
-                # --- SYNC THE STATS FOR THE NEW LOCATION (10) ---
-                p['stats']['visits'][p['pos']] += 1
-                p['stats']['ends'][p['pos']] += 1
-                
+            
+                # 3. Record the Arrival and End at Square 10
+                p['stats']['visits'][10] += 1
+                p['stats']['ends'][10] += 1
+            
                 # --- EXIT THE TURN IMMEDIATELY ---
                 if not silent: st.session_state.last_move = msg
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
