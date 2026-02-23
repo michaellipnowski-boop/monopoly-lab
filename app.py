@@ -390,7 +390,16 @@ def run_turn(jail_action=None, silent=False):
     if st.session_state.double_count >= 3:
         send_to_jail(p)
         if not silent: st.session_state.last_move = f"{p['name']} rolled 3 doubles! Go to Jail!"
+        
+        p['stats']['visits'][p['pos']] += 1
+        p['stats']['ends'][p['pos']] += 1
+        
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+        
+        # Since we just manually recorded the stats, we must STOP here 
+        # so the bottom of the function doesn't count them AGAIN.
+        st.session_state.turn_count += 1
+        st.rerun()
     else:
         old_pos = p['pos']
         p['pos'] = (p['pos'] + roll_sum) % 40
@@ -439,6 +448,16 @@ def run_turn(jail_action=None, silent=False):
             if p['pos'] == 30:
                 send_to_jail(p)
                 msg += "Go To Jail!"
+                
+                # --- SYNC THE STATS FOR THE NEW LOCATION (10) ---
+                p['stats']['visits'][p['pos']] += 1
+                p['stats']['ends'][p['pos']] += 1
+                
+                # --- EXIT THE TURN IMMEDIATELY ---
+                if not silent: st.session_state.last_move = msg
+                st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+                st.session_state.turn_count += 1
+                st.rerun() 
             else:
                 msg += draw_card(p, sq.get('deck', 'chance'))
         elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
