@@ -110,7 +110,7 @@ if "phase" not in st.session_state:
     st.session_state.players = []
     st.session_state.starting_players = None
     st.session_state.ownership = {pid: "Bank" for pid in PROPERTIES if "rent" in PROPERTIES[pid] or PROPERTIES[pid].get("type") in ["Railroad", "Utility"]}
-    st.session_state.houses = {pid: 0 for pid in PROPERTIES if PROPERTIES[pid].get("type") == "Street"}
+    st.session_state.houses = {pid: 0 for pid in range(40)}
     st.session_state.last_move = ""
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
@@ -175,7 +175,7 @@ def restart_game():
 
     # 1. Reset Board and Game State
     st.session_state.ownership = {pid: "Bank" for pid in PROPERTIES if "rent" in PROPERTIES[pid] or PROPERTIES[pid].get("type") in ["Railroad", "Utility"]}
-    st.session_state.houses = {pid: 0 for pid in PROPERTIES if PROPERTIES[pid].get("type") == "Street"}
+    st.session_state.houses = {pid: 0 for pid in range(40)}
     st.session_state.last_move = "Game Restarted - Rules and custom totals preserved."
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
@@ -240,6 +240,62 @@ def send_to_jail(p):
     # --- TRACK THE VISIT TO JAIL ---
     p['stats']['visits'][10] += 1
     p['stats']['times_in_jail'] += 1
+
+def attempt_buy_houses(p):
+    """
+    Safe Mode: Handles house building logic. 
+    Ensures even building, respects Debt rules, and prevents KeyError crashes.
+    """
+    # 1. Capture Policy (Handles both "Always" and "Aggressive" for consistency)
+    build_pol = p['policy'].get('build_house', "Never")
+    build_res = p['policy'].get('build_res', 500)
+    allow_debt = st.session_state.rules.get("allow_debt", False)
+
+    if build_pol == "Never":
+        return
+
+    # 2. Iterate through color groups to find Monopolies
+    for color, pids in COLOR_GROUPS.items():
+        # Check if player owns every property in this color group
+        if all(st.session_state.ownership.get(pid) == p['name'] for pid in pids):
+            
+            # 3. Sort by house count to enforce 'Even Building' rule
+            # (Always build on the property with the fewest houses first)
+            sorted_pids = sorted(pids, key=lambda x: st.session_state.houses.get(x, 0))
+            
+            for target_pid in sorted_pids:
+                h_cost = PROPERTIES[target_pid].get('h_cost', 50)
+                current_h = st.session_state.houses.get(target_pid, 0)
+                
+                # 4. Comprehensive Affordability Check
+                if allow_debt and build_pol in ["Always", "Aggressive"]:
+                    # In Debt Mode, "Always" means build even if cash is negative
+                    can_afford = True
+                elif build_pol in ["Always", "Aggressive"]:
+                    # In Standard Mode, "Always" means build if you have the cash
+                    can_afford = (p['cash'] >= h_cost)
+                elif build_pol == "Keep Reserve":
+                    # In Reserve Mode, must stay above the specified floor
+                    can_afford = (p['cash'] - h_cost >= build_res)
+                else:
+                    can_afford = False
+                
+                # 5. Rule Validation: Max 5 houses AND must build evenly
+                is_lowest = current_h < 5 and all(current_h <= st.session_state.houses.get(other, 0) for other in pids)
+                
+                if can_afford and is_lowest:
+                    # Execute Build
+                    st.session_state.houses[target_pid] = current_h + 1
+                    p['cash'] -= h_cost
+                    
+                    # Record for Analytics & Excel Export
+                    p['stats']['events'].append({
+                        "turn": st.session_state.turn_count, 
+                        "event": f"Built house on {PROPERTIES[target_pid]['name']} (-${h_cost})"
+                    })
+                    
+                    # Break after building ONE house per group per turn (Standard Rule)
+                    break
 
 def draw_card(p, deck_type):
     if deck_type == "chance":
@@ -377,7 +433,10 @@ def run_turn(jail_action=None, silent=False):
                 # Keep the cash history synced so the graph doesn't skip a turn
                 for player in st.session_state.players:
                     player['stats']['cash_history'].append(player['cash'])
-                # ------------------------
+                
+                # --- ADDED BUILDING OPPORTUNITY ---
+                attempt_buy_houses(p) 
+                # ----------------------------------
 
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                 st.session_state.turn_count += 1
@@ -392,12 +451,19 @@ def run_turn(jail_action=None, silent=False):
         send_to_jail(p)
         if not silent: st.session_state.last_move = f"{p['name']} rolled 3 doubles! Go to Jail!"
         
+        # --- STATS SYNC ---
+        p['stats']['visits'][10] += 1
         p['stats']['ends'][10] += 1
+        # Keep the graph consistent
+        for player in st.session_state.players:
+            player['stats']['cash_history'].append(player['cash'])
+        
+        # --- BUILDING OPPORTUNITY ---
+        attempt_buy_houses(p)
         
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-        # Since we just manually recorded the stats, we must STOP here 
-        # so the bottom of the function doesn't count them AGAIN.
         st.session_state.turn_count += 1
+        # Stop here so the bottom of the function doesn't double-count this turn
         return
     else:
         old_pos = p['pos']
@@ -453,10 +519,18 @@ def run_turn(jail_action=None, silent=False):
                 send_to_jail(p)
                 msg += "Go To Jail!"
             
-                # 3. Record ONLY the End at Square 10
+                # 3. Record the Visit and End at Square 10 (Jail)
+                p['stats']['visits'][10] += 1
                 p['stats']['ends'][10] += 1
             
-                # --- EXIT THE TURN IMMEDIATELY ---
+                # --- WEALTH SNAPSHOT (Safe Mode Sync) ---
+                for player in st.session_state.players:
+                    player['stats']['cash_history'].append(player['cash'])
+
+                # --- BUILDING OPPORTUNITY ---
+                attempt_buy_houses(p)
+
+                # --- EXIT THE TURN ---
                 if not silent: st.session_state.last_move = msg
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                 st.session_state.turn_count += 1
@@ -468,6 +542,15 @@ def run_turn(jail_action=None, silent=False):
                 # FINAL SAFETY: If the player is now in jail, 
                 # they were sent there by the card. Stop the turn!
                 if p['in_jail']:
+                    # --- STATS SYNC ---
+                    p['stats']['visits'][10] += 1
+                    p['stats']['ends'][10] += 1
+                    for player in st.session_state.players:
+                        player['stats']['cash_history'].append(player['cash'])
+                    
+                    # --- BUILDING OPPORTUNITY ---
+                    attempt_buy_houses(p)
+
                     if not silent: st.session_state.last_move = msg
                     st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                     st.session_state.turn_count += 1
@@ -490,8 +573,10 @@ def run_turn(jail_action=None, silent=False):
                         h_cost = PROPERTIES[target_pid].get('h_cost', 50)
                         current_h = st.session_state.houses[target_pid]
                         # Check affordability & Reserve
-                        can_afford = (build_pol == "Always" and p['cash'] >= h_cost) or \
+                        can_afford = (build_pol == "Always") or \
                                      (build_pol == "Keep Reserve" and p['cash'] - h_cost >= build_res)
+                        # Note: If debt is allowed, we don't check 'p['cash'] >= h_cost' for "Always" 
+                        # because the 'charge_player' function handles the negative balance for us.
                         # Check even building rule
                         is_lowest = current_h < 5 and all(current_h <= st.session_state.houses[other] for other in pids)
                         
@@ -716,7 +801,7 @@ elif st.session_state.phase == "SETUP":
         for p in st.session_state.players:
             # Check for keys missing from previous versions of the app
             if 'build_res' not in p['policy']: p['policy']['build_res'] = 500
-            if 'build_house' not in p['policy']: p['policy']['build_house'] = "Aggressive"
+            if 'build_house' not in p['policy']: p['policy']['build_house'] = "Always"
             if 'sell_house' not in p['policy']: p['policy']['sell_house'] = "Never"
             if 'jail_exit' not in p['policy']: p['policy']['jail_exit'] = "Try Doubles"
             
@@ -753,7 +838,7 @@ elif st.session_state.phase == "CHOICE":
                     "buy_prop": "Always", 
                     "buy_res": 500,
                     "build_res": 500,      
-                    "build_house": "Aggressive", 
+                    "build_house": "Always", 
                     "sell_house": "Never",
                     "jail_exit": "Try Doubles"
                 },
@@ -785,12 +870,23 @@ elif st.session_state.phase == "LIVE":
             if p.get('in_jail'): st.error(f"IN JAIL 🚔 (Attempts: {p['jail_turns']})")
             for c in p['goo_cards']: st.success(f"GOOJF: {c['deck'].capitalize()}")
             # --- 1. Display Streets (Colored Blocks) ---
+            # NEW CODE (Safe & robust)
             for color, pids in COLOR_GROUPS.items():
-                owned = [pid for pid in pids if st.session_state.ownership[pid] == p['name']]
+                owned = [pid for pid in pids if st.session_state.ownership.get(pid) == p['name']]
                 if owned:
                     st.markdown(f'<span style="color:{COLOR_MAP[color]}">■</span> <b>{color}</b>', unsafe_allow_html=True)
-                    is_mono = all(st.session_state.ownership[pid] == p['name'] for pid in pids)
-                    st.write(", ".join([f"{PROPERTIES[pid]['name']}{' ('+str(st.session_state.houses[pid])+'🏠)' if is_mono else ''}" for pid in owned]))
+                    is_mono = all(st.session_state.ownership.get(pid) == p['name'] for pid in pids)
+        
+                    # Use .get(pid, 0) to ensure we never crash if a non-street ID is checked
+                    prop_labels = []
+                    for pid in owned:
+                        label = PROPERTIES[pid]['name']
+                        if is_mono:
+                            h_count = st.session_state.houses.get(pid, 0)
+                            label += f" ({h_count}🏠)"
+                        prop_labels.append(label)
+        
+                    st.write(", ".join(prop_labels))
             
             # --- 2. Display Railroads ---
             owned_rr = [pid for pid in RAILROADS if st.session_state.ownership[pid] == p['name']]
