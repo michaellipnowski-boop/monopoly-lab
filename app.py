@@ -267,7 +267,6 @@ def draw_card(p, deck_type):
     elif card['effect'] == "jail":
         send_to_jail(p)
         # --- TRACK THE ARRIVAL VIA CARD ---
-        p['stats']['visits'][10] += 1
         p['stats']['ends'][10] += 1
         return "Sent to Jail by card!"
         
@@ -393,11 +392,9 @@ def run_turn(jail_action=None, silent=False):
         send_to_jail(p)
         if not silent: st.session_state.last_move = f"{p['name']} rolled 3 doubles! Go to Jail!"
         
-        p['stats']['visits'][10] += 1
         p['stats']['ends'][10] += 1
         
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-        
         # Since we just manually recorded the stats, we must STOP here 
         # so the bottom of the function doesn't count them AGAIN.
         st.session_state.turn_count += 1
@@ -456,8 +453,7 @@ def run_turn(jail_action=None, silent=False):
                 send_to_jail(p)
                 msg += "Go To Jail!"
             
-                # 3. Record the Arrival and End at Square 10
-                p['stats']['visits'][10] += 1
+                # 3. Record ONLY the End at Square 10
                 p['stats']['ends'][10] += 1
             
                 # --- EXIT THE TURN IMMEDIATELY ---
