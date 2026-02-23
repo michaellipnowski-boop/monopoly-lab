@@ -687,6 +687,7 @@ elif st.session_state.phase == "SETUP":
             if 'build_res' not in p['policy']: p['policy']['build_res'] = 500
             if 'build_house' not in p['policy']: p['policy']['build_house'] = "Aggressive"
             if 'sell_house' not in p['policy']: p['policy']['sell_house'] = "Never"
+            if 'jail_exit' not in p['policy']: p['policy']['jail_exit'] = "Try Doubles"
             
             # Initialize the first data point for the graph
             p['stats']['cash_history'] = [p['cash']]
@@ -722,7 +723,8 @@ elif st.session_state.phase == "CHOICE":
                     "buy_res": 500,
                     "build_res": 500,      
                     "build_house": "Aggressive", 
-                    "sell_house": "Never"        # <--- ADD THIS FOR SAFETY TOO
+                    "sell_house": "Never",
+                    "jail_exit": "Try Doubles"
                 },
                 "stats": {            # FULL SYNC WITH RESTART_GAME()
                     "visits": {i: 0 for i in range(40)},
