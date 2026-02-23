@@ -431,7 +431,7 @@ def run_turn(jail_action=None, silent=False):
                     st.session_state.ownership[p['pos']] = p['name']
                     p['cash'] -= price
                     msg += f"Bought for ${price}."
-                    p['stats']['events'].append((st.session_state.turn_count, f"Bought {sq['name']}"))
+                    p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': f"Bought {sq['name']}"})
         elif sq['type'] == "Tax":
             charge_player(p, sq.get('cost', 100))
             msg += f"Paid tax."
