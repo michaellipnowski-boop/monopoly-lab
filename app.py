@@ -372,9 +372,7 @@ def run_turn(jail_action=None, silent=False):
                 p['jail_turns'] += 1
                 if not silent: st.session_state.last_move = f"{p['name']} failed doubles, stays in Jail."
                 
-                # --- REFINED STAT FIX ---
-                # We record that the player's turn ENDED here, 
-                # but we don't count it as a new 'visit' because they didn't move.
+                p['stats']['visits'][10] += 1
                 p['stats']['ends'][10] += 1
                 
                 # Keep the cash history synced so the graph doesn't skip a turn
