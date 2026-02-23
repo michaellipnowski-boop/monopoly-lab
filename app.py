@@ -403,7 +403,7 @@ def run_turn(jail_action=None, silent=False):
         # Since we just manually recorded the stats, we must STOP here 
         # so the bottom of the function doesn't count them AGAIN.
         st.session_state.turn_count += 1
-        st.rerun()
+        return
     else:
         old_pos = p['pos']
         p['pos'] = (p['pos'] + roll_sum) % 40
@@ -461,7 +461,7 @@ def run_turn(jail_action=None, silent=False):
                 if not silent: st.session_state.last_move = msg
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                 st.session_state.turn_count += 1
-                st.rerun() 
+                return 
             else:
                 card_msg = draw_card(p, sq.get('deck', 'chance'))
                 msg += card_msg
@@ -472,7 +472,7 @@ def run_turn(jail_action=None, silent=False):
                     if not silent: st.session_state.last_move = msg
                     st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                     st.session_state.turn_count += 1
-                    st.rerun() # Exit early!
+                    return
         elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
             if st.session_state.jackpot > 0:
                 p['cash'] += st.session_state.jackpot
