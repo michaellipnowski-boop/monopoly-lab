@@ -510,38 +510,38 @@ def run_turn(jail_action=None, silent=False):
                 
                 msg += f"Paid ${rent} rent. "
             elif owner == "Bank":
-                # Policy-based Buying
-                price = sq.get('price', 150)
-                pol = p['policy']['buy_prop']
-                res = p['policy']['buy_res']
-                should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
-                if should_buy and p['cash'] >= price:
-                    st.session_state.ownership[p['pos']] = p['name']
-                    p['cash'] -= price
-                    # --- ENHANCED LOGGING ---
-                    event_text = f"Bought {sq['name']} (-${price})"
-                
-                    # A. Handle Railroads and Utilities
-                    if sq['type'] in ["Railroad", "Utility"]:
-                        count = sum(1 for pid, owner_name in st.session_state.ownership.items() 
-                                    if owner_name == p['name'] and PROPERTIES[pid]['type'] == sq['type'])
+                    # 1. Decision Logic
+                    price = sq.get('price', 150)
+                    pol = p['policy']['buy_prop']
+                    res = p['policy']['buy_res']
+                    should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
+                    
+                    if should_buy and p['cash'] >= price:
+                        # 2. Transaction
+                        st.session_state.ownership[p['pos']] = p['name']
+                        p['cash'] -= price
                         
-                        # --- FIX: Pluralize Utility to Utilities, otherwise add 's' ---
-                        label = "Utilities" if sq['type'] == "Utility" else f"{sq['type']}s"
-                        event_text += f" [Total {label}: {count}]"
-                
-                    # B. Handle Color-Group Properties
-                    elif sq['type'] == "Property":
-                        color = sq['color']
-                        group_pids = COLOR_GROUPS[color]
-                        # Check both integer and string IDs to be 100% safe
-                        if all((st.session_state.ownership.get(pid) == p['name'] or 
-                                st.session_state.ownership.get(str(pid)) == p['name']) for pid in group_pids):
-                            event_text += f" [MONOPOLY COMPLETED: {color}]"
+                        # 3. Build the Event Text (Start)
+                        event_text = f"Bought {sq['name']} (-${price})"
+                    
+                        # A. Check for Railroads/Utilities
+                        if sq['type'] in ["Railroad", "Utility"]:
+                            count = sum(1 for pid, owner_name in st.session_state.ownership.items() 
+                                        if owner_name == p['name'] and PROPERTIES[int(pid)]['type'] == sq['type'])
+                            label = "Utilities" if sq['type'] == "Utility" else f"{sq['type']}s"
+                            event_text += f" [Total {label}: {count}]"
+                    
+                        # B. Check for Color Monopolies
+                        elif sq['type'] == "Property":
+                            color = sq['color']
+                            group_pids = COLOR_GROUPS[color]
+                            if all((st.session_state.ownership.get(pid) == p['name'] or 
+                                    st.session_state.ownership.get(str(pid)) == p['name']) for pid in group_pids):
+                                event_text += " | MONOPOLY COMPLETED!"
 
-                    # Log it
-                    p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
-                    msg += f"Bought {sq['name']} for ${price}."
+                        # 4. FINAL LOGGING (Done once per purchase)
+                        p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                        msg += f" {event_text}"
         elif sq['type'] == "Tax":
             charge_player(p, sq.get('cost', 100))
             msg += f"Paid tax."
@@ -590,8 +590,20 @@ def run_turn(jail_action=None, silent=False):
                                 p['cash'] -= new_sq['price']
                                 st.session_state.ownership[p['pos']] = p['name']
                                 
-                                # Record the event with the semicolon-friendly tag
-                                event_text = f"Bought {new_sq['name']} (-${new_sq['price']}) [via Card]"
+                                # --- MONOPOLY CHECK ---
+                                target_color = new_sq.get('color')
+                                set_bonus = ""
+                                if target_color:
+                                    # Count how many of this color exist on the board
+                                    color_group = [idx for idx, s in enumerate(PROPERTIES) if s.get('color') == target_color]
+                                    # Count how many of those the current player owns
+                                    owned_by_p = [idx for idx in color_group if st.session_state.ownership.get(idx) == p['name']]
+                                    
+                                    if len(owned_by_p) == len(color_group):
+                                        set_bonus = " | MONOPOLY COMPLETED!"
+
+                                # Final event text combines the purchase and the bonus flag
+                                event_text = f"Bought {new_sq['name']} (-${new_sq['price']}){set_bonus} [via Card]"
                                 p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
                                 msg += f" Then bought {new_sq['name']}."
 
@@ -980,13 +992,18 @@ elif st.session_state.phase == "LIVE":
                 for i in range(j_val):
                     run_turn(silent=True)
                     
-                    # 2. Update UI every 100 turns (or every turn if the jump is small)
                     if i % 100 == 0 or i == j_val - 1:
                         percent = (i + 1) / j_val
                         progress_bar.progress(percent)
                         status_text.text(f"Processing turn {i+1} of {j_val}...")
 
-                # 3. Clean up and refresh
+                # --- CORRECTED STEP 3 (Only one cleanup block!) ---
+                progress_bar.progress(1.0) 
+                status_text.text(f"✅ Simulation Complete! {j_val} turns processed.")
+                
+                import time
+                time.sleep(0.5) 
+                
                 progress_bar.empty()
                 status_text.empty()
                 st.rerun()
@@ -1084,7 +1101,11 @@ elif st.session_state.phase == "LIVE":
             
             # 3. Display sorted by Turn
             df_display = pd.DataFrame(combined_data).sort_values("Turn", ascending=False)
-            st.table(df_display)
+            # This fixes the smushing and adds the download button
+            st.dataframe(df_display.head(50), use_container_width=True, height=400)
+
+            csv = df_display.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download Full Simulation Log (CSV)", csv, "monopoly_log.csv", "text/csv")
         else:
             st.info("No major events (property buys or house builds) recorded yet.")
 
