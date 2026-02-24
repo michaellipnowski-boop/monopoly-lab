@@ -1162,16 +1162,15 @@ elif st.session_state.phase == "LIVE":
             st.bar_chart(data=df_fin, x="Player", y="Amount", color="Type", stack=False)
 
     with t_wealth:
-        # BRAND NEW: Wealth logic and Critical Moments table
+        # --- 8 SPACES START HERE ---
         import pandas as pd
         history_dict = {p['name']: p['stats']['cash_history'] for p in st.session_state.players}
         if history_dict:
             df_history = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in history_dict.items()]))
             st.line_chart(df_history)
 
-        # --- NEW: EXCEL DOWNLOAD BUTTON ---
         st.markdown("### 📥 Download Lab Data")
-        excel_data = get_player_excel_data() # This calls the function from Step 1
+        excel_data = get_player_excel_data()
         st.download_button(
             label="Download Detailed Player Spreadsheets (Excel)",
             data=excel_data,
@@ -1184,52 +1183,38 @@ elif st.session_state.phase == "LIVE":
         st.subheader("📌 Critical Game Moments")
         all_events = []
         for p in st.session_state.players:
-            # FIX: Updated to handle the dictionary format from Step 2
-            for e in p['stats']['events']:
-                all_events.append({
-                    "Turn": e['turn'], 
-                    "Player": p['name'], 
-                    "Event": e['event']
-                })
-                
+            moments = p['stats'].get('critical_moments', [])
+            for e in moments:
+                all_events.append({"Turn": e['turn'], "Player": p['name'], "Event": e['event']})
+        
         if all_events:
-            # 1. Group by (Turn, Player) to keep distinct players separate
             from collections import defaultdict
             grouped = defaultdict(list)
             for e in all_events:
-                # Keying by both Turn and Player
                 grouped[(e['Turn'], e['Player'])].append(str(e['Event']))
             
-            # 2. Create combined list
             combined_data = []
             for (turn, player), msgs in grouped.items():
-                combined_data.append({
-                    "Turn": turn,
-                    "Player": player,
-                    "Event": " ; ".join(msgs)
-                })
+                combined_data.append({"Turn": turn, "Player": player, "Event": " ; ".join(msgs)})
             
-            # 3. Display sorted by Turn
             df_display = pd.DataFrame(combined_data).sort_values("Turn", ascending=False)
-            # This fixes the smushing and adds the download button
-            st.dataframe(df_display.head(50), use_container_width=True, height=400)
+            st.dataframe(df_display.head(100), use_container_width=True, height=400, hide_index=True)
 
             csv = df_display.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Download Full Simulation Log (CSV)", csv, "monopoly_log.csv", "text/csv")
         else:
-            st.info("No major events (property buys or house builds) recorded yet.")
+            st.info("No major events recorded yet.")
+        # --- 8 SPACES END HERE ---
 
+    # --- 4 SPACES START HERE (Back 4 spaces) ---
+    # These are now outside the tab, but still inside the LIVE phase
+    st.sidebar.markdown("---")
+    
+    if st.sidebar.button("🔄 RESTART GAME (Keep Policies)", use_container_width=True):
+        if "starting_players" in st.session_state:
+            restart_game()
+        else:
+            st.sidebar.warning("No active simulation to restart!")
 
-        #--- UNIVERSAL RESET BUTTONS (Only visible during Gameplay) ---
-        st.sidebar.markdown("---")
-    
-        # "Soft Reset" - Restarts the turn count and cash, but keeps the same players
-        if st.sidebar.button("🔄 RESTART GAME (Keep Policies)", use_container_width=True):
-            if "starting_players" in st.session_state:
-                restart_game()
-            else:
-                st.sidebar.warning("No active simulation to restart!")
-    
-        # "Hard Reset" - Wipes everything and goes back to Setup
-        if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
-            reset_lab()
+    if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
+        reset_lab()
