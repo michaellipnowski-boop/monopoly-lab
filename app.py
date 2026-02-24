@@ -517,7 +517,10 @@ def run_turn(jail_action=None, silent=False):
                     if sq['type'] in ["Railroad", "Utility"]:
                         count = sum(1 for pid, owner_name in st.session_state.ownership.items() 
                                     if owner_name == p['name'] and PROPERTIES[pid]['type'] == sq['type'])
-                        event_text += f" [Total {sq['type']}s: {count}]"
+                        
+                        # --- FIX: Pluralize Utility to Utilities, otherwise add 's' ---
+                        label = "Utilities" if sq['type'] == "Utility" else f"{sq['type']}s"
+                        event_text += f" [Total {label}: {count}]"
                 
                     # B. Handle Color-Group Properties
                     elif sq['type'] == "Property":
