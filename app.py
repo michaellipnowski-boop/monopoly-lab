@@ -645,8 +645,15 @@ def run_turn(jail_action=None, silent=False):
                                 target_color = new_sq.get('color')
                                 set_bonus = ""
                                 if target_color:
-                                    color_group = [idx for idx, s in enumerate(PROPERTIES) if s.get('color') == target_color]
+                                    # --- SAFE MODE COLOR GROUP CHECK ---
+                                    color_group = []
+                                    for idx, s in enumerate(PROPERTIES):
+                                        # Only check if 's' is actually a dictionary/property
+                                        if isinstance(s, dict) and s.get('color') == target_color:
+                                            color_group.append(idx)
+                                            
                                     owned_count = 0
+                                    # -----------------------------------
                                     for idx in color_group:
                                         curr = st.session_state.ownership.get(idx) or st.session_state.ownership.get(str(idx))
                                         if curr and str(curr).strip().lower() == str(p['name']).strip().lower():
