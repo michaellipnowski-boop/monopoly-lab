@@ -590,16 +590,19 @@ def run_turn(jail_action=None, silent=False):
                                 p['cash'] -= new_sq['price']
                                 st.session_state.ownership[p['pos']] = p['name']
                                 
-                                # --- MONOPOLY CHECK ---
+                                # --- ROBUST MONOPOLY CHECK ---
                                 target_color = new_sq.get('color')
                                 set_bonus = ""
                                 if target_color:
-                                    # Count how many of this color exist on the board
                                     color_group = [idx for idx, s in enumerate(PROPERTIES) if s.get('color') == target_color]
-                                    # Count how many of those the current player owns
-                                    owned_by_p = [idx for idx in color_group if st.session_state.ownership.get(idx) == p['name']]
+                                    owned_count = 0
+                                    for idx in color_group:
+                                        # This 'or' handles both the number 5 and the text "5"
+                                        owner = st.session_state.ownership.get(idx) or st.session_state.ownership.get(str(idx))
+                                        if owner == p['name']:
+                                            owned_count += 1
                                     
-                                    if len(owned_by_p) == len(color_group):
+                                    if owned_count == len(color_group):
                                         set_bonus = " | MONOPOLY COMPLETED!"
 
                                 # Final event text combines the purchase and the bonus flag
