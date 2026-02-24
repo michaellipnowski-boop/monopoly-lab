@@ -824,7 +824,7 @@ elif st.session_state.phase == "SETUP":
     
     with t2:
         for color, pids in COLOR_GROUPS.items():
-            owners = [st.session_state.ownership[p] for p in pids]
+            owners = [st.session_state.ownership.get(p) or st.session_state.ownership.get(str(p)) for p in pids]
             if len(set(owners)) == 1 and owners[0] != "Bank":
                 st.markdown(f'<div style="background:{COLOR_MAP[color]}; padding:5px; border-radius:3px; color:white;"><b>{color} Group ({owners[0]})</b></div>', unsafe_allow_html=True)
                 for pid in pids:
