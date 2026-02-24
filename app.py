@@ -522,77 +522,78 @@ def run_turn(jail_action=None, silent=False):
         sq = PROPERTIES.get(p['pos'])
         msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
         
-        if sq['type'] in ["Street", "Railroad", "Utility"]:
+        if sq['type'] in ["Street", "Railroad", "Utility", "Property"]: # Added Property just in case of naming variations
             owner = st.session_state.ownership.get(p['pos'], "Bank")
+            
+            # --- GLOBAL MONOPOLY CHECK ---
+            target_color = sq.get('color')
+            set_bonus = ""
+            if target_color:
+                # Get indices for this color group
+                color_group = [idx for idx, s in enumerate(PROPERTIES) if isinstance(s, dict) and s.get('color') == target_color]
+                
+                # Check how many the CURRENT OWNER has
+                owned_in_group = 0
+                for idx in color_group:
+                    curr_owner = st.session_state.ownership.get(idx) or st.session_state.ownership.get(str(idx))
+                    if curr_owner and str(curr_owner).strip().lower() == str(owner).strip().lower():
+                        owned_in_group += 1
+                
+                if owned_in_group == len(color_group) and len(color_group) > 0 and owner != "Bank":
+                    set_bonus = " | 🏆 MONOPOLY"
+
+            # CASE A: SOMEONE ELSE OWNS IT (RENT)
             if owner != "Bank" and owner != p['name']:
                 rent = get_rent(p['pos'], roll_sum)
-                
-                # --- PRESERVE EXISTING LOGIC ---
                 p['cash'] -= rent
-                # Record the rent paid by the current player
                 p['stats']['rent_paid'] += rent 
+                
+                # --- TRACK PROPERTY REVENUE ---
+                if "property_stats" in st.session_state:
+                    st.session_state.property_stats[p['pos']]["revenue"] += rent
                 
                 for op in st.session_state.players:
                     if str(op['name']).strip().lower() == str(owner).strip().lower():
                         op['cash'] += rent
-                        # --- RECORD RENT COLLECTED BY THE OWNER ---
                         op['stats']['rent_collected'] += rent
                 
-                msg += f"Paid ${rent} rent. "
+                event_msg = f"Paid ${rent} rent at {sq['name']}{set_bonus}"
+                p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_msg})
+                msg += f"{event_msg}. "
+
+            # CASE B: BANK OWNS IT (PURCHASE)
             elif owner == "Bank":
-                # 1. Decision Logic
                 price = sq.get('price', 150)
                 pol = p['policy']['buy_prop']
                 res = p['policy']['buy_res']
                 should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
                 
                 if should_buy and p['cash'] >= price:
-                    # 2. Transaction
                     st.session_state.ownership[p['pos']] = p['name']
                     p['cash'] -= price
                     
-                    # 3. ROBUST MONOPOLY CHECK (For Streets)
-                    target_color = sq.get('color')
-                    set_bonus = ""
+                    # --- TRACK PROPERTY EXPENSE ---
+                    if "property_stats" in st.session_state:
+                        st.session_state.property_stats[p['pos']]["expenses"] += price
+
+                    # Re-run check specifically to see if this purchase completed the set
+                    owned_count = 0
                     if target_color:
-                        # Safe Mode: Guard against non-dictionary items in PROPERTIES
-                        color_group = []
-                        for idx, s in enumerate(PROPERTIES):
-                            if isinstance(s, dict) and s.get('color') == target_color:
-                                color_group.append(idx)
-                                
-                        owned_count = 0
-                        for idx in color_group:
-                            # Normalize names to ensure the check doesn't fail
-                            curr = st.session_state.ownership.get(idx) or st.session_state.ownership.get(str(idx))
-                            if curr and str(curr).strip().lower() == str(p['name']).strip().lower():
-                                owned_count += 1
-                        
-                        if owned_count == len(color_group) and len(color_group) > 0:
-                            set_bonus = " | MONOPOLY COMPLETED!"
-
-                    # 4. Build the Event Text
-                    event_text = f"Bought {sq['name']} (-${price}){set_bonus}"
+                        color_group = [idx for idx, s in enumerate(PROPERTIES) if isinstance(s, dict) and s.get('color') == target_color]
+                        owned_count = sum(1 for idx in color_group if str(st.session_state.ownership.get(idx, "")).strip().lower() == str(p['name']).strip().lower() or str(st.session_state.ownership.get(str(idx), "")).strip().lower() == str(p['name']).strip().lower())
                     
-                    # A. Special Labeling for Railroads/Utilities
+                    buy_bonus = " | 🏆 MONOPOLY COMPLETED!" if (target_color and owned_count == len(color_group)) else ""
+                    
+                    # Special labeling for Railroads/Utilities
+                    extra_label = ""
                     if sq['type'] in ["Railroad", "Utility"]:
-                        count = 0
-                        # Safe Mode: Loop through ownership one by one
-                        for pid, owner_name in st.session_state.ownership.items():
-                            if str(owner_name).strip().lower() == str(p['name']).strip().lower():
-                                try:
-                                    p_idx = int(pid)
-                                    if PROPERTIES[p_idx].get('type') == sq['type']:
-                                        count += 1
-                                except:
-                                    continue
-                        
-                        label = "Utilities" if sq['type'] == "Utility" else f"{sq['type']}s"
-                        event_text += f" [Total {label}: {count}]"
+                        count = sum(1 for pid, o_name in st.session_state.ownership.items() if str(o_name).strip().lower() == str(p['name']).strip().lower() and PROPERTIES[int(pid)].get('type') == sq['type'])
+                        label = "Utilities" if sq['type'] == "Utility" else "Railroads"
+                        extra_label = f" [Total {label}: {count}]"
 
-                    # 5. FINAL LOGGING
+                    event_text = f"Bought {sq['name']} (-${price}){buy_bonus}{extra_label}"
                     p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
-                    msg += f" {event_text}. "
+                    msg += f"{event_text}. "
         elif sq['type'] == "Tax":
             charge_player(p, sq.get('cost', 100))
             msg += f"Paid tax."
@@ -629,48 +630,39 @@ def run_turn(jail_action=None, silent=False):
                 card_msg = draw_card(p, sq.get('deck', 'chance'))
                 msg += f" {card_msg}"
                 
-                # --- CHECK IF THE CARD MOVED THE PLAYER TO A BUYABLE SPOT ---
+                # --- CLEANED CARD-MOVE PURCHASE LOGIC ---
                 if p['pos'] != old_pos and not p['in_jail']:
                     new_sq = PROPERTIES[p['pos']]
                     
-                    if new_sq['type'] in ["Property", "Railroad", "Utility"]:
-                        # Type-Safe ownership check (Bank-Aware)
-                        owner = st.session_state.ownership.get(p['pos'])
-                        if owner is None:
-                            owner = st.session_state.ownership.get(str(p['pos']))
+                    # Ensure new_sq is a valid property type
+                    if isinstance(new_sq, dict) and new_sq.get('type') in ["Property", "Railroad", "Utility", "Street"]:
+                        # Identify current owner
+                        owner = st.session_state.ownership.get(p['pos']) or st.session_state.ownership.get(str(p['pos']), "Bank")
                         
-                        # If the Bank owns it, the player can buy it
-                        if owner is None or owner == "Bank":
-                            if p['cash'] >= new_sq['price']:
-                                p['cash'] -= new_sq['price']
+                        if owner == "Bank":
+                            price = new_sq.get('price', 150)
+                            if p['cash'] >= price:
+                                # Execute Transaction
+                                p['cash'] -= price
                                 st.session_state.ownership[p['pos']] = p['name']
                                 
-                                # --- ROBUST MONOPOLY CHECK ---
+                                # Track Expense for ROI stats
+                                if "property_stats" in st.session_state:
+                                    st.session_state.property_stats[p['pos']]["expenses"] += price
+                                
+                                # Monopoly Check for the Trophy Emoji
                                 target_color = new_sq.get('color')
-                                set_bonus = ""
+                                buy_bonus = ""
                                 if target_color:
-                                    # --- SAFE MODE COLOR GROUP CHECK ---
-                                    color_group = []
-                                    for idx, s in enumerate(PROPERTIES):
-                                        # Only check if 's' is actually a dictionary/property
-                                        if isinstance(s, dict) and s.get('color') == target_color:
-                                            color_group.append(idx)
-                                            
-                                    owned_count = 0
-                                    # -----------------------------------
-                                    for idx in color_group:
-                                        curr = st.session_state.ownership.get(idx) or st.session_state.ownership.get(str(idx))
-                                        if curr and str(curr).strip().lower() == str(p['name']).strip().lower():
-                                            owned_count += 1
-                                    
-                                    if owned_count == len(color_group) and len(color_group) > 0:
-                                        set_bonus = " | MONOPOLY COMPLETED!"
+                                    color_group = [idx for idx, s in enumerate(PROPERTIES) if isinstance(s, dict) and s.get('color') == target_color]
+                                    owned_count = sum(1 for idx in color_group if str(st.session_state.ownership.get(idx, "")).strip().lower() == str(p['name']).strip().lower() or str(st.session_state.ownership.get(str(idx), "")).strip().lower() == str(p['name']).strip().lower())
+                                    if owned_count == len(color_group): 
+                                        buy_bonus = " | 🏆 MONOPOLY COMPLETED!"
 
-                                # Records the event correctly inside the purchase logic
-                                event_text = f"Bought {new_sq['name']} (-${new_sq['price']}){set_bonus} [via Card]"
+                                event_text = f"Bought {new_sq['name']} (-${price}){buy_bonus} [via Card]"
                                 p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
                                 msg += f" Then bought {new_sq['name']}."
-
+        
                 # --- FINAL SAFETY: EXITING THE CARD LOGIC ---
                 if p['in_jail']:
                     p['stats']['visits'][10] += 1
