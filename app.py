@@ -222,22 +222,45 @@ def charge_player(p, amt):
 
 def get_rent(pid, roll=0):
     info = PROPERTIES[pid]
-    owner = st.session_state.ownership[pid]
+    # Use .get() to avoid crashing if the property isn't owned yet
+    owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
+    
+    if not owner or owner == "Bank":
+        return 0
+
     if info['type'] == "Street":
-        h = st.session_state.houses[pid]
+        h = st.session_state.houses.get(pid, 0)
         base = info['rent'][h]
-        if h == 0 and all(st.session_state.ownership[g] == owner for g in COLOR_GROUPS[info['color']]):
-            return base * 2
+        # Check for Monopoly (Normalized name check)
+        if h == 0:
+            group = COLOR_GROUPS[info['color']]
+            owned_in_group = 0
+            for g_id in group:
+                curr = st.session_state.ownership.get(g_id) or st.session_state.ownership.get(str(g_id))
+                if curr and str(curr).strip().lower() == str(owner).strip().lower():
+                    owned_in_group += 1
+            if owned_in_group == len(group):
+                return base * 2
         return base
+
     elif info['type'] == "Railroad":
-        count = sum(1 for r in RAILROADS if st.session_state.ownership[r] == owner)
-        return info['rent'][count-1]
+        # Safe Mode Count
+        count = 0
+        for r_id in [5, 15, 25, 35]: # These are the RR indices
+            curr = st.session_state.ownership.get(r_id) or st.session_state.ownership.get(str(r_id))
+            if curr and str(curr).strip().lower() == str(owner).strip().lower():
+                count += 1
+        return info['rent'][max(0, count-1)]
+
     elif info['type'] == "Utility":
-        count = sum(1 for u in UTILITIES if st.session_state.ownership[u] == owner)
-        if count == 1:
-            return 4 * roll
-        else:
-            return 10 * roll
+        # Safe Mode Count
+        count = 0
+        for u_id in [12, 28]: # These are the Utility indices
+            curr = st.session_state.ownership.get(u_id) or st.session_state.ownership.get(str(u_id))
+            if curr and str(curr).strip().lower() == str(owner).strip().lower():
+                count += 1
+        return (4 * roll) if count == 1 else (10 * roll)
+
     return 0
 
 def send_to_jail(p):
@@ -544,9 +567,17 @@ def run_turn(jail_action=None, silent=False):
                     
                     # A. Special Labeling for Railroads/Utilities
                     if sq['type'] in ["Railroad", "Utility"]:
-                        count = sum(1 for pid, owner_name in st.session_state.ownership.items() 
-                                    if str(owner_name).strip().lower() == str(p['name']).strip().lower() 
-                                    and PROPERTIES[int(pid)]['type'] == sq['type'])
+                        count = 0
+                        # Safe Mode: Loop through ownership one by one
+                        for pid, owner_name in st.session_state.ownership.items():
+                            if str(owner_name).strip().lower() == str(p['name']).strip().lower():
+                                try:
+                                    p_idx = int(pid)
+                                    if PROPERTIES[p_idx].get('type') == sq['type']:
+                                        count += 1
+                                except:
+                                    continue
+                        
                         label = "Utilities" if sq['type'] == "Utility" else f"{sq['type']}s"
                         event_text += f" [Total {label}: {count}]"
 
