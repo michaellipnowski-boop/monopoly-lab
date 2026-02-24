@@ -3,6 +3,7 @@ import random
 import pandas as pd  # Added for data processing and Excel/CSV exports
 from collections import defaultdict
 
+
 # --- DATA CONSTANTS ---
 COLOR_MAP = {
     "Brown": "#955436", "Light Blue": "#AAE0FA", "Pink": "#D93A96", "Orange": "#F7941D",
@@ -278,65 +279,76 @@ def send_to_jail(p):
 
 def attempt_buy_houses(p):
     """
-    Safe Mode: Handles house building logic. 
-    Ensures even building, respects Debt rules, and prevents KeyError crashes.
+    Scans owned properties for monopolies and buys houses based on policy.
+    Logs only House Builds and Monopoly Completions to Critical Moments.
     """
-    # 1. Capture Policy (Handles both "Always" and "Aggressive" for consistency)
-    build_pol = p['policy'].get('build_house', "Never")
-    build_res = p['policy'].get('build_res', 500)
-    allow_debt = st.session_state.rules.get("allow_debt", False)
+    # 1. Identify all color groups
+    color_groups = {}
+    for idx, sq in enumerate(PROPERTIES):
+        if isinstance(sq, dict) and sq.get('type') == "Street":
+            color = sq.get('color')
+            if color not in color_groups:
+                color_groups[color] = []
+            color_groups[color].append(idx)
 
-    if build_pol == "Never":
-        return
+    houses_built_this_turn = []
 
-    # 2. Iterate through color groups to find Monopolies
-    for color, pids in COLOR_GROUPS.items():
-        # Check if player owns every property in this color group
-        # Change this:
-        # if all(st.session_state.ownership.get(pid) == p['name'] for pid in pids):
-
-        # To this (Type-Safe Version):
-        if all((st.session_state.ownership.get(pid) == p['name'] or 
-                st.session_state.ownership.get(str(pid)) == p['name']) for pid in pids):
+    for color, indices in color_groups.items():
+        # Check if player owns the whole group
+        owners = [st.session_state.ownership.get(idx) for idx in indices]
+        if all(owner == p['name'] for owner in owners):
             
-            # 3. Sort by house count to enforce 'Even Building' rule
-            # (Always build on the property with the fewest houses first)
-            sorted_pids = sorted(pids, key=lambda x: st.session_state.houses.get(x, 0))
-            
-            for target_pid in sorted_pids:
-                h_cost = PROPERTIES[target_pid].get('h_cost', 50) 
-                prop_name = PROPERTIES[target_pid]['name']
-                # ADD THIS LINE:
-                current_h = st.session_state.houses.get(target_pid, 0)
+            # --- LOG MONOPOLY COMPLETION (if not already logged) ---
+            # This is a safety check to ensure every Monopoly gets its Trophy
+            monopoly_key = f"monopoly_{color}"
+            if not p['stats'].get(monopoly_key):
+                p['stats'][monopoly_key] = True
+                if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
+                p['stats']['critical_moments'].append({
+                    'turn': st.session_state.turn_count, 
+                    'event': f"🏆 MONOPOLY: {color} set completed!"
+                })
+
+            # 2. Building Logic (Simplified for Safe Mode automation)
+            # Find the property with the fewest houses in the set (even building rule)
+            while True:
+                # Get current house counts for the set
+                counts = [st.session_state.houses.get(idx, 0) for idx in indices]
+                if all(c >= 5 for c in counts): break # Maxed out at Hotels
                 
-                # 4. Comprehensive Affordability Check
-                if allow_debt and build_pol in ["Always", "Aggressive"]:
-                    # In Debt Mode, "Always" means build even if cash is negative
-                    can_afford = True
-                elif build_pol in ["Always", "Aggressive"]:
-                    # In Standard Mode, "Always" means build if you have the cash
-                    can_afford = (p['cash'] >= h_cost)
-                elif build_pol == "Keep Reserve":
-                    # In Reserve Mode, must stay above the specified floor
-                    can_afford = (p['cash'] - h_cost >= build_res)
-                else:
-                    can_afford = False
+                target_idx = indices[counts.index(min(counts))]
+                sq = PROPERTIES[target_idx]
+                h_cost = sq.get('house_cost', 50)
                 
-                # 5. Rule Validation: Max 5 houses AND must build evenly
-                is_lowest = current_h < 5 and all(current_h <= st.session_state.houses.get(other, 0) for other in pids)
-                
-                if can_afford and is_lowest:
-                    st.session_state.houses[target_pid] = current_h + 1
+                # Check Policy
+                res = p['policy']['buy_res']
+                if p['cash'] - h_cost >= res:
+                    # Execute Purchase
                     p['cash'] -= h_cost
-    
-                    # Standardize the event string with clear spacing
-                    event_msg = f"Built house on {prop_name} (-${h_cost})"
+                    st.session_state.houses[target_idx] = st.session_state.houses.get(target_idx, 0) + 1
                     
-                    p['stats']['events'].append({
-                        "turn": st.session_state.turn_count, 
-                        "event": event_msg
+                    # Update ROI Stats (Expenses)
+                    if "property_stats" in st.session_state:
+                        st.session_state.property_stats[target_idx]["expenses"] += h_cost
+                    
+                    # --- LOG HOUSE BUILD TO CRITICAL MOMENTS ---
+                    new_count = st.session_state.houses[target_idx]
+                    label = "Hotel" if new_count == 5 else f"House {new_count}"
+                    house_msg = f"🏗️ Built {label} on {sq['name']} (-${h_cost})"
+                    
+                    if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
+                    p['stats']['critical_moments'].append({
+                        'turn': st.session_state.turn_count, 
+                        'event': house_msg
                     })
+                    houses_built_this_turn.append(house_msg)
+                else:
                     break
+    
+    # Return summary for the main 'Last Move' ticker
+    if houses_built_this_turn:
+        return f"Built {len(houses_built_this_turn)} improvements."
+    return ""
 
 def draw_card(p, deck_type):
     if deck_type == "chance":
@@ -429,6 +441,14 @@ def run_turn(jail_action=None, silent=False):
     p = st.session_state.players[st.session_state.current_p]
     
     if not st.session_state.rules["allow_debt"] and p['cash'] < 0:
+        # 1. Sync cash history for ALL players so the graphs stay aligned
+        for player in st.session_state.players:
+            player['stats']['cash_history'].append(player['cash'])
+        
+        # 2. Increment the turn count (time still passed even if they are broke)
+        st.session_state.turn_count += 1
+        
+        # 3. Move to the next player and exit
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         return
     
@@ -548,7 +568,7 @@ def run_turn(jail_action=None, silent=False):
                 p['cash'] -= rent
                 p['stats']['rent_paid'] += rent 
                 
-                # --- TRACK PROPERTY REVENUE ---
+                # --- TRACK PROPERTY REVENUE (Math stays!) ---
                 if "property_stats" in st.session_state:
                     st.session_state.property_stats[p['pos']]["revenue"] += rent
                 
@@ -557,8 +577,9 @@ def run_turn(jail_action=None, silent=False):
                         op['cash'] += rent
                         op['stats']['rent_collected'] += rent
                 
+                # We keep the UI message for the 'Last Move' ticker...
                 event_msg = f"Paid ${rent} rent at {sq['name']}{set_bonus}"
-                p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_msg})
+                # ...BUT we no longer append to events/critical_moments here!
                 msg += f"{event_msg}. "
 
             # CASE B: BANK OWNS IT (PURCHASE)
@@ -591,8 +612,13 @@ def run_turn(jail_action=None, silent=False):
                         label = "Utilities" if sq['type'] == "Utility" else "Railroads"
                         extra_label = f" [Total {label}: {count}]"
 
-                    event_text = f"Bought {sq['name']} (-${price}){buy_bonus}{extra_label}"
-                    p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                    # --- LOG TO CRITICAL MOMENTS ---
+                    if 'critical_moments' not in p['stats']:
+                        p['stats']['critical_moments'] = []
+                    
+                    event_text = f"🏠 Bought {sq['name']} (-${price}){buy_bonus}{extra_label}"
+                    p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                    
                     msg += f"{event_text}. "
         elif sq['type'] == "Tax":
             charge_player(p, sq.get('cost', 100))
@@ -630,9 +656,23 @@ def run_turn(jail_action=None, silent=False):
                 card_msg = draw_card(p, sq.get('deck', 'chance'))
                 msg += f" {card_msg}"
                 
+                # --- NEW: IMMEDIATE JAIL CHECK ---
+                if p.get('in_jail'):
+                    p['stats']['visits'][10] += 1
+                    p['stats']['ends'][10] += 1
+                    for player in st.session_state.players:
+                        player['stats']['cash_history'].append(player['cash'])
+                    
+                    if not silent: st.session_state.last_move = msg
+                    st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+                    st.session_state.turn_count += 1
+                    return # Exit turn immediately
+                # ---------------------------------
+                
                 # --- CLEANED CARD-MOVE PURCHASE LOGIC ---
-                if p['pos'] != old_pos and not p['in_jail']:
+                if p['pos'] != old_pos:
                     new_sq = PROPERTIES[p['pos']]
+                    # ... rest of your purchase code stays the same ...
                     
                     # Ensure new_sq is a valid property type
                     if isinstance(new_sq, dict) and new_sq.get('type') in ["Property", "Railroad", "Utility", "Street"]:
@@ -659,8 +699,13 @@ def run_turn(jail_action=None, silent=False):
                                     if owned_count == len(color_group): 
                                         buy_bonus = " | 🏆 MONOPOLY COMPLETED!"
 
-                                event_text = f"Bought {new_sq['name']} (-${price}){buy_bonus} [via Card]"
-                                p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                                # --- LOG TO CRITICAL MOMENTS ---
+                                if 'critical_moments' not in p['stats']:
+                                    p['stats']['critical_moments'] = []
+                                
+                                event_text = f"🏠 Bought {new_sq['name']} (-${price}){buy_bonus} [via Card]"
+                                p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                                
                                 msg += f" Then bought {new_sq['name']}."
         
                 # --- FINAL SAFETY: EXITING THE CARD LOGIC ---
@@ -684,25 +729,29 @@ def run_turn(jail_action=None, silent=False):
                 msg += f"Collected Jackpot of ${st.session_state.jackpot}!"
                 st.session_state.jackpot = st.session_state.rules["fp_initial"]
         
-        # Call the standalone function to handle building and logging cleanly
-        attempt_buy_houses(p) 
-
-        if not silent: st.session_state.last_move = msg
-        
         # --- PHASE 2: END OF TURN TRACKER ---
-        p['stats']['visits'][p['pos']] += 1
-        p['stats']['ends'][p['pos']] += 1
+        
+        # 1. Handle house building (This handles the logic AND the Critical Moments logging)
+        house_msg = attempt_buy_houses(p) 
+        if house_msg:
+            msg += f" {house_msg}"
 
-        # --- WEALTH SNAPSHOT (Safe Mode Sync) ---
-        # ALWAYS record wealth so the graph stays perfectly in sync
+        # 2. Finalize the UI message for the 'Last Move' ticker
+        if not silent: 
+            st.session_state.last_move = msg
+            
+        # 3. Record wealth snapshot for the graph
         for player in st.session_state.players:
             player['stats']['cash_history'].append(player['cash'])
 
-        # Turn-switching logic:
+        # 4. Record position stats
+        p['stats']['visits'][p['pos']] += 1
+        p['stats']['ends'][p['pos']] += 1
+
+        # 5. Switch turn and increment turn count
         if not is_double:
             st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         
-        # ALWAYS increment turn_count so the simulation knows when to stop
         st.session_state.turn_count += 1
 
 # --- UI FLOW ---
