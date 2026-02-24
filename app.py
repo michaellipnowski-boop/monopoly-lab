@@ -111,7 +111,11 @@ if "phase" not in st.session_state:
     st.session_state.p_names = ["Student A", "Student B"]
     st.session_state.players = []
     st.session_state.starting_players = None
-    st.session_state.ownership = {pid: "Bank" for pid in PROPERTIES if "rent" in PROPERTIES[pid] or PROPERTIES[pid].get("type") in ["Railroad", "Utility"]}
+    # Initialize using the INDEX (i) as the key so it matches game logic
+    st.session_state.ownership = {
+        i: "Bank" for i, p in enumerate(PROPERTIES) 
+        if isinstance(p, dict) and ("rent" in p or p.get("type") in ["Railroad", "Utility"])
+    }
     st.session_state.houses = {pid: 0 for pid in range(40)}
     st.session_state.last_move = ""
     st.session_state.turn_count = 0
