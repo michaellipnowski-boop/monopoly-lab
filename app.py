@@ -536,7 +536,6 @@ def run_turn(jail_action=None, silent=False):
                 p['cash'] -= rent
                 p['stats']['rent_paid'] += rent 
                 
-                # --- TRACK PROPERTY REVENUE (Math stays!) ---
                 if "property_stats" in st.session_state:
                     st.session_state.property_stats[p['pos']]["revenue"] += rent
                 
@@ -545,9 +544,8 @@ def run_turn(jail_action=None, silent=False):
                         op['cash'] += rent
                         op['stats']['rent_collected'] += rent
                 
-                # We keep the UI message for the 'Last Move' ticker...
-                event_msg = f"Paid ${rent} rent at {sq['name']}{set_bonus}"
-                # ...BUT we no longer append to events/critical_moments here!
+                # Check this line below! Make sure "set_bonus" is deleted from the f-string
+                event_msg = f"Paid ${rent} rent at {sq['name']}" 
                 msg += f"{event_msg}. "
 
             # CASE B: BANK OWNS IT (PURCHASE)
