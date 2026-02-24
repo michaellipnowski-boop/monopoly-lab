@@ -136,9 +136,15 @@ def get_player_excel_data():
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         for player in st.session_state.players:
-            # Gather events for this player
-            # We'll map events to the turn they happened
-            event_map = {e['turn']: e['event'] for e in player['stats']['events']}
+            # --- REPLACED BLOCK: Groups multiple events per turn ---
+            from collections import defaultdict
+            grouped_events = defaultdict(list)
+            for e in player['stats']['events']:
+                # Group by turn number
+                grouped_events[e['turn']].append(str(e['event']))
+            
+            # Combine multiple events (e.g., "Bought Park Place ; Built house")
+            event_map = {turn: " ; ".join(msgs) for turn, msgs in grouped_events.items()}
             
             history = player['stats']['cash_history']
             data = []
@@ -504,8 +510,25 @@ def run_turn(jail_action=None, silent=False):
                 if should_buy and p['cash'] >= price:
                     st.session_state.ownership[p['pos']] = p['name']
                     p['cash'] -= price
-                    msg += f"Bought for ${price}."
-                    p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': f"Bought {sq['name']}"})
+                    # --- ENHANCED LOGGING ---
+                    event_text = f"Bought {sq['name']} (-${price})"
+                
+                    # A. Handle Railroads and Utilities
+                    if sq['type'] in ["Railroad", "Utility"]:
+                        count = sum(1 for pid, owner_name in st.session_state.ownership.items() 
+                                    if owner_name == p['name'] and PROPERTIES[pid]['type'] == sq['type'])
+                        event_text += f" [Total {sq['type']}s: {count}]"
+                
+                    # B. Handle Color-Group Properties
+                    elif sq['type'] == "Property":
+                        color = sq['color']
+                        group_pids = COLOR_GROUPS[color]
+                        if all(st.session_state.ownership.get(pid) == p['name'] for pid in group_pids):
+                            event_text += f" [MONOPOLY COMPLETED: {color}]"
+
+                    # Log it
+                    p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                    msg += f"Bought {sq['name']} for ${price}."
         elif sq['type'] == "Tax":
             charge_player(p, sq.get('cost', 100))
             msg += f"Paid tax."
