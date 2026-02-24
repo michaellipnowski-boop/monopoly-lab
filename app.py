@@ -558,13 +558,13 @@ def run_turn(jail_action=None, silent=False):
                 # 3. Record the Visit and End at Square 10 (Jail)
                 p['stats']['visits'][10] += 1
                 p['stats']['ends'][10] += 1
-            
-                # --- WEALTH SNAPSHOT (Safe Mode Sync) ---
-                for player in st.session_state.players:
-                    player['stats']['cash_history'].append(player['cash'])
 
                 # --- BUILDING OPPORTUNITY ---
                 attempt_buy_houses(p)
+                
+                # --- WEALTH SNAPSHOT (Safe Mode Sync) ---
+                for player in st.session_state.players:
+                    player['stats']['cash_history'].append(player['cash'])
 
                 # --- EXIT THE TURN ---
                 if not silent: st.session_state.last_move = msg
@@ -579,7 +579,7 @@ def run_turn(jail_action=None, silent=False):
                 
                 # --- NEW: Check if the card moved the player to a buyable spot ---
                 if p['pos'] != old_pos and not p['in_jail']:
-                    new_sq = BOARD[p['pos']]
+                    new_sq = PROPERTIES[p['pos']]
                     
                     if new_sq['type'] in ["Property", "Railroad", "Utility"]:
                         # Type-Safe ownership check
