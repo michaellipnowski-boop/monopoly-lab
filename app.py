@@ -572,19 +572,36 @@ def run_turn(jail_action=None, silent=False):
                 st.session_state.turn_count += 1
                 return 
             else:
+                # Store the position BEFORE the card is drawn
+                old_pos = p['pos']
                 card_msg = draw_card(p, sq.get('deck', 'chance'))
-                msg += card_msg
+                msg += f" {card_msg}"
                 
-                # FINAL SAFETY: If the player is now in jail, 
-                # they were sent there by the card. Stop the turn!
+                # --- NEW: Check if the card moved the player to a buyable spot ---
+                if p['pos'] != old_pos and not p['in_jail']:
+                    new_sq = BOARD[p['pos']]
+                    
+                    if new_sq['type'] in ["Property", "Railroad", "Utility"]:
+                        # Type-Safe ownership check
+                        owner = st.session_state.ownership.get(p['pos']) or st.session_state.ownership.get(str(p['pos']))
+                        
+                        if owner is None:
+                            if p['cash'] >= new_sq['price']:
+                                p['cash'] -= new_sq['price']
+                                st.session_state.ownership[p['pos']] = p['name']
+                                
+                                # Record the event with the semicolon-friendly tag
+                                event_text = f"Bought {new_sq['name']} (-${new_sq['price']}) [via Card]"
+                                p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                                msg += f" Then bought {new_sq['name']}."
+
+                # FINAL SAFETY: If the player is now in jail via card
                 if p['in_jail']:
-                    # --- STATS SYNC ---
                     p['stats']['visits'][10] += 1
                     p['stats']['ends'][10] += 1
                     for player in st.session_state.players:
                         player['stats']['cash_history'].append(player['cash'])
                     
-                    # --- BUILDING OPPORTUNITY ---
                     attempt_buy_houses(p)
 
                     if not silent: st.session_state.last_move = msg
