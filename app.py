@@ -227,21 +227,24 @@ def charge_player(p, amt):
 
 def get_rent(pid, roll=0):
     info = PROPERTIES[pid]
-    # Use .get() to avoid crashing if the property isn't owned yet
-    owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
+    # Standardize to string for the lookup
+    s_pid = str(pid)
+    owner = st.session_state.ownership.get(s_pid)
     
     if not owner or owner == "Bank":
         return 0
 
     if info['type'] == "Street":
-        h = st.session_state.houses.get(pid, 0)
+        # Safe house lookup (checking both types just in case)
+        h = st.session_state.houses.get(pid, 0) if pid in st.session_state.houses else st.session_state.houses.get(s_pid, 0)
         base = info['rent'][h]
-        # Check for Monopoly (Normalized name check)
+        
+        # Monopoly Check (Double rent for 0 houses)
         if h == 0:
             group = COLOR_GROUPS[info['color']]
             owned_in_group = 0
             for g_id in group:
-                curr = st.session_state.ownership.get(g_id) or st.session_state.ownership.get(str(g_id))
+                curr = st.session_state.ownership.get(str(g_id))
                 if curr and str(curr).strip().lower() == str(owner).strip().lower():
                     owned_in_group += 1
             if owned_in_group == len(group):
@@ -249,19 +252,18 @@ def get_rent(pid, roll=0):
         return base
 
     elif info['type'] == "Railroad":
-        # Safe Mode Count
         count = 0
-        for r_id in [5, 15, 25, 35]: # These are the RR indices
-            curr = st.session_state.ownership.get(r_id) or st.session_state.ownership.get(str(r_id))
+        for r_id in [5, 15, 25, 35]:
+            curr = st.session_state.ownership.get(str(r_id))
             if curr and str(curr).strip().lower() == str(owner).strip().lower():
                 count += 1
+        # Railroad rent is typically 25, 50, 100, 200
         return info['rent'][max(0, count-1)]
 
     elif info['type'] == "Utility":
-        # Safe Mode Count
         count = 0
-        for u_id in [12, 28]: # These are the Utility indices
-            curr = st.session_state.ownership.get(u_id) or st.session_state.ownership.get(str(u_id))
+        for u_id in [12, 28]:
+            curr = st.session_state.ownership.get(str(u_id))
             if curr and str(curr).strip().lower() == str(owner).strip().lower():
                 count += 1
         return (4 * roll) if count == 1 else (10 * roll)
@@ -810,33 +812,64 @@ elif st.session_state.phase == "SETUP":
         for color, pids in COLOR_GROUPS.items(): all_ownable.extend(pids)
         all_ownable.extend(RAILROADS)
         all_ownable.extend(UTILITIES)
+        
         for pid in all_ownable:
             sq = PROPERTIES[pid]
             bg = COLOR_MAP.get(sq.get('color'), COLOR_MAP.get(sq['type']))
             st.markdown(f'<div style="background:{bg}; height:4px;"></div>', unsafe_allow_html=True)
             cols = st.columns([2] + [1]*len(p_names))
             cols[0].write(sq['name'])
+            
             for i, p_n in enumerate(p_names):
-                is_own = (st.session_state.ownership.get(pid) == p_n or st.session_state.ownership.get(str(pid)) == p_n)
+                # We check for the string version of the ID
+                is_own = (st.session_state.ownership.get(str(pid)) == p_n)
+                
                 if cols[i+1].button(p_n, key=f"set_o_{pid}{p_n}", type="primary" if is_own else "secondary"):
-                    st.session_state.ownership[pid] = "Bank" if is_own else p_n
+                    # We SAVE as the string version of the ID
+                    st.session_state.ownership[str(pid)] = "Bank" if is_own else p_n
                     st.rerun()
     
     with t2:
         for color, pids in COLOR_GROUPS.items():
-            owners = [st.session_state.ownership.get(p) or st.session_state.ownership.get(str(p)) for p in pids]
-            if len(set(owners)) == 1 and owners[0] != "Bank":
+            # 1. Safe owner lookup (handles number '1' or text '1')
+            owners = []
+            for p in pids:
+                val = st.session_state.ownership.get(p) or st.session_state.ownership.get(str(p))
+                owners.append(val)
+            
+            # 2. Strict Check: Hide the set unless a real player owns the WHOLE thing
+            if len(set(owners)) == 1 and owners[0] not in ["Bank", None, "None", ""]:
                 st.markdown(f'<div style="background:{COLOR_MAP[color]}; padding:5px; border-radius:3px; color:white;"><b>{color} Group ({owners[0]})</b></div>', unsafe_allow_html=True)
+                
                 for pid in pids:
                     c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
                     c1.write(PROPERTIES[pid]['name'])
-                    h = st.session_state.houses[pid]
-                    others = [st.session_state.houses[p] for p in pids if p != pid]
+                    
+                    # 3. Safe house count lookup
+                    h = st.session_state.houses.get(pid, 0) if pid in st.session_state.houses else st.session_state.houses.get(str(pid), 0)
+                    
+                    # 4. Get house counts for others in the set (for even-building rules)
+                    others = []
+                    for p in pids:
+                        if p != pid:
+                            val_h = st.session_state.houses.get(p, 0) if p in st.session_state.houses else st.session_state.houses.get(str(p), 0)
+                            others.append(val_h)
+                    
+                    # 5. Logic for the +/- buttons
                     can_down = h > 0 and all(h >= o for o in others)
                     can_up = h < 5 and all(h <= o for o in others)
-                    if c2.button("➖", key=f"hm{pid}", disabled=not can_down): st.session_state.houses[pid] -= 1; st.rerun()
+                    
+                    if c2.button("➖", key=f"hm{pid}", disabled=not can_down): 
+                        key = pid if pid in st.session_state.houses else str(pid)
+                        st.session_state.houses[key] -= 1
+                        st.rerun()
+                        
                     c3.write(f"**{h}**")
-                    if c4.button("➕", key=f"hp_{pid}", disabled=not can_up): st.session_state.houses[pid] += 1; st.rerun()
+                    
+                    if c4.button("➕", key=f"hp_{pid}", disabled=not can_up): 
+                        key = pid if pid in st.session_state.houses else str(pid)
+                        st.session_state.houses[key] += 1
+                        st.rerun()
     
     with t3:
         st.markdown("### 🎫 Get Out of Jail Free Cards")
