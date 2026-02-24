@@ -288,15 +288,16 @@ def attempt_buy_houses(p):
             color_groups[color].append(idx)
 
     for color, indices in color_groups.items():
-        # 1. Check ownership using the session state
-        owners = [st.session_state.ownership.get(idx) for idx in indices]
+        # 1. Manually count how many properties in this color the player actually owns
+        player_owned_count = 0
+        for idx in indices:
+            owner_name = st.session_state.ownership.get(idx)
+            if owner_name and str(owner_name).strip().lower() == str(p['name']).strip().lower():
+                player_owned_count += 1
         
-        # 2. STRICT CHECK: Does the player own EVERY property in this color set?
-        # a) Check if every owner matches the player (ignoring empty spots for a moment)
-        all_match = all(str(o).strip().lower() == str(p['name']).strip().lower() for o in owners if o is not None)
-        
-        # b) Verify no spots are empty AND the names match
-        is_monopoly = all_match and all(o is not None for o in owners) and len(owners) == len(indices)
+        # 2. DECISIVE CHECK: Do they own the WHOLE set?
+        total_in_set = len(indices)
+        is_monopoly = (player_owned_count == total_in_set) and (total_in_set > 0)
         
         if is_monopoly:
             # --- MONOPOLY TROPHY LOGIC (Only fires ONCE per color) ---
