@@ -146,7 +146,7 @@ def get_player_excel_data():
             # --- REPLACED BLOCK: Groups multiple events per turn ---
             # defaultdict is now available from your top-level import
             grouped_events = defaultdict(list)
-            for e in player['stats']['events']:
+            for e in player['stats'].get('critical_moments', []):
                 # Group by turn number
                 grouped_events[e['turn']].append(str(e['event']))
             
@@ -288,14 +288,15 @@ def attempt_buy_houses(p):
             color_groups[color].append(idx)
 
     for color, indices in color_groups.items():
-        # Check ownership using the session state
+        # 1. Check ownership using the session state
         owners = [st.session_state.ownership.get(idx) for idx in indices]
         
-        # Defensive check: ensure all owners match player name
-        if all(str(o).strip().lower() == str(p['name']).strip().lower() for o in owners):
-            
-            # Monopoly Trophy Logic
-            monopoly_key = f"monopoly_{color}"
+        # 2. STRICT CHECK: Does the player own EVERY property in this color set?
+        is_monopoly = all(str(o).strip().lower() == str(p['name']).strip().lower() for o in owners)
+        
+        if is_monopoly:
+            # --- MONOPOLY TROPHY LOGIC (Only fires ONCE per color) ---
+            monopoly_key = f"monopoly_achieved_{color}"
             if not p['stats'].get(monopoly_key):
                 p['stats'][monopoly_key] = True
                 if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
@@ -304,23 +305,19 @@ def attempt_buy_houses(p):
                     'event': f"🏆 MONOPOLY: {color} set completed!"
                 })
 
-            # 2. Building Logic
+            # --- 3. BUILDING LOGIC (Only runs if they have a Monopoly) ---
             while True:
                 counts = [st.session_state.houses.get(idx, 0) for idx in indices]
                 if all(c >= 5 for c in counts): break 
                 
                 target_idx = indices[counts.index(min(counts))]
                 sq = PROPERTIES[target_idx]
-                
-                # --- MATCHING YOUR DATA: Use h_cost ---
                 h_price = sq.get('h_cost', 50) 
                 
-                # Check Policy (using 0 for safety as we discussed)
                 if p['cash'] >= h_price:
                     p['cash'] -= h_price
                     st.session_state.houses[target_idx] = st.session_state.houses.get(target_idx, 0) + 1
                     
-                    # Log the event
                     new_count = st.session_state.houses[target_idx]
                     label = "Hotel" if new_count == 5 else f"House {new_count}"
                     event_text = f"🏗️ Built {label} on {sq['name']} (-${h_price})"
