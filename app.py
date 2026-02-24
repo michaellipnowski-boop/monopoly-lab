@@ -1,5 +1,7 @@
 import streamlit as st
 import random
+import pandas as pd  # Added for data processing and Excel/CSV exports
+from collections import defaultdict
 
 # --- DATA CONSTANTS ---
 COLOR_MAP = {
@@ -131,13 +133,13 @@ if "phase" not in st.session_state:
 #--- SPREADSHEET FUNCTIONALITY ---
 def get_player_excel_data():
     import io
-    import pandas as pd
     
     output = io.BytesIO()
+    # pd is now available from your top-level import
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         for player in st.session_state.players:
             # --- REPLACED BLOCK: Groups multiple events per turn ---
-            from collections import defaultdict
+            # defaultdict is now available from your top-level import
             grouped_events = defaultdict(list)
             for e in player['stats']['events']:
                 # Group by turn number
@@ -160,12 +162,12 @@ def get_player_excel_data():
                 })
             
             df = pd.DataFrame(data)
-            # Save to a dedicated tab
+            # Save to a dedicated tab (Sheet name limit 31 chars)
             df.to_excel(writer, sheet_name=player['name'][:31], index=False)
             
             # Auto-adjust column width for readability
             worksheet = writer.sheets[player['name'][:31]]
-            worksheet.set_column('C:C', 40) 
+            worksheet.set_column('C:C', 50) # Bumped to 50 for longer event strings
             
     return output.getvalue()
 
@@ -263,14 +265,21 @@ def attempt_buy_houses(p):
     # 2. Iterate through color groups to find Monopolies
     for color, pids in COLOR_GROUPS.items():
         # Check if player owns every property in this color group
-        if all(st.session_state.ownership.get(pid) == p['name'] for pid in pids):
+        # Change this:
+        # if all(st.session_state.ownership.get(pid) == p['name'] for pid in pids):
+
+        # To this (Type-Safe Version):
+        if all((st.session_state.ownership.get(pid) == p['name'] or 
+                st.session_state.ownership.get(str(pid)) == p['name']) for pid in pids):
             
             # 3. Sort by house count to enforce 'Even Building' rule
             # (Always build on the property with the fewest houses first)
             sorted_pids = sorted(pids, key=lambda x: st.session_state.houses.get(x, 0))
             
             for target_pid in sorted_pids:
-                h_cost = PROPERTIES[target_pid].get('h_cost', 50)
+                h_cost = PROPERTIES[target_pid].get('h_cost', 50) 
+                prop_name = PROPERTIES[target_pid]['name']
+                # ADD THIS LINE:
                 current_h = st.session_state.houses.get(target_pid, 0)
                 
                 # 4. Comprehensive Affordability Check
@@ -290,17 +299,16 @@ def attempt_buy_houses(p):
                 is_lowest = current_h < 5 and all(current_h <= st.session_state.houses.get(other, 0) for other in pids)
                 
                 if can_afford and is_lowest:
-                    # Execute Build
                     st.session_state.houses[target_pid] = current_h + 1
                     p['cash'] -= h_cost
+    
+                    # Standardize the event string with clear spacing
+                    event_msg = f"Built house on {prop_name} (-${h_cost})"
                     
-                    # Record for Analytics & Excel Export
                     p['stats']['events'].append({
                         "turn": st.session_state.turn_count, 
-                        "event": f"Built house on {PROPERTIES[target_pid]['name']} (-${h_cost})"
+                        "event": event_msg
                     })
-                    
-                    # Break after building ONE house per group per turn (Standard Rule)
                     break
 
 def draw_card(p, deck_type):
@@ -526,7 +534,9 @@ def run_turn(jail_action=None, silent=False):
                     elif sq['type'] == "Property":
                         color = sq['color']
                         group_pids = COLOR_GROUPS[color]
-                        if all(st.session_state.ownership.get(pid) == p['name'] for pid in group_pids):
+                        # Check both integer and string IDs to be 100% safe
+                        if all((st.session_state.ownership.get(pid) == p['name'] or 
+                                st.session_state.ownership.get(str(pid)) == p['name']) for pid in group_pids):
                             event_text += f" [MONOPOLY COMPLETED: {color}]"
 
                     # Log it
@@ -587,40 +597,8 @@ def run_turn(jail_action=None, silent=False):
                 msg += f"Collected Jackpot of ${st.session_state.jackpot}!"
                 st.session_state.jackpot = st.session_state.rules["fp_initial"]
         
-        # Policy-based Building (Post-movement)
-        build_pol = p['policy']['build_house']
-        build_res = p['policy']['build_res']
-        if build_pol != "Never":
-            for color, pids in COLOR_GROUPS.items():
-                if all(st.session_state.ownership[pid] == p['name'] for pid in pids):
-                    # Monopoly owned - try to build
-                    sorted_pids = sorted(pids, key=lambda x: st.session_state.houses[x])
-                    for target_pid in sorted_pids:
-                        h_cost = PROPERTIES[target_pid].get('h_cost', 50)
-                        current_h = st.session_state.houses[target_pid]
-                        # Check affordability & Reserve
-                        can_afford = (build_pol == "Always") or \
-                                     (build_pol == "Keep Reserve" and p['cash'] - h_cost >= build_res)
-                        # Note: If debt is allowed, we don't check 'p['cash'] >= h_cost' for "Always" 
-                        # because the 'charge_player' function handles the negative balance for us.
-                        # Check even building rule
-                        is_lowest = current_h < 5 and all(current_h <= st.session_state.houses[other] for other in pids)
-                        
-                        if can_afford and is_lowest:
-                            st.session_state.houses[target_pid] += 1
-                            p['cash'] -= h_cost
-                            
-                            # Update the on-screen message
-                            msg += f" Built house on {PROPERTIES[target_pid]['name']}."
-                            
-                            # --- UPDATED LOGGING FOR EXCEL ---
-                            # We use a dictionary {} to match our Excel export logic
-                            p['stats']['events'].append({
-                                "turn": st.session_state.turn_count, 
-                                "event": f"Built house on {PROPERTIES[target_pid]['name']} (-${h_cost})"
-                            })
-                            # ---------------------------------
-                            break 
+        # Call the standalone function to handle building and logging cleanly
+        attempt_buy_houses(p) 
 
         if not silent: st.session_state.last_move = msg
         # --- PHASE 2: END OF TURN TRACKER ---
@@ -975,10 +953,25 @@ elif st.session_state.phase == "LIVE":
     with lc2:
         col_v, col_b = st.columns([1, 1])
         with col_v:
-            j_val = st.number_input("Turns to Jump", 1, 10000, 100, label_visibility="collapsed", key="jump_input")
+            j_val = st.number_input("Turns to Jump", 1, 1000000, 100, label_visibility="collapsed", key="jump_input")
         with col_b:
             if st.button(f"Jump {j_val} Turns", use_container_width=True):
-                for _ in range(j_val): run_turn(silent=True)
+                # 1. Initialize the Progress Bar
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                for i in range(j_val):
+                    run_turn(silent=True)
+                    
+                    # 2. Update UI every 100 turns (or every turn if the jump is small)
+                    if i % 100 == 0 or i == j_val - 1:
+                        percent = (i + 1) / j_val
+                        progress_bar.progress(percent)
+                        status_text.text(f"Processing turn {i+1} of {j_val}...")
+
+                # 3. Clean up and refresh
+                progress_bar.empty()
+                status_text.empty()
                 st.rerun()
 
     # 2. Contextual Jail Row (Appears ONLY if the current player is in jail)
