@@ -786,7 +786,7 @@ if st.session_state.phase == "INIT":
                     "rent_collected": 0,
                     "times_in_jail": 0,
                     "cash_history": [1500], # Initial starting value
-                    "events": []            # Log for critical moments
+                    "critical_moments": []  # <-- Change "events" to "critical_moments"
                 }
             })
         st.session_state.phase = "RULES"
