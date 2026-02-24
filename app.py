@@ -529,23 +529,6 @@ def run_turn(jail_action=None, silent=False):
         
         if sq['type'] in ["Street", "Railroad", "Utility", "Property"]: # Added Property just in case of naming variations
             owner = st.session_state.ownership.get(p['pos'], "Bank")
-            
-            # --- GLOBAL MONOPOLY CHECK ---
-            target_color = sq.get('color')
-            set_bonus = ""
-            if target_color:
-                # Get indices for this color group
-                color_group = [idx for idx, s in enumerate(PROPERTIES) if isinstance(s, dict) and s.get('color') == target_color]
-                
-                # Check how many the CURRENT OWNER has
-                owned_in_group = 0
-                for idx in color_group:
-                    curr_owner = st.session_state.ownership.get(idx) or st.session_state.ownership.get(str(idx))
-                    if curr_owner and str(curr_owner).strip().lower() == str(owner).strip().lower():
-                        owned_in_group += 1
-                
-                if owned_in_group == len(color_group) and len(color_group) > 0 and owner != "Bank":
-                    set_bonus = " | 🏆 MONOPOLY"
 
             # CASE A: SOMEONE ELSE OWNS IT (RENT)
             if owner != "Bank" and owner != p['name']:
@@ -582,13 +565,8 @@ def run_turn(jail_action=None, silent=False):
                     if "property_stats" in st.session_state:
                         st.session_state.property_stats[p['pos']]["expenses"] += price
 
-                    # Re-run check specifically to see if this purchase completed the set
-                    owned_count = 0
-                    if target_color:
-                        color_group = [idx for idx, s in enumerate(PROPERTIES) if isinstance(s, dict) and s.get('color') == target_color]
-                        owned_count = sum(1 for idx in color_group if str(st.session_state.ownership.get(idx, "")).strip().lower() == str(p['name']).strip().lower() or str(st.session_state.ownership.get(str(idx), "")).strip().lower() == str(p['name']).strip().lower())
-                    
-                    buy_bonus = " | 🏆 MONOPOLY COMPLETED!" if (target_color and owned_count == len(color_group)) else ""
+                    # Monopoly logic is now handled by the Auditor function
+                    buy_bonus = ""
                     
                     # Special labeling for Railroads/Utilities
                     extra_label = ""
@@ -675,14 +653,7 @@ def run_turn(jail_action=None, silent=False):
                                 if "property_stats" in st.session_state:
                                     st.session_state.property_stats[p['pos']]["expenses"] += price
                                 
-                                # Monopoly Check for the Trophy Emoji
-                                target_color = new_sq.get('color')
                                 buy_bonus = ""
-                                if target_color:
-                                    color_group = [idx for idx, s in enumerate(PROPERTIES) if isinstance(s, dict) and s.get('color') == target_color]
-                                    owned_count = sum(1 for idx in color_group if str(st.session_state.ownership.get(idx, "")).strip().lower() == str(p['name']).strip().lower() or str(st.session_state.ownership.get(str(idx), "")).strip().lower() == str(p['name']).strip().lower())
-                                    if owned_count == len(color_group): 
-                                        buy_bonus = " | 🏆 MONOPOLY COMPLETED!"
 
                                 # --- LOG TO CRITICAL MOMENTS ---
                                 if 'critical_moments' not in p['stats']:
