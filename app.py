@@ -551,10 +551,15 @@ def run_turn(jail_action=None, silent=False):
                     target_color = sq.get('color')
                     set_bonus = ""
                     if target_color:
-                        color_group = [idx for idx, s in enumerate(PROPERTIES) if s.get('color') == target_color]
+                        # Safe Mode: Guard against non-dictionary items in PROPERTIES
+                        color_group = []
+                        for idx, s in enumerate(PROPERTIES):
+                            if isinstance(s, dict) and s.get('color') == target_color:
+                                color_group.append(idx)
+                                
                         owned_count = 0
                         for idx in color_group:
-                            # Normalize names to ensure the check doesn't fail on case-sensitivity
+                            # Normalize names to ensure the check doesn't fail
                             curr = st.session_state.ownership.get(idx) or st.session_state.ownership.get(str(idx))
                             if curr and str(curr).strip().lower() == str(p['name']).strip().lower():
                                 owned_count += 1
@@ -612,7 +617,8 @@ def run_turn(jail_action=None, silent=False):
                 if not silent: st.session_state.last_move = msg
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                 st.session_state.turn_count += 1
-                return 
+                return
+            
             else:
                 # Store the position BEFORE the card is drawn
                 old_pos = p['pos']
@@ -679,20 +685,22 @@ def run_turn(jail_action=None, silent=False):
         attempt_buy_houses(p) 
 
         if not silent: st.session_state.last_move = msg
+        
         # --- PHASE 2: END OF TURN TRACKER ---
-        # Record the final landing spot for regular (non-Action) turns
         p['stats']['visits'][p['pos']] += 1
         p['stats']['ends'][p['pos']] += 1
 
         # --- WEALTH SNAPSHOT (Safe Mode Sync) ---
-        # We run this here to catch data for all regular turns
+        # ALWAYS record wealth so the graph stays perfectly in sync
         for player in st.session_state.players:
             player['stats']['cash_history'].append(player['cash'])
 
         # Turn-switching logic:
         if not is_double:
             st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-            st.session_state.turn_count += 1
+        
+        # ALWAYS increment turn_count so the simulation knows when to stop
+        st.session_state.turn_count += 1
 
 # --- UI FLOW ---
 if st.session_state.phase == "INIT":
