@@ -280,8 +280,9 @@ def send_to_jail(p):
 def attempt_buy_houses(p):
     # 1. Identify all color groups
     color_groups = {}
-    for idx, sq in PROPERTIES.items(): # Use .items() because it's a dict
-        if sq.get('type') == "Street":
+    # Use enumerate because PROPERTIES is a list!
+    for idx, sq in enumerate(PROPERTIES): 
+        if isinstance(sq, dict) and sq.get('type') == "Street":
             color = sq.get('color')
             if color not in color_groups:
                 color_groups[color] = []
@@ -816,7 +817,7 @@ elif st.session_state.phase == "SETUP":
             cols = st.columns([2] + [1]*len(p_names))
             cols[0].write(sq['name'])
             for i, p_n in enumerate(p_names):
-                is_own = (st.session_state.ownership[pid] == p_n)
+                is_own = (st.session_state.ownership.get(pid) == p_n or st.session_state.ownership.get(str(pid)) == p_n)
                 if cols[i+1].button(p_n, key=f"set_o_{pid}{p_n}", type="primary" if is_own else "secondary"):
                     st.session_state.ownership[pid] = "Bank" if is_own else p_n
                     st.rerun()
