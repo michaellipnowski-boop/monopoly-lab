@@ -977,28 +977,47 @@ elif st.session_state.phase == "LIVE":
                     st.markdown(f'<span style="color:{COLOR_MAP[color]}">■</span> <b>{color}</b>', unsafe_allow_html=True)
                     is_mono = all(st.session_state.ownership.get(pid) == p['name'] for pid in pids)
         
-                    # Use .get(pid, 0) to ensure we never crash if a non-street ID is checked
+                    # --- SAFE MODE STREET LABELS ---
                     prop_labels = []
                     for pid in owned:
-                        label = PROPERTIES[pid]['name']
-                        if is_mono:
-                            h_count = st.session_state.houses.get(pid, 0)
-                            label += f" ({h_count}🏠)"
-                        prop_labels.append(label)
-        
+                        # Try integer key first, then string key
+                        p_data = PROPERTIES.get(pid) or PROPERTIES.get(str(pid))
+                        if p_data:
+                            label = p_data['name']
+                            if is_mono:
+                                # Safe house count lookup
+                                h_count = (st.session_state.houses.get(pid) or 
+                                           st.session_state.houses.get(str(pid)) or 0)
+                                label += f" ({h_count}🏠)"
+                            prop_labels.append(label)
+                    
                     st.write(", ".join(prop_labels))
             
-            # --- 2. Display Railroads ---
-            owned_rr = [pid for pid in RAILROADS if st.session_state.ownership[pid] == p['name']]
+            # --- 2. Display Railroads (Safe Mode) ---
+            owned_rr = [pid for pid in RAILROADS if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
             if owned_rr:
+                rr_names = []
+                for pid in owned_rr:
+                    # Check if PROPERTIES is indexed by number or string
+                    p_data = PROPERTIES.get(pid) or PROPERTIES.get(str(pid))
+                    if p_data:
+                        rr_names.append(p_data['name'])
+                
                 st.markdown(f"<b>🚂 Railroads ({len(owned_rr)})</b>", unsafe_allow_html=True)
-                st.write(", ".join([PROPERTIES[pid]['name'] for pid in owned_rr]))
+                st.write(", ".join(rr_names))
             
-            # --- 3. Display Utilities ---
-            owned_util = [pid for pid in UTILITIES if st.session_state.ownership[pid] == p['name']]
+            # --- 3. Display Utilities (Safe Mode) ---
+            owned_util = [pid for pid in UTILITIES if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
             if owned_util:
+                util_names = []
+                for pid in owned_util:
+                    # Check if PROPERTIES is indexed by number or string
+                    p_data = PROPERTIES.get(pid) or PROPERTIES.get(str(pid))
+                    if p_data:
+                        util_names.append(p_data['name'])
+                        
                 st.markdown(f"<b>💡 Utilities ({len(owned_util)})</b>", unsafe_allow_html=True)
-                st.write(", ".join([PROPERTIES[pid]['name'] for pid in owned_util]))
+                st.write(", ".join(util_names))
 
     board_markers = [""] * 40
     for p in st.session_state.players:
