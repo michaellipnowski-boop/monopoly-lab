@@ -352,17 +352,20 @@ def draw_card(p, deck_type):
             
     elif card['effect'] == "birthday":
         for op in st.session_state.players:
-            if op['name'] != p['name']:
+            # Normalized comparison to ensure no one skips paying the birthday gift!
+            if str(op['name']).strip().lower() != str(p['name']).strip().lower():
                 op['cash'] -= card['amt']
                 p['cash'] += card['amt']
                 
     elif card['effect'] == "repairs":
         cost = 0
         for pid, h_count in st.session_state.houses.items():
-            if st.session_state.ownership.get(pid) == p['name']:
-                if h_count == 5:
+            owner = st.session_state.ownership.get(pid)
+            # Use normalization to match the owner to the current player
+            if owner and str(owner).strip().lower() == str(p['name']).strip().lower():
+                if h_count == 5: # Hotel
                     cost += card['H']
-                else:
+                else: # Houses
                     cost += (h_count * card['h'])
         charge_player(p, cost)
         
@@ -503,45 +506,53 @@ def run_turn(jail_action=None, silent=False):
                 p['stats']['rent_paid'] += rent 
                 
                 for op in st.session_state.players:
-                    if op['name'] == owner: 
+                    if str(op['name']).strip().lower() == str(owner).strip().lower():
                         op['cash'] += rent
                         # --- RECORD RENT COLLECTED BY THE OWNER ---
                         op['stats']['rent_collected'] += rent
                 
                 msg += f"Paid ${rent} rent. "
             elif owner == "Bank":
-                    # 1. Decision Logic
-                    price = sq.get('price', 150)
-                    pol = p['policy']['buy_prop']
-                    res = p['policy']['buy_res']
-                    should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
+                # 1. Decision Logic
+                price = sq.get('price', 150)
+                pol = p['policy']['buy_prop']
+                res = p['policy']['buy_res']
+                should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
+                
+                if should_buy and p['cash'] >= price:
+                    # 2. Transaction
+                    st.session_state.ownership[p['pos']] = p['name']
+                    p['cash'] -= price
                     
-                    if should_buy and p['cash'] >= price:
-                        # 2. Transaction
-                        st.session_state.ownership[p['pos']] = p['name']
-                        p['cash'] -= price
+                    # 3. ROBUST MONOPOLY CHECK (For Streets)
+                    target_color = sq.get('color')
+                    set_bonus = ""
+                    if target_color:
+                        color_group = [idx for idx, s in enumerate(PROPERTIES) if s.get('color') == target_color]
+                        owned_count = 0
+                        for idx in color_group:
+                            # Normalize names to ensure the check doesn't fail on case-sensitivity
+                            curr = st.session_state.ownership.get(idx) or st.session_state.ownership.get(str(idx))
+                            if curr and str(curr).strip().lower() == str(p['name']).strip().lower():
+                                owned_count += 1
                         
-                        # 3. Build the Event Text (Start)
-                        event_text = f"Bought {sq['name']} (-${price})"
-                    
-                        # A. Check for Railroads/Utilities
-                        if sq['type'] in ["Railroad", "Utility"]:
-                            count = sum(1 for pid, owner_name in st.session_state.ownership.items() 
-                                        if owner_name == p['name'] and PROPERTIES[int(pid)]['type'] == sq['type'])
-                            label = "Utilities" if sq['type'] == "Utility" else f"{sq['type']}s"
-                            event_text += f" [Total {label}: {count}]"
-                    
-                        # B. Check for Color Monopolies
-                        elif sq['type'] == "Property":
-                            color = sq['color']
-                            group_pids = COLOR_GROUPS[color]
-                            if all((st.session_state.ownership.get(pid) == p['name'] or 
-                                    st.session_state.ownership.get(str(pid)) == p['name']) for pid in group_pids):
-                                event_text += " | MONOPOLY COMPLETED!"
+                        if owned_count == len(color_group) and len(color_group) > 0:
+                            set_bonus = " | MONOPOLY COMPLETED!"
 
-                        # 4. FINAL LOGGING (Done once per purchase)
-                        p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
-                        msg += f" {event_text}"
+                    # 4. Build the Event Text
+                    event_text = f"Bought {sq['name']} (-${price}){set_bonus}"
+                    
+                    # A. Special Labeling for Railroads/Utilities
+                    if sq['type'] in ["Railroad", "Utility"]:
+                        count = sum(1 for pid, owner_name in st.session_state.ownership.items() 
+                                    if str(owner_name).strip().lower() == str(p['name']).strip().lower() 
+                                    and PROPERTIES[int(pid)]['type'] == sq['type'])
+                        label = "Utilities" if sq['type'] == "Utility" else f"{sq['type']}s"
+                        event_text += f" [Total {label}: {count}]"
+
+                    # 5. FINAL LOGGING
+                    p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                    msg += f" {event_text}. "
         elif sq['type'] == "Tax":
             charge_player(p, sq.get('cost', 100))
             msg += f"Paid tax."
@@ -577,15 +588,18 @@ def run_turn(jail_action=None, silent=False):
                 card_msg = draw_card(p, sq.get('deck', 'chance'))
                 msg += f" {card_msg}"
                 
-                # --- NEW: Check if the card moved the player to a buyable spot ---
+                # --- CHECK IF THE CARD MOVED THE PLAYER TO A BUYABLE SPOT ---
                 if p['pos'] != old_pos and not p['in_jail']:
                     new_sq = PROPERTIES[p['pos']]
                     
                     if new_sq['type'] in ["Property", "Railroad", "Utility"]:
-                        # Type-Safe ownership check
-                        owner = st.session_state.ownership.get(p['pos']) or st.session_state.ownership.get(str(p['pos']))
-                        
+                        # Type-Safe ownership check (Bank-Aware)
+                        owner = st.session_state.ownership.get(p['pos'])
                         if owner is None:
+                            owner = st.session_state.ownership.get(str(p['pos']))
+                        
+                        # If the Bank owns it, the player can buy it
+                        if owner is None or owner == "Bank":
                             if p['cash'] >= new_sq['price']:
                                 p['cash'] -= new_sq['price']
                                 st.session_state.ownership[p['pos']] = p['name']
@@ -597,32 +611,33 @@ def run_turn(jail_action=None, silent=False):
                                     color_group = [idx for idx, s in enumerate(PROPERTIES) if s.get('color') == target_color]
                                     owned_count = 0
                                     for idx in color_group:
-                                        # This 'or' handles both the number 5 and the text "5"
-                                        owner = st.session_state.ownership.get(idx) or st.session_state.ownership.get(str(idx))
-                                        if owner == p['name']:
+                                        curr = st.session_state.ownership.get(idx) or st.session_state.ownership.get(str(idx))
+                                        if curr and str(curr).strip().lower() == str(p['name']).strip().lower():
                                             owned_count += 1
                                     
-                                    if owned_count == len(color_group):
+                                    if owned_count == len(color_group) and len(color_group) > 0:
                                         set_bonus = " | MONOPOLY COMPLETED!"
 
-                                # Final event text combines the purchase and the bonus flag
+                                # Records the event correctly inside the purchase logic
                                 event_text = f"Bought {new_sq['name']} (-${new_sq['price']}){set_bonus} [via Card]"
                                 p['stats']['events'].append({'turn': st.session_state.turn_count, 'event': event_text})
                                 msg += f" Then bought {new_sq['name']}."
 
-                # FINAL SAFETY: If the player is now in jail via card
+                # --- FINAL SAFETY: EXITING THE CARD LOGIC ---
                 if p['in_jail']:
                     p['stats']['visits'][10] += 1
                     p['stats']['ends'][10] += 1
-                    for player in st.session_state.players:
-                        player['stats']['cash_history'].append(player['cash'])
-                    
-                    attempt_buy_houses(p)
+                
+                # These must run regardless of Jail or Purchase to keep the game moving
+                for player in st.session_state.players:
+                    player['stats']['cash_history'].append(player['cash'])
+                
+                attempt_buy_houses(p)
 
-                    if not silent: st.session_state.last_move = msg
-                    st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-                    st.session_state.turn_count += 1
-                    return
+                if not silent: st.session_state.last_move = msg
+                st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+                st.session_state.turn_count += 1
+                return
         elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
             if st.session_state.jackpot > 0:
                 p['cash'] += st.session_state.jackpot
@@ -634,20 +649,19 @@ def run_turn(jail_action=None, silent=False):
 
         if not silent: st.session_state.last_move = msg
         # --- PHASE 2: END OF TURN TRACKER ---
-        # We record this here because the player's physical movement 
-        # for this specific roll is now complete.
+        # Record the final landing spot for regular (non-Action) turns
         p['stats']['visits'][p['pos']] += 1
         p['stats']['ends'][p['pos']] += 1
 
-        # Your existing turn-switching logic:
+        # --- WEALTH SNAPSHOT (Safe Mode Sync) ---
+        # We run this here to catch data for all regular turns
+        for player in st.session_state.players:
+            player['stats']['cash_history'].append(player['cash'])
+
+        # Turn-switching logic:
         if not is_double:
             st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-    
-    st.session_state.turn_count += 1
-    
-    # --- WEALTH SNAPSHOT ---
-    for player in st.session_state.players:
-        player['stats']['cash_history'].append(player['cash'])
+            st.session_state.turn_count += 1
 
 # --- UI FLOW ---
 if st.session_state.phase == "INIT":
