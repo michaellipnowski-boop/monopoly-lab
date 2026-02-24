@@ -278,28 +278,23 @@ def send_to_jail(p):
     p['stats']['times_in_jail'] += 1
 
 def attempt_buy_houses(p):
-    """
-    Scans owned properties for monopolies and buys houses based on policy.
-    Logs only House Builds and Monopoly Completions to Critical Moments.
-    """
     # 1. Identify all color groups
     color_groups = {}
-    for idx, sq in enumerate(PROPERTIES):
-        if isinstance(sq, dict) and sq.get('type') == "Street":
+    for idx, sq in PROPERTIES.items(): # Use .items() because it's a dict
+        if sq.get('type') == "Street":
             color = sq.get('color')
             if color not in color_groups:
                 color_groups[color] = []
             color_groups[color].append(idx)
 
-    houses_built_this_turn = []
-
     for color, indices in color_groups.items():
-        # Check if player owns the whole group
+        # Check ownership using the session state
         owners = [st.session_state.ownership.get(idx) for idx in indices]
-        if all(owner == p['name'] for owner in owners):
+        
+        # Defensive check: ensure all owners match player name
+        if all(str(o).strip().lower() == str(p['name']).strip().lower() for o in owners):
             
-            # --- LOG MONOPOLY COMPLETION (if not already logged) ---
-            # This is a safety check to ensure every Monopoly gets its Trophy
+            # Monopoly Trophy Logic
             monopoly_key = f"monopoly_{color}"
             if not p['stats'].get(monopoly_key):
                 p['stats'][monopoly_key] = True
@@ -309,46 +304,34 @@ def attempt_buy_houses(p):
                     'event': f"🏆 MONOPOLY: {color} set completed!"
                 })
 
-            # 2. Building Logic (Simplified for Safe Mode automation)
-            # Find the property with the fewest houses in the set (even building rule)
+            # 2. Building Logic
             while True:
-                # Get current house counts for the set
                 counts = [st.session_state.houses.get(idx, 0) for idx in indices]
-                if all(c >= 5 for c in counts): break # Maxed out at Hotels
+                if all(c >= 5 for c in counts): break 
                 
                 target_idx = indices[counts.index(min(counts))]
                 sq = PROPERTIES[target_idx]
-                h_cost = sq.get('house_cost', 50)
                 
-                # Check Policy
-                res = p['policy']['buy_res']
-                if p['cash'] - h_cost >= res:
-                    # Execute Purchase
-                    p['cash'] -= h_cost
+                # --- MATCHING YOUR DATA: Use h_cost ---
+                h_price = sq.get('h_cost', 50) 
+                
+                # Check Policy (using 0 for safety as we discussed)
+                if p['cash'] >= h_price:
+                    p['cash'] -= h_price
                     st.session_state.houses[target_idx] = st.session_state.houses.get(target_idx, 0) + 1
                     
-                    # Update ROI Stats (Expenses)
-                    if "property_stats" in st.session_state:
-                        st.session_state.property_stats[target_idx]["expenses"] += h_cost
-                    
-                    # --- LOG HOUSE BUILD TO CRITICAL MOMENTS ---
+                    # Log the event
                     new_count = st.session_state.houses[target_idx]
                     label = "Hotel" if new_count == 5 else f"House {new_count}"
-                    house_msg = f"🏗️ Built {label} on {sq['name']} (-${h_cost})"
+                    event_text = f"🏗️ Built {label} on {sq['name']} (-${h_price})"
                     
                     if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
                     p['stats']['critical_moments'].append({
                         'turn': st.session_state.turn_count, 
-                        'event': house_msg
+                        'event': event_text
                     })
-                    houses_built_this_turn.append(house_msg)
                 else:
                     break
-    
-    # Return summary for the main 'Last Move' ticker
-    if houses_built_this_turn:
-        return f"Built {len(houses_built_this_turn)} improvements."
-    return ""
 
 def draw_card(p, deck_type):
     if deck_type == "chance":
