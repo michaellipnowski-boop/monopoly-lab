@@ -1056,7 +1056,25 @@ elif st.session_state.phase == "LIVE":
                 })
                 
         if all_events:
-            st.table(pd.DataFrame(all_events).sort_values("Turn", ascending=False))
+            # 1. Group by (Turn, Player) to keep distinct players separate
+            from collections import defaultdict
+            grouped = defaultdict(list)
+            for e in all_events:
+                # Keying by both Turn and Player
+                grouped[(e['Turn'], e['Player'])].append(str(e['Event']))
+            
+            # 2. Create combined list
+            combined_data = []
+            for (turn, player), msgs in grouped.items():
+                combined_data.append({
+                    "Turn": turn,
+                    "Player": player,
+                    "Event": " ; ".join(msgs)
+                })
+            
+            # 3. Display sorted by Turn
+            df_display = pd.DataFrame(combined_data).sort_values("Turn", ascending=False)
+            st.table(df_display)
         else:
             st.info("No major events (property buys or house builds) recorded yet.")
 
