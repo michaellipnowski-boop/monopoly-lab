@@ -1069,35 +1069,35 @@ elif st.session_state.phase == "LIVE":
             for c in p['goo_cards']: 
                 st.success(f"GOOJF: {c['deck'].capitalize()}")
             
-            # --- 1. Display Streets (Direct Lookup Version) ---
-            # We skip groups and look directly at the PROPERTIES data
+            # --- 1. Display Streets (The "Color-First" Method) ---
             found_colors = {}
             for pid, info in PROPERTIES.items():
-                if info.get('type') == "Street":
-                    # Check ownership using our proven dual-key method
+                # If it has a color and isn't a Railroad/Utility, it's a Street
+                color = info.get('color')
+                if color and color not in ["Railroad", "Utility"]:
+                    # Prove ownership
                     owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
                     if owner and str(owner).strip().lower() == str(p['name']).strip().lower():
-                        color = info.get('color', 'Unknown')
                         if color not in found_colors:
                             found_colors[color] = []
                         found_colors[color].append(pid)
 
-            # Now display the colors we actually found for this player
+            # Render the streets we found
             for color_name, owned_pids in found_colors.items():
                 hex_c = COLOR_MAP.get(color_name, "#eee")
                 st.markdown(f'<span style="color:{hex_c}">■</span> <b>{color_name}</b>', unsafe_allow_html=True)
                 
-                # Check for Monopoly (requires knowing how many exist in total for this color)
+                # Monopoly calculation
                 total_in_group = [idx for idx, info in PROPERTIES.items() if info.get('color') == color_name]
                 is_mono = len(owned_pids) == len(total_in_group)
 
                 prop_labels = []
                 for pid in owned_pids:
-                    label = PROPERTIES[pid]['name']
+                    name = PROPERTIES[pid]['name']
                     if is_mono:
                         h_count = st.session_state.houses.get(pid) or st.session_state.houses.get(str(pid)) or 0
-                        label += f" ({h_count}🏠)"
-                    prop_labels.append(label)
+                        name += f" ({h_count}🏠)"
+                    prop_labels.append(name)
                 st.write(", ".join(prop_labels))
                 
             # --- 2. Railroads (Reverting to your original working logic) ---
