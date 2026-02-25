@@ -1067,11 +1067,14 @@ elif st.session_state.phase == "LIVE":
             for c in p['goo_cards']: st.success(f"GOOJF: {c['deck'].capitalize()}")
             # --- 1. Display Streets (Colored Blocks) ---
             for color_name, pids in COLOR_GROUPS.items():
-                # FIX: Check both integer and string versions of the ID to catch '1' vs "1"
+                # NEW BULLETPROOF CHECK: Handles ID types AND Name spacing/casing
                 owned = []
                 for pid in pids:
-                    current_owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
-                    if current_owner == p['name']:
+                    # Look for the owner in the dictionary using either int or str key
+                    raw_owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
+                    
+                    # Normalize both names to ensure a perfect match
+                    if raw_owner and str(raw_owner).strip().lower() == str(p['name']).strip().lower():
                         owned.append(pid)
                 
                 if owned:
