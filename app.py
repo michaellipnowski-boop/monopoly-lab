@@ -1069,21 +1069,33 @@ elif st.session_state.phase == "LIVE":
             for c in p['goo_cards']: 
                 st.success(f"GOOJF: {c['deck'].capitalize()}")
             
-            # --- DIAGNOSTIC CHECK ---
-            st.sidebar.write(f"DEBUG for {p['name']}:")
-            for pid, info in PROPERTIES.items():
-                owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
-                if owner == p['name']:
-                    st.sidebar.write(f"ID {pid} ({info.get('type')}): {info.get('name')} - Color: {info.get('color')}")
+            # --- 1. Display Streets (Using your successful Railroad logic style) ---
+            for color_name, pids in COLOR_GROUPS.items():
+                owned_ids = [pid for pid in pids if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
                 
-            # --- 2. Railroads (Reverting to your original working logic) ---
+                if owned_ids:
+                    hex_c = COLOR_MAP.get(color_name, "#eee")
+                    st.markdown(f'<span style="color:{hex_c}">■</span> <b>{color_name}</b>', unsafe_allow_html=True)
+                    
+                    is_mono = (len(owned_ids) == len(pids))
+                    street_labels = []
+                    for s_pid in owned_ids:
+                        p_data = PROPERTIES.get(s_pid)
+                        name = p_data['name'] if p_data else f"Prop {s_pid}"
+                        if is_mono:
+                            h_count = st.session_state.houses.get(s_pid, 0) or st.session_state.houses.get(str(s_pid), 0)
+                            name += f" ({h_count}🏠)"
+                        street_labels.append(name)
+                    st.write(", ".join(street_labels))
+
+            # --- 2. Railroads ---
             owned_rr = [pid for pid in RAILROADS if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
             if owned_rr:
                 rr_names = [PROPERTIES[pid]['name'] for pid in owned_rr if pid in PROPERTIES]
                 st.markdown(f"<b>🚂 Railroads ({len(owned_rr)})</b>", unsafe_allow_html=True)
                 st.write(", ".join(rr_names))
 
-            # --- 3. Utilities (Reverting to your original working logic) ---
+            # --- 3. Utilities ---
             owned_util = [pid for pid in UTILITIES if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
             if owned_util:
                 util_names = [PROPERTIES[pid]['name'] for pid in owned_util if pid in PROPERTIES]
