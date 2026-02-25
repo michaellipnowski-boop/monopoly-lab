@@ -1295,7 +1295,8 @@ elif st.session_state.phase == "LIVE":
                 df_master = pd.DataFrame(st.session_state.master_log)
                 # Sort by turn so the CSV reads like a book
                 df_master = df_master.sort_values("Turn", ascending=True)
-                csv_data = df_master.to_csv(index=False).encode('utf-8')
+                # We use utf-8-sig so Excel recognizes the icons/emojis correctly
+                csv_data = df_master.to_csv(index=False).encode('utf-8-sig')
                 
                 st.write("") # Spacer
                 st.download_button(
