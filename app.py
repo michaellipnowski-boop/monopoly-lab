@@ -325,30 +325,42 @@ def attempt_buy_houses(p):
                     'event': f"🏆 MONOPOLY: {color} set completed!"
                 })
 
-            # --- 3. BUILDING LOGIC (Only runs if they have a Monopoly) ---
+            # --- 3. BUILDING LOGIC (Corrected Policy Hierarchy) ---
             while True:
-                # Wrap idx in str() to find the house count in the dictionary
                 counts = [st.session_state.houses.get(str(idx), 0) for idx in indices]
-                if all(c >= 5 for c in counts): break 
+                if all(c >= 5 for c in counts): 
+                    break 
                 
                 target_idx = indices[counts.index(min(counts))]
-                # Convert to int because the PROPERTIES dictionary keys are integers
                 sq = PROPERTIES[int(target_idx)]
                 h_price = sq.get('h_cost', 50) 
                 
-                if p['cash'] >= h_price:
+                # 1. Get Policies
+                global_allow_debt = st.session_state.rules.get("allow_negative_capital", True)
+                # Default to -infinity so they build unless a limit is actually set
+                player_reserve_limit = p.get('policy_reserve', -float('inf'))
+                
+                # 2. THE CORRECT HIERARCHY:
+                if global_allow_debt:
+                    # Global allows anything; respect the player's personal floor.
+                    effective_floor = player_reserve_limit
+                else:
+                    # Global says NO debt (0). We take whichever is stricter: 
+                    # 0 or the player's personal cushion.
+                    effective_floor = max(0, player_reserve_limit)
+
+                # 3. DECISION
+                if (p['cash'] - h_price) >= effective_floor:
                     p['cash'] -= h_price
-                    # Use str(target_idx) to save the new house count
                     st.session_state.houses[str(target_idx)] = st.session_state.houses.get(str(target_idx), 0) + 1
                     
                     new_count = st.session_state.houses[str(target_idx)]
                     label = "Hotel" if new_count == 5 else f"House {new_count}"
-                    event_text = f"🏗️ Built {label} on {sq['name']} (-${h_price})"
                     
                     if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
                     p['stats']['critical_moments'].append({
                         'turn': st.session_state.turn_count, 
-                        'event': event_text
+                        'event': f"🏗️ Built {label} on {sq['name']} (-${h_price})"
                     })
                 else:
                     break
@@ -1063,6 +1075,21 @@ elif st.session_state.phase == "LIVE":
         st.sidebar.metric("Free Parking Jackpot", f"${st.session_state.jackpot}")
     for p in st.session_state.players:
         with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
+            # --- 🛡️ STRATEGY PROFILE ---
+            reserve = p.get('policy_reserve', -float('inf'))
+            if reserve == -float('inf'):
+                strategy_text = "Unlimited Debt"
+            elif reserve == 0:
+                strategy_text = "Zero-Cash Floor"
+            elif reserve < 0:
+                strategy_text = f"${abs(reserve)} Debt Limit"
+            else:
+                strategy_text = f"${reserve} Cash Cushion"
+            
+            st.caption(f"🛡️ Strategy: {strategy_text}")
+            st.markdown("---")
+
+            # --- STATUS & CARDS ---
             if p.get('in_jail'): 
                 st.error(f"IN JAIL 🚔 (Attempts: {p['jail_turns']})")
             
