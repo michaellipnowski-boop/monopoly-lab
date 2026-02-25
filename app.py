@@ -187,14 +187,18 @@ def restart_game():
     import random
 
     # 1. Reset Board and Game State
-    st.session_state.ownership = {str(idx): "Bank" for idx, sq in PROPERTIES.items() if "rent" in sq or sq.get("type") in ["Railroad", "Utility", "Street"]}
+    # 1. Initialize ALL 40 squares as "Bank" (or "None") to prevent look-up errors
+    st.session_state.ownership = {str(idx): "Bank" for idx in range(40)}
     st.session_state.houses = {str(pid): 0 for pid in range(40)}
     st.session_state.last_move = "Game Restarted - Rules and custom totals preserved."
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
     st.session_state.double_count = 0
     st.session_state.jackpot = st.session_state.rules["fp_initial"]
-    st.session_state.property_stats = {str(idx): {"revenue": 0, "expenses": 0} for idx, sq in PROPERTIES.items() if "rent" in sq or sq.get("type") in ["Railroad", "Utility", "Street"]}
+    # 2. Initialize ALL 40 squares for property stats
+    st.session_state.property_stats = {
+        str(idx): {"revenue": 0, "expenses": 0} for idx in range(40)
+    }
     
     # 2. Reshuffle Decks
     st.session_state.c_deck_idx = list(range(16))
@@ -228,19 +232,18 @@ def charge_player(p, amt):
 
 def get_rent(pid, roll=0):
     info = PROPERTIES[pid]
-    # Standardize to string for the lookup
     s_pid = str(pid)
     owner = st.session_state.ownership.get(s_pid)
     
     if not owner or owner == "Bank":
         return 0
 
+    # 1. STREETS (Houses & Monopolies)
     if info['type'] == "Street":
-        # Safe house lookup (checking both types just in case)
-        h = st.session_state.houses.get(pid, 0) if pid in st.session_state.houses else st.session_state.houses.get(s_pid, 0)
+        # SAFE LOOKUP: Only use the string key s_pid
+        h = st.session_state.houses.get(s_pid, 0)
         base = info['rent'][h]
         
-        # Monopoly Check (Double rent for 0 houses)
         if h == 0:
             group = COLOR_GROUPS[info['color']]
             owned_in_group = 0
@@ -252,21 +255,23 @@ def get_rent(pid, roll=0):
                 return base * 2
         return base
 
+    # 2. RAILROADS (Multi-ownership scaling)
     elif info['type'] == "Railroad":
         count = 0
         for r_id in [5, 15, 25, 35]:
             curr = st.session_state.ownership.get(str(r_id))
             if curr and str(curr).strip().lower() == str(owner).strip().lower():
                 count += 1
-        # Railroad rent is typically 25, 50, 100, 200
         return info['rent'][max(0, count-1)]
 
+    # 3. UTILITIES (Dice-roll based rent)
     elif info['type'] == "Utility":
         count = 0
         for u_id in [12, 28]:
             curr = st.session_state.ownership.get(str(u_id))
             if curr and str(curr).strip().lower() == str(owner).strip().lower():
                 count += 1
+        # roll is passed in from run_turn
         return (4 * roll) if count == 1 else (10 * roll)
 
     return 0
@@ -547,25 +552,29 @@ def run_turn(jail_action=None, silent=False):
         sq = PROPERTIES.get(p['pos'])
         msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
         
-        if sq['type'] in ["Street", "Railroad", "Utility", "Property"]: # Added Property just in case of naming variations
+        if sq['type'] in ["Street", "Railroad", "Utility", "Property"]:
             owner = st.session_state.ownership.get(str(p['pos']), "Bank")
 
             # CASE A: SOMEONE ELSE OWNS IT (RENT)
+            # Use normalized comparison to ensure "Token A" matches "token a"
             if owner != "Bank" and str(owner).strip().lower() != str(p['name']).strip().lower():
-                rent = get_rent(p['pos'], roll_sum)
+                # PASSING roll_sum is critical for Utility calculations!
+                rent = get_rent(p['pos'], roll=roll_sum)
+                
+                # Update financial state
                 p['cash'] -= rent
                 p['stats']['rent_paid'] += rent 
 
-                if "property_stats" in st.session_state:
-                    # FIXED: This line must be indented further to stay inside the 'if'
-                    st.session_state.property_stats[str(p['pos'])]["revenue"] += rent
-                
+                # Update the owner's cash
                 for op in st.session_state.players:
                     if str(op['name']).strip().lower() == str(owner).strip().lower():
                         op['cash'] += rent
                         op['stats']['rent_collected'] += rent
                 
-                event_msg = f"Paid ${rent} rent at {sq['name']}" 
+                # Track ROI stats for the Heatmaps
+                if "property_stats" in st.session_state:
+                    st.session_state.property_stats[str(p['pos'])]["revenue"] += rent
+                
                 msg += f"{event_msg}. "
 
             # CASE B: BANK OWNS IT (PURCHASE)
