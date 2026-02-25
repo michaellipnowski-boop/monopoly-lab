@@ -1069,37 +1069,37 @@ elif st.session_state.phase == "LIVE":
             for c in p['goo_cards']: 
                 st.success(f"GOOJF: {c['deck'].capitalize()}")
             
-            # --- 1. Display Streets ---
-            # This must be aligned with the 'if' and 'for' above
-            for color_name, pids in COLOR_GROUPS.items():
-                owned = []
-                for pid in pids:
-                    # Check for the ID as a number AND as a string
-                    raw_owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
-                    
-                    # Normalize both names to ensure a perfect match
-                    if raw_owner and str(raw_owner).strip().lower() == str(p['name']).strip().lower():
-                        owned.append(pid)
-                
-                if owned:
-                    hex_c = COLOR_MAP.get(color_name, "#eee")
-                    st.markdown(f'<span style="color:{hex_c}">■</span> <b>{color_name}</b>', unsafe_allow_html=True)
-                    
-                    # Monopoly check: Do they own the whole group?
-                    is_mono = (len(owned) == len(pids))
-                    
-                    prop_labels = []
-                    for pid in owned:
-                        p_data = PROPERTIES.get(pid)
-                        if p_data:
-                            label = p_data['name']
-                            if is_mono:
-                                # Safe house lookup using both key types
-                                h_count = st.session_state.houses.get(pid) or st.session_state.houses.get(str(pid)) or 0
-                                label += f" ({h_count}🏠)"
-                            prop_labels.append(label)
-                    st.write(", ".join(prop_labels))
+            # --- 1. Display Streets (Direct Lookup Version) ---
+            # We skip groups and look directly at the PROPERTIES data
+            found_colors = {}
+            for pid, info in PROPERTIES.items():
+                if info.get('type') == "Street":
+                    # Check ownership using our proven dual-key method
+                    owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
+                    if owner and str(owner).strip().lower() == str(p['name']).strip().lower():
+                        color = info.get('color', 'Unknown')
+                        if color not in found_colors:
+                            found_colors[color] = []
+                        found_colors[color].append(pid)
 
+            # Now display the colors we actually found for this player
+            for color_name, owned_pids in found_colors.items():
+                hex_c = COLOR_MAP.get(color_name, "#eee")
+                st.markdown(f'<span style="color:{hex_c}">■</span> <b>{color_name}</b>', unsafe_allow_html=True)
+                
+                # Check for Monopoly (requires knowing how many exist in total for this color)
+                total_in_group = [idx for idx, info in PROPERTIES.items() if info.get('color') == color_name]
+                is_mono = len(owned_pids) == len(total_in_group)
+
+                prop_labels = []
+                for pid in owned_pids:
+                    label = PROPERTIES[pid]['name']
+                    if is_mono:
+                        h_count = st.session_state.houses.get(pid) or st.session_state.houses.get(str(pid)) or 0
+                        label += f" ({h_count}🏠)"
+                    prop_labels.append(label)
+                st.write(", ".join(prop_labels))
+                
             # --- 2. Railroads (Reverting to your original working logic) ---
             owned_rr = [pid for pid in RAILROADS if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
             if owned_rr:
