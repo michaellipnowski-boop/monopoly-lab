@@ -556,27 +556,23 @@ def run_turn(jail_action=None, silent=False):
             owner = st.session_state.ownership.get(str(p['pos']), "Bank")
 
             # CASE A: SOMEONE ELSE OWNS IT (RENT)
-            # Use normalized comparison to ensure "Token A" matches "token a"
             if owner != "Bank" and str(owner).strip().lower() != str(p['name']).strip().lower():
-                # PASSING roll_sum is critical for Utility calculations!
                 rent = get_rent(p['pos'], roll=roll_sum)
-                
-                # Update financial state
                 p['cash'] -= rent
                 p['stats']['rent_paid'] += rent 
-
-                # Update the owner's cash
+                
                 for op in st.session_state.players:
                     if str(op['name']).strip().lower() == str(owner).strip().lower():
                         op['cash'] += rent
                         op['stats']['rent_collected'] += rent
-                
-                # Track ROI stats for the Heatmaps
+            
                 if "property_stats" in st.session_state:
                     st.session_state.property_stats[str(p['pos'])]["revenue"] += rent
-                
-                msg += f"{event_msg}. "
-
+            
+                # FIX: Directly use the info in the ticker message 
+                # without looking for an 'event_msg' variable.
+                msg += f"Paid ${rent} rent to {owner}. "
+            
             # CASE B: BANK OWNS IT (PURCHASE)
             elif owner == "Bank":
                 price = sq.get('price', 150)
