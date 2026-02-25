@@ -1192,12 +1192,16 @@ elif st.session_state.phase == "LIVE":
     
     with t_visits:
         # (Your existing visit logic stays here)
-        visit_data = {f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['visits'][i] for p in st.session_state.players) for i in range(40)}
+        # Change p['stats']['visits'][i] to p['stats']['visits'][str(i)]
+        visit_data = {
+            f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['visits'][str(i)] for p in st.session_state.players) 
+            for i in range(40)
+        }
         st.bar_chart(visit_data)
 
     with t_ends:
         # (Your existing ends logic stays here)
-        ends_data = {f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['ends'][i] for p in st.session_state.players) for i in range(40)}
+        ends_data = {f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['ends'][str(i)] for p in st.session_state.players) for i in range(40)}
         st.bar_chart(ends_data)
 
     with t_fin:
