@@ -1067,26 +1067,24 @@ elif st.session_state.phase == "LIVE":
             for c in p['goo_cards']: st.success(f"GOOJF: {c['deck'].capitalize()}")
             # --- 1. Display Streets (Colored Blocks) ---
             for color_name, pids in COLOR_GROUPS.items():
-                # NEW BULLETPROOF CHECK: Handles ID types AND Name spacing/casing
                 owned = []
                 for pid in pids:
-                    # Look for the owner in the dictionary using either int or str key
+                    # Look for the owner using either int or str key
                     raw_owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
                     
-                    # Normalize both names to ensure a perfect match
+                    # Normalize both names to ensure a perfect match (Handles "Player 1" vs "player 1 ")
                     if raw_owner and str(raw_owner).strip().lower() == str(p['name']).strip().lower():
                         owned.append(pid)
                 
                 if owned:
-                    # Get the hex code from our map, default to grey if color name has a space issue
                     hex_c = COLOR_MAP.get(color_name, "#eee")
                     st.markdown(f'<span style="color:{hex_c}">■</span> <b>{color_name}</b>', unsafe_allow_html=True)
                     
-                    # Monopoly check: Must check all pids in the group against the session state
+                    # Monopoly check: Use the same normalized comparison for the whole set
                     is_mono = True
                     for pid in pids:
-                        owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
-                        if owner != p['name']:
+                        m_owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
+                        if not m_owner or str(m_owner).strip().lower() != str(p['name']).strip().lower():
                             is_mono = False
                             break
 
@@ -1103,30 +1101,27 @@ elif st.session_state.phase == "LIVE":
                             prop_labels.append(label)
                     
                     st.write(", ".join(prop_labels))
-            
+
             # --- 2. Display Railroads (Safe Mode) ---
-            owned_rr = [pid for pid in RAILROADS if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
+            # Using list comprehension with normalized comparison
+            owned_rr = [
+                pid for pid in RAILROADS 
+                if (lambda x: str(x).strip().lower() if x else "")(st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))) 
+                == str(p['name']).strip().lower()
+            ]
             if owned_rr:
-                rr_names = []
-                for pid in owned_rr:
-                    # Check if PROPERTIES is indexed by number or string
-                    p_data = PROPERTIES.get(pid) or PROPERTIES.get(str(pid))
-                    if p_data:
-                        rr_names.append(p_data['name'])
-                
+                rr_names = [PROPERTIES[pid]['name'] for pid in owned_rr if pid in PROPERTIES]
                 st.markdown(f"<b>🚂 Railroads ({len(owned_rr)})</b>", unsafe_allow_html=True)
                 st.write(", ".join(rr_names))
-            
+
             # --- 3. Display Utilities (Safe Mode) ---
-            owned_util = [pid for pid in UTILITIES if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
+            owned_util = [
+                pid for pid in UTILITIES 
+                if (lambda x: str(x).strip().lower() if x else "")(st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))) 
+                == str(p['name']).strip().lower()
+            ]
             if owned_util:
-                util_names = []
-                for pid in owned_util:
-                    # Check if PROPERTIES is indexed by number or string
-                    p_data = PROPERTIES.get(pid) or PROPERTIES.get(str(pid))
-                    if p_data:
-                        util_names.append(p_data['name'])
-                        
+                util_names = [PROPERTIES[pid]['name'] for pid in owned_util if pid in PROPERTIES]
                 st.markdown(f"<b>💡 Utilities ({len(owned_util)})</b>", unsafe_allow_html=True)
                 st.write(", ".join(util_names))
 
