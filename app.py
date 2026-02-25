@@ -1066,22 +1066,34 @@ elif st.session_state.phase == "LIVE":
             if p.get('in_jail'): st.error(f"IN JAIL 🚔 (Attempts: {p['jail_turns']})")
             for c in p['goo_cards']: st.success(f"GOOJF: {c['deck'].capitalize()}")
             # --- 1. Display Streets (Colored Blocks) ---
-            # NEW CODE (Safe & robust)
-            for color, pids in COLOR_GROUPS.items():
-                owned = [pid for pid in pids if st.session_state.ownership.get(pid) == p['name']]
+            for color_name, pids in COLOR_GROUPS.items():
+                # FIX: Check both integer and string versions of the ID to catch '1' vs "1"
+                owned = []
+                for pid in pids:
+                    current_owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
+                    if current_owner == p['name']:
+                        owned.append(pid)
+                
                 if owned:
-                    st.markdown(f'<span style="color:{COLOR_MAP[color]}">■</span> <b>{color}</b>', unsafe_allow_html=True)
-                    is_mono = all(st.session_state.ownership.get(pid) == p['name'] for pid in pids)
-        
-                    # --- SAFE MODE STREET LABELS ---
+                    # Get the hex code from our map, default to grey if color name has a space issue
+                    hex_c = COLOR_MAP.get(color_name, "#eee")
+                    st.markdown(f'<span style="color:{hex_c}">■</span> <b>{color_name}</b>', unsafe_allow_html=True)
+                    
+                    # Monopoly check: Must check all pids in the group against the session state
+                    is_mono = True
+                    for pid in pids:
+                        owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
+                        if owner != p['name']:
+                            is_mono = False
+                            break
+
                     prop_labels = []
                     for pid in owned:
-                        # Try integer key first, then string key
-                        p_data = PROPERTIES.get(pid) or PROPERTIES.get(str(pid))
+                        p_data = PROPERTIES.get(pid)
                         if p_data:
                             label = p_data['name']
                             if is_mono:
-                                # Safe house count lookup
+                                # Safe house lookup (checking both int and str keys)
                                 h_count = (st.session_state.houses.get(pid) or 
                                            st.session_state.houses.get(str(pid)) or 0)
                                 label += f" ({h_count}🏠)"
