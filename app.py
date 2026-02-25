@@ -1069,36 +1069,12 @@ elif st.session_state.phase == "LIVE":
             for c in p['goo_cards']: 
                 st.success(f"GOOJF: {c['deck'].capitalize()}")
             
-            # --- 1. Display Streets (The "Color-First" Method) ---
-            found_colors = {}
+            # --- DIAGNOSTIC CHECK ---
+            st.sidebar.write(f"DEBUG for {p['name']}:")
             for pid, info in PROPERTIES.items():
-                # If it has a color and isn't a Railroad/Utility, it's a Street
-                color = info.get('color')
-                if color and color not in ["Railroad", "Utility"]:
-                    # Prove ownership
-                    owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
-                    if owner and str(owner).strip().lower() == str(p['name']).strip().lower():
-                        if color not in found_colors:
-                            found_colors[color] = []
-                        found_colors[color].append(pid)
-
-            # Render the streets we found
-            for color_name, owned_pids in found_colors.items():
-                hex_c = COLOR_MAP.get(color_name, "#eee")
-                st.markdown(f'<span style="color:{hex_c}">■</span> <b>{color_name}</b>', unsafe_allow_html=True)
-                
-                # Monopoly calculation
-                total_in_group = [idx for idx, info in PROPERTIES.items() if info.get('color') == color_name]
-                is_mono = len(owned_pids) == len(total_in_group)
-
-                prop_labels = []
-                for pid in owned_pids:
-                    name = PROPERTIES[pid]['name']
-                    if is_mono:
-                        h_count = st.session_state.houses.get(pid) or st.session_state.houses.get(str(pid)) or 0
-                        name += f" ({h_count}🏠)"
-                    prop_labels.append(name)
-                st.write(", ".join(prop_labels))
+                owner = st.session_state.ownership.get(pid) or st.session_state.ownership.get(str(pid))
+                if owner == p['name']:
+                    st.sidebar.write(f"ID {pid} ({info.get('type')}): {info.get('name')} - Color: {info.get('color')}")
                 
             # --- 2. Railroads (Reverting to your original working logic) ---
             owned_rr = [pid for pid in RAILROADS if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
