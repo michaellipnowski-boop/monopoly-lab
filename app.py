@@ -374,18 +374,14 @@ def draw_card(p, deck_type):
         # LANDMINE FIX: Force integer to protect % 40 math later
         old_pos = p['pos']
         p['pos'] = int(card['pos']) 
-        p['stats']['visits'][str(p['pos'])] += 1
         if p['pos'] < old_pos: 
             p['cash'] += 200
             
     elif card['effect'] == "jail":
         send_to_jail(p)
-        # --- TRACK THE ARRIVAL VIA CARD ---
-        p['stats']['ends'][str(10)] += 1
         
     elif card['effect'] == "move_relative":
         p['pos'] = (p['pos'] + card['amt']) % 40
-        p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "cash":
         if card['amt'] < 0: 
@@ -423,14 +419,12 @@ def draw_card(p, deck_type):
         targets = [5, 15, 25, 35]
         old_pos = p['pos']
         p['pos'] = int(min([r for r in targets if r > p['pos']] or [5]))
-        p['stats']['visits'][str(p['pos'])] += 1
         if p['pos'] < old_pos: p['cash'] += 200
         
     elif card['effect'] == "move_nearest_util":
         targets = [12, 28]
         old_pos = p['pos']
         p['pos'] = int(min([u for u in targets if u > p['pos']] or [12]))
-        p['stats']['visits'][str(p['pos'])] += 1
         if p['pos'] < old_pos: p['cash'] += 200
 
     # --- FINAL DECK MANAGEMENT ---
@@ -522,7 +516,7 @@ def run_turn(jail_action=None, silent=False):
                 p['jail_turns'] += 1
                 if not silent: st.session_state.last_move = f"{p['name']} failed doubles, stays in Jail."
                 
-                p['stats']['visits'][str(10)] += 0 # (Note: your code says 1 here)
+                p['stats']['visits'][str(10)] += 1
                 p['stats']['ends'][str(10)] += 1
                 
                 # --- INSERT THE HELPER CALL HERE ---
@@ -607,11 +601,13 @@ def run_turn(jail_action=None, silent=False):
                 pol = p['policy']['buy_prop']
                 res = p['policy']['buy_res']
                 
-                # Explicitly handle the 'Never Buy' policy
                 if pol == "Never Buy":
                     should_buy = False
+                    msg += f" (Policy: Never Buy - skipped {sq['name']})." # <--- AUDIT LOG
                 else:
                     should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
+                    if not should_buy and p['cash'] >= price:
+                        msg += f" (Policy: Keep Reserve - insufficient funds after reserve)." # <--- AUDIT LOG
                 
                 if should_buy and p['cash'] >= price:
                     st.session_state.ownership[str(p['pos'])] = p['name']
@@ -681,6 +677,12 @@ def run_turn(jail_action=None, silent=False):
                 card_msg = draw_card(p, sq.get('deck', 'chance'))
                 msg += f" {card_msg}"
                 
+                # --- ADD THIS FIX ---
+                # Update old_pos so the movement check at the end of run_turn 
+                # doesn't think the player moved "past Go" twice.
+                old_pos = p['pos'] 
+                # --------------------
+                
                 # --- NEW: IMMEDIATE JAIL CHECK ---
                 if p.get('in_jail'):
                     p['stats']['visits'][str(10)] += 1
@@ -701,11 +703,8 @@ def run_turn(jail_action=None, silent=False):
                 # --- CLEANED CARD-MOVE PURCHASE LOGIC ---
                 if p['pos'] != old_pos:
                     new_sq = PROPERTIES[p['pos']]
-                    # ... rest of your purchase code stays the same ...
                     
-                    # Ensure new_sq is a valid property type
                     if isinstance(new_sq, dict) and new_sq.get('type') in ["Property", "Railroad", "Utility", "Street"]:
-                        # Identify current owner
                         owner = st.session_state.ownership.get(str(p['pos']), "Bank")
                         
                         if owner == "Bank":
@@ -713,50 +712,39 @@ def run_turn(jail_action=None, silent=False):
                             pol = p['policy']['buy_prop']
                             res = p['policy']['buy_res']
 
-                            # Check policy: Do they want to buy?
+                            card_should_buy = False
                             if pol == "Never Buy":
-                                card_should_buy = False
+                                msg += f" (Policy: Never Buy - skipped {new_sq['name']})."
                             else:
                                 card_should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
+                                if not card_should_buy and p['cash'] >= price:
+                                    msg += f" (Policy: Keep Reserve - insufficient funds after reserve)."
 
                             if card_should_buy and p['cash'] >= price:
-                                # Execute Transaction
                                 p['cash'] -= price
                                 st.session_state.ownership[str(p['pos'])] = p['name']
                                 
-                                # Track Expense for ROI stats
                                 if "property_stats" in st.session_state:
                                     st.session_state.property_stats[str(p['pos'])]["expenses"] += price
                                 
-                                buy_bonus = ""
+                                # --- RAILROAD / UTILITY COUNTER ---
+                                extra_label = ""
+                                if new_sq['type'] in ["Railroad", "Utility"]:
+                                    count = sum(1 for pid, o_name in st.session_state.ownership.items() 
+                                                if o_name and str(o_name).strip().lower() == str(p['name']).strip().lower() 
+                                                and PROPERTIES[int(pid)].get('type') == new_sq['type'])
+                                    label = "Utilities" if new_sq['type'] == "Utility" else "Railroads"
+                                    extra_label = f" [Total {label}: {count}]"
 
                                 # --- LOG TO CRITICAL MOMENTS ---
                                 if 'critical_moments' not in p['stats']:
                                     p['stats']['critical_moments'] = []
                                 
-                                event_text = f"🏠 Bought {new_sq['name']} (-${price}){buy_bonus} [via Card]"
+                                event_text = f"🏠 Bought {new_sq['name']} (-${price}){extra_label} [via Card]"
                                 p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
                                 
                                 msg += f" Then bought {new_sq['name']}."
         
-                # --- FINAL SAFETY: EXITING THE CARD LOGIC ---
-                if p['in_jail']:
-                    p['stats']['visits'][str(10)] += 1
-                    p['stats']['ends'][str(10)] += 1
-                
-                # These must run regardless of Jail or Purchase to keep the game moving
-                for player in st.session_state.players:
-                    player['stats']['cash_history'].append(player['cash'])
-                
-                attempt_buy_houses(p)
-
-                if not silent: st.session_state.last_move = msg
-
-                record_master_turn(p, msg) 
-                
-                st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-                st.session_state.turn_count += 1
-                return
         elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
             if st.session_state.jackpot > 0:
                 p['cash'] += st.session_state.jackpot
@@ -1256,7 +1244,7 @@ elif st.session_state.phase == "LIVE":
         if history_dict:
             df_history = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in history_dict.items()]))
             st.line_chart(df_history)
-
+    
         st.markdown("### 📥 Download Lab Data")
         excel_data = get_player_excel_data()
         st.download_button(
@@ -1271,14 +1259,12 @@ elif st.session_state.phase == "LIVE":
         st.subheader("📊 Player Game Highlights")
         
         if "players" in st.session_state:
-            # 1. Individual Player Expanders (Visual UI)
+            # 1. Individual Player Expanders (Visual UI remains for highlights)
             cols = st.columns(len(st.session_state.players))
-            all_events = [] # We'll keep this to generate the CSV at the end
         
             for i, p in enumerate(st.session_state.players):
                 with cols[i]:
                     with st.expander(f"📜 {p['name']} Log", expanded=False):
-                        # Essential stats
                         st.write(f"**Times in Jail:** {p['stats'].get('times_in_jail', 0)}")
                         st.divider()
                         
@@ -1286,25 +1272,29 @@ elif st.session_state.phase == "LIVE":
                         if moments:
                             for e in moments:
                                 st.markdown(f"**Turn {e['turn']}:** {e['event']}")
-                                # Collect for CSV processing
-                                all_events.append({"Turn": e['turn'], "Player": p['name'], "Event": e['event']})
                         else:
                             st.caption("No significant events recorded.")
         
-            # 2. The Download Feature (Preserved functionality)
-            if all_events:
-                df_display = pd.DataFrame(all_events).sort_values("Turn", ascending=False)
-                csv = df_display.to_csv(index=False).encode('utf-8')
+            # 2. UPDATED: The Full Master Log Download
+            # We check the master_log we built in run_turn instead of just the highlights
+            if st.session_state.get('master_log'):
+                df_master = pd.DataFrame(st.session_state.master_log)
+                # Sort by turn so the CSV reads like a book
+                df_master = df_master.sort_values("Turn", ascending=True)
+                csv_data = df_master.to_csv(index=False).encode('utf-8')
                 
                 st.write("") # Spacer
                 st.download_button(
                     label="📥 Download Full Simulation Log (CSV)",
-                    data=csv,
-                    file_name="monopoly_log.csv",
-                    mime="text/csv"
+                    data=csv_data,
+                    file_name=f"monopoly_full_play_by_play_{st.session_state.turn_count}.csv",
+                    mime="text/csv",
+                    use_container_width=True
                 )
+            else:
+                st.info("No turns recorded in the master log yet.")
         else:
-            st.info("No major events recorded yet.")
+            st.info("Game not initialized.")
         # --- 8 SPACES END HERE ---
 
     # --- 4 SPACES START HERE (Back 4 spaces) ---
