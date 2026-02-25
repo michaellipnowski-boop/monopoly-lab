@@ -114,7 +114,7 @@ if "phase" not in st.session_state:
     st.session_state.starting_players = None
     # Initialize using the INDEX (i) as the key so it matches game logic
     st.session_state.ownership = {
-        i: "Bank" for i, p in enumerate(PROPERTIES) 
+        i: "Bank" for i, p in PROPERTIES.items() 
         if isinstance(p, dict) and ("rent" in p or p.get("type") in ["Railroad", "Utility"])
     }
     st.session_state.houses = {pid: 0 for pid in range(40)}
@@ -187,13 +187,14 @@ def restart_game():
     import random
 
     # 1. Reset Board and Game State
-    st.session_state.ownership = {pid: "Bank" for pid in PROPERTIES if "rent" in PROPERTIES[pid] or PROPERTIES[pid].get("type") in ["Railroad", "Utility"]}
-    st.session_state.houses = {pid: 0 for pid in range(40)}
+    st.session_state.ownership = {str(idx): "Bank" for idx, sq in PROPERTIES.items() if "rent" in sq or sq.get("type") in ["Railroad", "Utility", "Street"]}
+    st.session_state.houses = {str(pid): 0 for pid in range(40)}
     st.session_state.last_move = "Game Restarted - Rules and custom totals preserved."
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
     st.session_state.double_count = 0
     st.session_state.jackpot = st.session_state.rules["fp_initial"]
+    st.session_state.property_stats = {str(idx): {"revenue": 0, "expenses": 0} for idx, sq in PROPERTIES.items() if "rent" in sq or sq.get("type") in ["Railroad", "Utility", "Street"]}
     
     # 2. Reshuffle Decks
     st.session_state.c_deck_idx = list(range(16))
@@ -207,13 +208,13 @@ def restart_game():
         
         for p in st.session_state.players:
             p['stats'] = {
-                "visits": {i: 0 for i in range(40)},
-                "ends": {i: 0 for i in range(40)},
+                "visits": {str(i): 0 for i in range(40)},
+                "ends": {str(i): 0 for i in range(40)},
                 "rent_paid": 0,
                 "rent_collected": 0,
                 "times_in_jail": 0,
                 "cash_history": [p['cash']], 
-                "events": []
+                "critical_moments": []
             }
     
     # 4. The Final Kick
@@ -276,25 +277,26 @@ def send_to_jail(p):
     p['jail_turns'] = 0
     st.session_state.double_count = 0
     # --- TRACK THE VISIT TO JAIL ---
-    p['stats']['visits'][10] += 1
+    p['stats']['visits'][str(10)] += 1
     p['stats']['times_in_jail'] += 1
 
 def attempt_buy_houses(p):
     # 1. Identify all color groups
     color_groups = {}
-    # Use enumerate because PROPERTIES is a list!
-    for idx, sq in enumerate(PROPERTIES): 
+    # Use .items() because PROPERTIES is a dictionary!
+    for idx, sq in PROPERTIES.items(): 
         if isinstance(sq, dict) and sq.get('type') == "Street":
             color = sq.get('color')
             if color not in color_groups:
                 color_groups[color] = []
-            color_groups[color].append(idx)
+            color_groups[color].append(str(idx))
 
     for color, indices in color_groups.items():
         # 1. Manually count how many properties in this color the player actually owns
         player_owned_count = 0
         for idx in indices:
-            owner_name = st.session_state.ownership.get(idx)
+            # Wrap idx in str() to match the ownership dictionary keys
+            owner_name = st.session_state.ownership.get(str(idx))
             if owner_name and str(owner_name).strip().lower() == str(p['name']).strip().lower():
                 player_owned_count += 1
         
@@ -315,18 +317,21 @@ def attempt_buy_houses(p):
 
             # --- 3. BUILDING LOGIC (Only runs if they have a Monopoly) ---
             while True:
-                counts = [st.session_state.houses.get(idx, 0) for idx in indices]
+                # Wrap idx in str() to find the house count in the dictionary
+                counts = [st.session_state.houses.get(str(idx), 0) for idx in indices]
                 if all(c >= 5 for c in counts): break 
                 
                 target_idx = indices[counts.index(min(counts))]
-                sq = PROPERTIES[target_idx]
+                # Convert to int because the PROPERTIES dictionary keys are integers
+                sq = PROPERTIES[int(target_idx)]
                 h_price = sq.get('h_cost', 50) 
                 
                 if p['cash'] >= h_price:
                     p['cash'] -= h_price
-                    st.session_state.houses[target_idx] = st.session_state.houses.get(target_idx, 0) + 1
+                    # Use str(target_idx) to save the new house count
+                    st.session_state.houses[str(target_idx)] = st.session_state.houses.get(str(target_idx), 0) + 1
                     
-                    new_count = st.session_state.houses[target_idx]
+                    new_count = st.session_state.houses[str(target_idx)]
                     label = "Hotel" if new_count == 5 else f"House {new_count}"
                     event_text = f"🏗️ Built {label} on {sq['name']} (-${h_price})"
                     
@@ -349,27 +354,28 @@ def draw_card(p, deck_type):
         name = "Community Chest"
     
     msg = f"drew {name}: '{card['text']}'"
+    kept_card = False  # Initialize the flag
     
     if card['effect'] == "goo_card":
         p['goo_cards'].append({"deck": deck_type, "index": idx})
-        return msg
+        kept_card = True  # Set flag so it's not added back to deck list
     
-    if card['effect'] == "move":
+    elif card['effect'] == "move":
+        # LANDMINE FIX: Force integer to protect % 40 math later
         old_pos = p['pos']
-        p['pos'] = card['pos']
-        p['stats']['visits'][p['pos']] += 1
+        p['pos'] = int(card['pos']) 
+        p['stats']['visits'][str(p['pos'])] += 1
         if p['pos'] < old_pos: 
             p['cash'] += 200
             
     elif card['effect'] == "jail":
         send_to_jail(p)
         # --- TRACK THE ARRIVAL VIA CARD ---
-        p['stats']['ends'][10] += 1
-        return "Sent to Jail by card!"
+        p['stats']['ends'][str(10)] += 1
         
     elif card['effect'] == "move_relative":
         p['pos'] = (p['pos'] + card['amt']) % 40
-        p['stats']['visits'][p['pos']] += 1
+        p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "cash":
         if card['amt'] < 0: 
@@ -387,7 +393,9 @@ def draw_card(p, deck_type):
     elif card['effect'] == "repairs":
         cost = 0
         for pid, h_count in st.session_state.houses.items():
-            owner = st.session_state.ownership.get(pid)
+            # pid is already a string from our houses dict, 
+            # so we use it directly to look up the owner
+            owner = st.session_state.ownership.get(str(pid))
             # Use normalization to match the owner to the current player
             if owner and str(owner).strip().lower() == str(p['name']).strip().lower():
                 if h_count == 5: # Hotel
@@ -395,34 +403,42 @@ def draw_card(p, deck_type):
                 else: # Houses
                     cost += (h_count * card['h'])
         charge_player(p, cost)
+        if "property_stats" in st.session_state and cost > 0:
+            # Since we don't know which specific house needed repair in the card text,
+            # most Monopoly sims distribute the cost or log it as a general 'Loss' 
+            # for the player's overall ROI.
+            p['stats']['rent_paid'] += cost # Or a dedicated 'maintenance_paid' stat
         
     elif card['effect'] == "move_nearest_rr":
         targets = [5, 15, 25, 35]
         old_pos = p['pos']
-        p['pos'] = min([r for r in targets if r > p['pos']] or [5])
-        p['stats']['visits'][p['pos']] += 1
+        p['pos'] = int(min([r for r in targets if r > p['pos']] or [5]))
+        p['stats']['visits'][str(p['pos'])] += 1
         if p['pos'] < old_pos: p['cash'] += 200
         
     elif card['effect'] == "move_nearest_util":
         targets = [12, 28]
         old_pos = p['pos']
-        p['pos'] = min([u for u in targets if u > p['pos']] or [12])
-        p['stats']['visits'][p['pos']] += 1
+        p['pos'] = int(min([u for u in targets if u > p['pos']] or [12]))
+        p['stats']['visits'][str(p['pos'])] += 1
         if p['pos'] < old_pos: p['cash'] += 200
 
-    if st.session_state.rules["shuffle_mode"] == "True Random":
-        if deck_type == "chance": 
-            st.session_state.c_deck_idx.append(idx)
-            random.shuffle(st.session_state.c_deck_idx)
-        else: 
-            st.session_state.ch_deck_idx.append(idx)
-            random.shuffle(st.session_state.ch_deck_idx)
-    else:
-        if deck_type == "chance": 
-            st.session_state.c_deck_idx.append(idx)
-        else: 
-            st.session_state.ch_deck_idx.append(idx)
-            
+    # --- FINAL DECK MANAGEMENT ---
+    # Only put the card back if the player didn't KEEP it (GOOJF)
+    if not kept_card:
+        if st.session_state.rules["shuffle_mode"] == "True Random":
+            if deck_type == "chance": 
+                st.session_state.c_deck_idx.append(idx)
+                random.shuffle(st.session_state.c_deck_idx)
+            else: 
+                st.session_state.ch_deck_idx.append(idx)
+                random.shuffle(st.session_state.ch_deck_idx)
+        else:
+            if deck_type == "chance": 
+                st.session_state.c_deck_idx.append(idx)
+            else: 
+                st.session_state.ch_deck_idx.append(idx)
+                
     return msg
 
 def run_turn(jail_action=None, silent=False):
@@ -479,8 +495,8 @@ def run_turn(jail_action=None, silent=False):
                 p['jail_turns'] += 1
                 if not silent: st.session_state.last_move = f"{p['name']} failed doubles, stays in Jail."
                 
-                p['stats']['visits'][10] += 1
-                p['stats']['ends'][10] += 1
+                p['stats']['visits'][str(10)] += 1
+                p['stats']['ends'][str(10)] += 1
                 
                 # Keep the cash history synced so the graph doesn't skip a turn
                 for player in st.session_state.players:
@@ -501,11 +517,12 @@ def run_turn(jail_action=None, silent=False):
     
     if st.session_state.double_count >= 3:
         send_to_jail(p)
+        p['stats']['times_in_jail'] += 1
         if not silent: st.session_state.last_move = f"{p['name']} rolled 3 doubles! Go to Jail!"
         
         # --- STATS SYNC ---
-        p['stats']['visits'][10] += 1
-        p['stats']['ends'][10] += 1
+        p['stats']['visits'][str(10)] += 1
+        p['stats']['ends'][str(10)] += 1
         # Keep the graph consistent
         for player in st.session_state.players:
             player['stats']['cash_history'].append(player['cash'])
@@ -531,23 +548,23 @@ def run_turn(jail_action=None, silent=False):
         msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
         
         if sq['type'] in ["Street", "Railroad", "Utility", "Property"]: # Added Property just in case of naming variations
-            owner = st.session_state.ownership.get(p['pos'], "Bank")
+            owner = st.session_state.ownership.get(str(p['pos']), "Bank")
 
             # CASE A: SOMEONE ELSE OWNS IT (RENT)
-            if owner != "Bank" and owner != p['name']:
+            if owner != "Bank" and str(owner).strip().lower() != str(p['name']).strip().lower():
                 rent = get_rent(p['pos'], roll_sum)
                 p['cash'] -= rent
                 p['stats']['rent_paid'] += rent 
-                
+
                 if "property_stats" in st.session_state:
-                    st.session_state.property_stats[p['pos']]["revenue"] += rent
+                    # FIXED: This line must be indented further to stay inside the 'if'
+                    st.session_state.property_stats[str(p['pos'])]["revenue"] += rent
                 
                 for op in st.session_state.players:
                     if str(op['name']).strip().lower() == str(owner).strip().lower():
                         op['cash'] += rent
                         op['stats']['rent_collected'] += rent
                 
-                # Check this line below! Make sure "set_bonus" is deleted from the f-string
                 event_msg = f"Paid ${rent} rent at {sq['name']}" 
                 msg += f"{event_msg}. "
 
@@ -556,15 +573,20 @@ def run_turn(jail_action=None, silent=False):
                 price = sq.get('price', 150)
                 pol = p['policy']['buy_prop']
                 res = p['policy']['buy_res']
-                should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
+                
+                # Explicitly handle the 'Never Buy' policy
+                if pol == "Never Buy":
+                    should_buy = False
+                else:
+                    should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
                 
                 if should_buy and p['cash'] >= price:
-                    st.session_state.ownership[p['pos']] = p['name']
+                    st.session_state.ownership[str(p['pos'])] = p['name']
                     p['cash'] -= price
                     
                     # --- TRACK PROPERTY EXPENSE ---
                     if "property_stats" in st.session_state:
-                        st.session_state.property_stats[p['pos']]["expenses"] += price
+                        st.session_state.property_stats[str(p['pos'])]["expenses"] += price
 
                     # Monopoly logic is now handled by the Auditor function
                     buy_bonus = ""
@@ -572,7 +594,10 @@ def run_turn(jail_action=None, silent=False):
                     # Special labeling for Railroads/Utilities
                     extra_label = ""
                     if sq['type'] in ["Railroad", "Utility"]:
-                        count = sum(1 for pid, o_name in st.session_state.ownership.items() if str(o_name).strip().lower() == str(p['name']).strip().lower() and PROPERTIES[int(pid)].get('type') == sq['type'])
+                        # We iterate through ownership items, ensuring we convert pid to int to look up in PROPERTIES
+                        count = sum(1 for pid, o_name in st.session_state.ownership.items() 
+                                    if o_name and str(o_name).strip().lower() == str(p['name']).strip().lower() 
+                                    and PROPERTIES[int(pid)].get('type') == sq['type'])
                         label = "Utilities" if sq['type'] == "Utility" else "Railroads"
                         extra_label = f" [Total {label}: {count}]"
 
@@ -590,16 +615,17 @@ def run_turn(jail_action=None, silent=False):
         elif sq['type'] == "Action":
             if p['pos'] == 30:
                 # 1. Record the visit to Square 30 BEFORE moving
-                p['stats']['visits'][30] += 1 
+                p['stats']['visits'][str(30)] += 1 
                 # (Note: We don't record an 'end' here because they don't stay on 30)
 
                 # 2. Move the player to 10
                 send_to_jail(p)
+                p['stats']['times_in_jail'] += 1
                 msg += "Go To Jail!"
             
                 # 3. Record the Visit and End at Square 10 (Jail)
-                p['stats']['visits'][10] += 1
-                p['stats']['ends'][10] += 1
+                p['stats']['visits'][str(10)] += 1
+                p['stats']['ends'][str(10)] += 1
 
                 # --- BUILDING OPPORTUNITY ---
                 attempt_buy_houses(p)
@@ -622,8 +648,9 @@ def run_turn(jail_action=None, silent=False):
                 
                 # --- NEW: IMMEDIATE JAIL CHECK ---
                 if p.get('in_jail'):
-                    p['stats']['visits'][10] += 1
-                    p['stats']['ends'][10] += 1
+                    p['stats']['visits'][str(10)] += 1
+                    p['stats']['times_in_jail'] += 1
+                    p['stats']['ends'][str(10)] += 1
                     for player in st.session_state.players:
                         player['stats']['cash_history'].append(player['cash'])
                     
@@ -641,18 +668,27 @@ def run_turn(jail_action=None, silent=False):
                     # Ensure new_sq is a valid property type
                     if isinstance(new_sq, dict) and new_sq.get('type') in ["Property", "Railroad", "Utility", "Street"]:
                         # Identify current owner
-                        owner = st.session_state.ownership.get(p['pos']) or st.session_state.ownership.get(str(p['pos']), "Bank")
+                        owner = st.session_state.ownership.get(str(p['pos']), "Bank")
                         
                         if owner == "Bank":
                             price = new_sq.get('price', 150)
-                            if p['cash'] >= price:
+                            pol = p['policy']['buy_prop']
+                            res = p['policy']['buy_res']
+
+                            # Check policy: Do they want to buy?
+                            if pol == "Never Buy":
+                                card_should_buy = False
+                            else:
+                                card_should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
+
+                            if card_should_buy and p['cash'] >= price:
                                 # Execute Transaction
                                 p['cash'] -= price
-                                st.session_state.ownership[p['pos']] = p['name']
+                                st.session_state.ownership[str(p['pos'])] = p['name']
                                 
                                 # Track Expense for ROI stats
                                 if "property_stats" in st.session_state:
-                                    st.session_state.property_stats[p['pos']]["expenses"] += price
+                                    st.session_state.property_stats[str(p['pos'])]["expenses"] += price
                                 
                                 buy_bonus = ""
 
@@ -667,8 +703,8 @@ def run_turn(jail_action=None, silent=False):
         
                 # --- FINAL SAFETY: EXITING THE CARD LOGIC ---
                 if p['in_jail']:
-                    p['stats']['visits'][10] += 1
-                    p['stats']['ends'][10] += 1
+                    p['stats']['visits'][str(10)] += 1
+                    p['stats']['ends'][str(10)] += 1
                 
                 # These must run regardless of Jail or Purchase to keep the game moving
                 for player in st.session_state.players:
@@ -702,8 +738,8 @@ def run_turn(jail_action=None, silent=False):
             player['stats']['cash_history'].append(player['cash'])
 
         # 4. Record position stats
-        p['stats']['visits'][p['pos']] += 1
-        p['stats']['ends'][p['pos']] += 1
+        p['stats']['visits'][str(p['pos'])] += 1
+        p['stats']['ends'][str(p['pos'])] += 1
 
         # 5. Switch turn and increment turn count
         if not is_double:
@@ -737,8 +773,8 @@ if st.session_state.phase == "INIT":
                 },
                 # --- PHASE 1: STATS BUCKET ---
                 "stats": {
-                    "visits": {i: 0 for i in range(40)},
-                    "ends": {i: 0 for i in range(40)},
+                    "visits": {str(i): 0 for i in range(40)},
+                    "ends": {str(i): 0 for i in range(40)},
                     "rent_paid": 0,
                     "rent_collected": 0,
                     "times_in_jail": 0,
@@ -972,13 +1008,13 @@ elif st.session_state.phase == "CHOICE":
                     "jail_exit": "Try Doubles"
                 },
                 "stats": {            # FULL SYNC WITH RESTART_GAME()
-                    "visits": {i: 0 for i in range(40)},
-                    "ends": {i: 0 for i in range(40)},
+                    "visits": {str(i): 0 for i in range(40)},
+                    "ends": {str(i): 0 for i in range(40)},
                     "rent_paid": 0,
                     "rent_collected": 0,
                     "times_in_jail": 0,
                     "cash_history": [1500],
-                    "events": []
+                    "critical_moments": []
                 }
             })
         
@@ -1185,28 +1221,41 @@ elif st.session_state.phase == "LIVE":
         )
         
         st.markdown("---")
-        st.subheader("📌 Critical Game Moments")
-        all_events = []
-        for p in st.session_state.players:
-            moments = p['stats'].get('critical_moments', [])
-            for e in moments:
-                all_events.append({"Turn": e['turn'], "Player": p['name'], "Event": e['event']})
+        st.subheader("📊 Player Game Highlights")
         
-        if all_events:
-            from collections import defaultdict
-            grouped = defaultdict(list)
-            for e in all_events:
-                grouped[(e['Turn'], e['Player'])].append(str(e['Event']))
-            
-            combined_data = []
-            for (turn, player), msgs in grouped.items():
-                combined_data.append({"Turn": turn, "Player": player, "Event": " ; ".join(msgs)})
-            
-            df_display = pd.DataFrame(combined_data).sort_values("Turn", ascending=False)
-            st.dataframe(df_display.head(100), use_container_width=True, height=400, hide_index=True)
-
-            csv = df_display.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download Full Simulation Log (CSV)", csv, "monopoly_log.csv", "text/csv")
+        if "players" in st.session_state:
+            # 1. Individual Player Expanders (Visual UI)
+            cols = st.columns(len(st.session_state.players))
+            all_events = [] # We'll keep this to generate the CSV at the end
+        
+            for i, p in enumerate(st.session_state.players):
+                with cols[i]:
+                    with st.expander(f"📜 {p['name']} Log", expanded=False):
+                        # Essential stats
+                        st.write(f"**Times in Jail:** {p['stats'].get('times_in_jail', 0)}")
+                        st.divider()
+                        
+                        moments = p['stats'].get('critical_moments', [])
+                        if moments:
+                            for e in moments:
+                                st.markdown(f"**Turn {e['turn']}:** {e['event']}")
+                                # Collect for CSV processing
+                                all_events.append({"Turn": e['turn'], "Player": p['name'], "Event": e['event']})
+                        else:
+                            st.caption("No significant events recorded.")
+        
+            # 2. The Download Feature (Preserved functionality)
+            if all_events:
+                df_display = pd.DataFrame(all_events).sort_values("Turn", ascending=False)
+                csv = df_display.to_csv(index=False).encode('utf-8')
+                
+                st.write("") # Spacer
+                st.download_button(
+                    label="📥 Download Full Simulation Log (CSV)",
+                    data=csv,
+                    file_name="monopoly_log.csv",
+                    mime="text/csv"
+                )
         else:
             st.info("No major events recorded yet.")
         # --- 8 SPACES END HERE ---
