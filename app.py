@@ -195,10 +195,15 @@ def restart_game():
     st.session_state.current_p = 0
     st.session_state.double_count = 0
     st.session_state.jackpot = st.session_state.rules["fp_initial"]
+
+    st.session_state.master_log = [] 
+    
     # 2. Initialize ALL 40 squares for property stats
     st.session_state.property_stats = {
         str(idx): {"revenue": 0, "expenses": 0} for idx in range(40)
     }
+
+    
     
     # 2. Reshuffle Decks
     st.session_state.c_deck_idx = list(range(16))
@@ -446,6 +451,21 @@ def draw_card(p, deck_type):
                 
     return msg
 
+def record_master_turn(p, msg):
+    """Utility to capture the full state of a turn for the CSV log."""
+    if "master_log" not in st.session_state:
+        st.session_state.master_log = []
+        
+    st.session_state.master_log.append({
+        "Turn": st.session_state.turn_count,
+        "Player": p['name'],
+        "Position": p['pos'],
+        "Square": PROPERTIES[p['pos']]['name'],
+        "Cash": p['cash'],
+        "Action": msg.strip()
+    })
+
+
 def run_turn(jail_action=None, silent=False):
     p = st.session_state.players[st.session_state.current_p]
     
@@ -456,6 +476,8 @@ def run_turn(jail_action=None, silent=False):
         
         # 2. Increment the turn count (time still passed even if they are broke)
         st.session_state.turn_count += 1
+
+        record_master_turn(p, "Turn skipped: Player is bankrupt/in debt.")
         
         # 3. Move to the next player and exit
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
@@ -500,9 +522,13 @@ def run_turn(jail_action=None, silent=False):
                 p['jail_turns'] += 1
                 if not silent: st.session_state.last_move = f"{p['name']} failed doubles, stays in Jail."
                 
-                p['stats']['visits'][str(10)] += 1
+                p['stats']['visits'][str(10)] += 0 # (Note: your code says 1 here)
                 p['stats']['ends'][str(10)] += 1
                 
+                # --- INSERT THE HELPER CALL HERE ---
+                record_master_turn(p, st.session_state.last_move)
+                # ------------------------------------
+
                 # Keep the cash history synced so the graph doesn't skip a turn
                 for player in st.session_state.players:
                     player['stats']['cash_history'].append(player['cash'])
@@ -525,6 +551,8 @@ def run_turn(jail_action=None, silent=False):
         p['stats']['times_in_jail'] += 1
         if not silent: st.session_state.last_move = f"{p['name']} rolled 3 doubles! Go to Jail!"
         
+        record_master_turn(p, st.session_state.last_move)
+
         # --- STATS SYNC ---
         p['stats']['visits'][str(10)] += 1
         p['stats']['ends'][str(10)] += 1
@@ -627,7 +655,9 @@ def run_turn(jail_action=None, silent=False):
                 send_to_jail(p)
                 p['stats']['times_in_jail'] += 1
                 msg += "Go To Jail!"
-            
+
+                record_master_turn(p, msg)
+                
                 # 3. Record the Visit and End at Square 10 (Jail)
                 p['stats']['visits'][str(10)] += 1
                 p['stats']['ends'][str(10)] += 1
@@ -656,6 +686,9 @@ def run_turn(jail_action=None, silent=False):
                     p['stats']['visits'][str(10)] += 1
                     p['stats']['times_in_jail'] += 1
                     p['stats']['ends'][str(10)] += 1
+                    
+                    record_master_turn(p, msg)
+
                     for player in st.session_state.players:
                         player['stats']['cash_history'].append(player['cash'])
                     
@@ -718,6 +751,9 @@ def run_turn(jail_action=None, silent=False):
                 attempt_buy_houses(p)
 
                 if not silent: st.session_state.last_move = msg
+
+                record_master_turn(p, msg) 
+                
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                 st.session_state.turn_count += 1
                 return
@@ -745,6 +781,8 @@ def run_turn(jail_action=None, silent=False):
         # 4. Record position stats
         p['stats']['visits'][str(p['pos'])] += 1
         p['stats']['ends'][str(p['pos'])] += 1
+
+        record_master_turn(p, msg)
 
         # 5. Switch turn and increment turn count
         if not is_double:
