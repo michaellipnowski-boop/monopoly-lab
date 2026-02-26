@@ -920,14 +920,12 @@ elif st.session_state.phase == "SETUP":
     
     with t2:
         for color, pids in COLOR_GROUPS.items():
-            # 1. Safe owner lookup (handles number '1' or text '1')
-            owners = []
-            for p in pids:
-                val = st.session_state.ownership.get(p) or st.session_state.ownership.get(str(p))
-                owners.append(val)
+            # 1. Force everything to strings for a clean lookup
+            owners = [st.session_state.ownership.get(str(p), "Bank") for p in pids]
             
-            # 2. Strict Check: Hide the set unless a real player owns the WHOLE thing
+            # 2. Strict Check: If the set length is 1, everyone in the list is the same owner
             if len(set(owners)) == 1 and owners[0] not in ["Bank", None, "None", ""]:
+                # THE UI WILL NOW APPEAR
                 st.markdown(f'<div style="background:{COLOR_MAP[color]}; padding:5px; border-radius:3px; color:white;"><b>{color} Group ({owners[0]})</b></div>', unsafe_allow_html=True)
                 
                 for pid in pids:
