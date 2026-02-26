@@ -229,6 +229,14 @@ def restart_game():
     # 4. The Final Kick
     st.rerun()
 
+def get_house_count(pid):
+    # Checks for "1" then checks for 1. Returns 0 if neither found.
+    return st.session_state.houses.get(str(pid), st.session_state.houses.get(int(pid), 0))
+
+def get_owner(pid):
+    # Checks for "1" then checks for 1. Returns "Bank" if neither found.
+    return st.session_state.ownership.get(str(pid), st.session_state.ownership.get(int(pid), "Bank"))
+
 # --- DEBUGGER ---
 def verify_sim_integrity():
     total_turns = st.session_state.turn_count
@@ -269,53 +277,53 @@ def charge_player(p, amt):
 
 def get_rent(pid, roll=0):
     info = PROPERTIES[pid]
-    s_pid = str(pid)
-    owner = st.session_state.ownership.get(s_pid)
+    
+    # 🟢 SURGERY: Use helpers to resolve ownership and house counts immediately
+    owner = get_owner(pid)
     
     if not owner or owner == "Bank":
         return 0
 
-    # 🟢 NORMALIZE OWNER once for faster comparisons
     owner_norm = str(owner).strip().lower()
 
     # 1. STREETS (Houses & Monopolies)
     if info['type'] == "Street":
-        h = st.session_state.houses.get(s_pid, 0)
-        # Use .get or min/max to ensure we don't crash if rent list is short
+        # 🟢 SURGERY: Use helper here too
+        h = get_house_count(pid)
+        
         rent_list = info.get('rent', [0])
         base = rent_list[min(h, len(rent_list)-1)]
         
+        # Monopoly check (Double rent for 0 houses)
         if h == 0:
             group = COLOR_GROUPS.get(info['color'], [])
             owned_in_group = 0
             for g_id in group:
-                curr = st.session_state.ownership.get(str(g_id))
+                curr = get_owner(g_id)
                 if curr and str(curr).strip().lower() == owner_norm:
                     owned_in_group += 1
             if owned_in_group == len(group) and len(group) > 0:
                 return base * 2
         return base
 
-    # 2. RAILROADS (Multi-ownership scaling)
+    # 2. RAILROADS
     elif info['type'] == "Railroad":
         count = 0
         for r_id in [5, 15, 25, 35]:
-            curr = st.session_state.ownership.get(str(r_id))
+            curr = get_owner(r_id)
             if curr and str(curr).strip().lower() == owner_norm:
                 count += 1
-        # info['rent'] typically: [25, 50, 100, 200]
         r_rents = info.get('rent', [25, 50, 100, 200])
         return r_rents[max(0, min(count-1, len(r_rents)-1))]
 
-    # 3. UTILITIES (Dice-roll based rent)
+    # 3. UTILITIES
     elif info['type'] == "Utility":
         count = 0
         for u_id in [12, 28]:
-            curr = st.session_state.ownership.get(str(u_id))
+            curr = get_owner(u_id)
             if curr and str(curr).strip().lower() == owner_norm:
                 count += 1
         
-        # 🟢 SAFETY: If roll is 0 (e.g. card move), some rules use a default 7 or a new roll
         multiplier = 4 if count == 1 else 10
         return multiplier * roll
 
@@ -347,7 +355,7 @@ def attempt_buy_houses(p):
         player_owned_count = 0
         for idx in indices:
             # Wrap idx in str() to match the ownership dictionary keys
-            owner_name = st.session_state.ownership.get(str(idx))
+            owner_name = get_owner(idx)
             if owner_name and str(owner_name).strip().lower() == str(p['name']).strip().lower():
                 player_owned_count += 1
         
@@ -366,45 +374,48 @@ def attempt_buy_houses(p):
                     'event': f"🏆 MONOPOLY: {color} set completed!"
                 })
 
-            # --- 3. BUILDING LOGIC (Corrected Policy Hierarchy) ---
+            # --- 3. BUILDING LOGIC (Corrected for UI Sync) ---
             while True:
-                counts = [st.session_state.houses.get(str(idx), 0) for idx in indices]
+                # 🟢 NEW: Use helper so manual UI houses are RECOGNIZED
+                counts = [get_house_count(idx) for idx in indices]
+                
                 if all(c >= 5 for c in counts): 
                     break 
                 
+                # Identify property with fewest houses to build evenly
                 target_idx = indices[counts.index(min(counts))]
                 sq = PROPERTIES[int(target_idx)]
                 h_price = sq.get('h_cost', 50) 
                 
-                # 1. Get Policies
+                # 1. Resolve Policies
                 global_allow_debt = st.session_state.rules.get("allow_negative_capital", True)
-                # Default to -infinity so they build unless a limit is actually set
                 player_reserve_limit = p.get('policy_reserve', -float('inf'))
                 
-                # 2. THE CORRECT HIERARCHY:
+                # 2. Hierarchy Check
                 if global_allow_debt:
-                    # Global allows anything; respect the player's personal floor.
                     effective_floor = player_reserve_limit
                 else:
-                    # Global says NO debt (0). We take whichever is stricter: 
-                    # 0 or the player's personal cushion.
                     effective_floor = max(0, player_reserve_limit)
 
                 # 3. DECISION
                 if (p['cash'] - h_price) >= effective_floor:
                     p['cash'] -= h_price
-                    st.session_state.houses[str(target_idx)] = st.session_state.houses.get(str(target_idx), 0) + 1
                     
-                    new_count = st.session_state.houses[str(target_idx)]
+                    # 🟢 NEW: Get current count from helper and increment
+                    current_h = get_house_count(target_idx)
+                    st.session_state.houses[str(target_idx)] = current_h + 1
+                    
+                    new_count = current_h + 1
                     label = "Hotel" if new_count == 5 else f"House {new_count}"
-                    actions.append(f"{label} on {sq['name']}")
                     
+                    actions.append(f"{label} on {sq['name']}")
                     if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
                     p['stats']['critical_moments'].append({
                         'turn': st.session_state.turn_count, 
                         'event': f"🏗️ Built {label} on {sq['name']} (-${h_price})"
                     })
                 else:
+                    # Not enough cash or reserve reached
                     break
     # 🟢 RETURN THE SUMMARY FOR THE TICKER
     if actions:
@@ -1106,7 +1117,7 @@ elif st.session_state.phase == "LIVE":
             
             # --- 1. Display Streets (Using your successful Railroad logic style) ---
             for color_name, pids in COLOR_GROUPS.items():
-                owned_ids = [pid for pid in pids if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
+                owned_ids = [pid for pid in pids if get_owner(pid) == p['name']]
                 
                 if owned_ids:
                     hex_c = COLOR_MAP.get(color_name, "#eee")
@@ -1118,20 +1129,20 @@ elif st.session_state.phase == "LIVE":
                         p_data = PROPERTIES.get(s_pid)
                         name = p_data['name'] if p_data else f"Prop {s_pid}"
                         if is_mono:
-                            h_count = st.session_state.houses.get(s_pid, 0) or st.session_state.houses.get(str(s_pid), 0)
+                            h_count = get_house_count(s_pid)
                             name += f" ({h_count}🏠)"
                         street_labels.append(name)
                     st.write(", ".join(street_labels))
 
             # --- 2. Railroads ---
-            owned_rr = [pid for pid in RAILROADS if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
+            owned_rr = [pid for pid in RAILROADS if get_owner(pid) == p['name']]
             if owned_rr:
                 rr_names = [PROPERTIES[pid]['name'] for pid in owned_rr if pid in PROPERTIES]
                 st.markdown(f"<b>🚂 Railroads ({len(owned_rr)})</b>", unsafe_allow_html=True)
                 st.write(", ".join(rr_names))
 
             # --- 3. Utilities ---
-            owned_util = [pid for pid in UTILITIES if st.session_state.ownership.get(pid) == p['name'] or st.session_state.ownership.get(str(pid)) == p['name']]
+            owned_util = [pid for pid in UTILITIES if get_owner(pid) == p['name']]
             if owned_util:
                 util_names = [PROPERTIES[pid]['name'] for pid in owned_util if pid in PROPERTIES]
                 st.markdown(f"<b>💡 Utilities ({len(owned_util)})</b>", unsafe_allow_html=True)
@@ -1238,14 +1249,17 @@ elif st.session_state.phase == "LIVE":
         # (Your existing visit logic stays here)
         # Change p['stats']['visits'][i] to p['stats']['visits'][str(i)]
         visit_data = {
-            f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['visits'][str(i)] for p in st.session_state.players) 
+            f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['visits'].get(str(i), 0) for p in st.session_state.players) 
             for i in range(40)
         }
         st.bar_chart(visit_data)
 
     with t_ends:
         # (Your existing ends logic stays here)
-        ends_data = {f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['ends'][str(i)] for p in st.session_state.players) for i in range(40)}
+        ends_data = {
+            f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['ends'].get(str(i), 0) for p in st.session_state.players) 
+            for i in range(40)
+        }
         st.bar_chart(ends_data)
 
     with t_fin:
