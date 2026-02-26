@@ -229,11 +229,43 @@ def restart_game():
     # 4. The Final Kick
     st.rerun()
 
+# --- DEBUGGER ---
+def verify_sim_integrity():
+    total_turns = st.session_state.turn_count
+    total_visits = sum(sum(p['stats']['visits'].values()) for p in st.session_state.players)
+    
+    # This displays it nicely in the Streamlit UI
+    st.sidebar.divider()
+    st.sidebar.subheader("System Integrity")
+    col1, col2 = st.sidebar.columns(2)
+    col1.metric("Turns", total_turns)
+    col2.metric("Visits", total_visits)
+    
+    if total_visits < total_turns:
+        st.sidebar.error("⚠️ Data Leak Detected")
+
+
 # --- HELPER LOGIC ---
 def charge_player(p, amt):
+    # 1. Deduct the cash
     p['cash'] -= amt
+    
+    # 2. Feed the Jackpot if the rule is active
     if st.session_state.rules["fp_jackpot"] and amt > 0:
         st.session_state.jackpot += amt
+        
+    # 🟢 3. Debt Alert (Internal logging for your Wealth Curve)
+    if p['cash'] < 0:
+        # We don't stop the game here (run_turn handles the skip next time),
+        # but we ensure the 'critical moments' reflects the struggle.
+        event_text = f"🚨 Went into DEBT (-${abs(p['cash'])}) after paying ${amt}"
+        if 'critical_moments' in p['stats']:
+            # Avoid duplicate logs if they are already in debt
+            if not any("DEBT" in m['event'] for m in p['stats']['critical_moments'][-1:]):
+                p['stats']['critical_moments'].append({
+                    'turn': st.session_state.turn_count, 
+                    'event': event_text
+                })
 
 def get_rent(pid, roll=0):
     info = PROPERTIES[pid]
@@ -243,20 +275,24 @@ def get_rent(pid, roll=0):
     if not owner or owner == "Bank":
         return 0
 
+    # 🟢 NORMALIZE OWNER once for faster comparisons
+    owner_norm = str(owner).strip().lower()
+
     # 1. STREETS (Houses & Monopolies)
     if info['type'] == "Street":
-        # SAFE LOOKUP: Only use the string key s_pid
         h = st.session_state.houses.get(s_pid, 0)
-        base = info['rent'][h]
+        # Use .get or min/max to ensure we don't crash if rent list is short
+        rent_list = info.get('rent', [0])
+        base = rent_list[min(h, len(rent_list)-1)]
         
         if h == 0:
-            group = COLOR_GROUPS[info['color']]
+            group = COLOR_GROUPS.get(info['color'], [])
             owned_in_group = 0
             for g_id in group:
                 curr = st.session_state.ownership.get(str(g_id))
-                if curr and str(curr).strip().lower() == str(owner).strip().lower():
+                if curr and str(curr).strip().lower() == owner_norm:
                     owned_in_group += 1
-            if owned_in_group == len(group):
+            if owned_in_group == len(group) and len(group) > 0:
                 return base * 2
         return base
 
@@ -265,19 +301,23 @@ def get_rent(pid, roll=0):
         count = 0
         for r_id in [5, 15, 25, 35]:
             curr = st.session_state.ownership.get(str(r_id))
-            if curr and str(curr).strip().lower() == str(owner).strip().lower():
+            if curr and str(curr).strip().lower() == owner_norm:
                 count += 1
-        return info['rent'][max(0, count-1)]
+        # info['rent'] typically: [25, 50, 100, 200]
+        r_rents = info.get('rent', [25, 50, 100, 200])
+        return r_rents[max(0, min(count-1, len(r_rents)-1))]
 
     # 3. UTILITIES (Dice-roll based rent)
     elif info['type'] == "Utility":
         count = 0
         for u_id in [12, 28]:
             curr = st.session_state.ownership.get(str(u_id))
-            if curr and str(curr).strip().lower() == str(owner).strip().lower():
+            if curr and str(curr).strip().lower() == owner_norm:
                 count += 1
-        # roll is passed in from run_turn
-        return (4 * roll) if count == 1 else (10 * roll)
+        
+        # 🟢 SAFETY: If roll is 0 (e.g. card move), some rules use a default 7 or a new roll
+        multiplier = 4 if count == 1 else 10
+        return multiplier * roll
 
     return 0
 
@@ -291,6 +331,7 @@ def send_to_jail(p):
     p['stats']['times_in_jail'] += 1
 
 def attempt_buy_houses(p):
+    actions = []
     # 1. Identify all color groups
     color_groups = {}
     # Use .items() because PROPERTIES is a dictionary!
@@ -356,6 +397,7 @@ def attempt_buy_houses(p):
                     
                     new_count = st.session_state.houses[str(target_idx)]
                     label = "Hotel" if new_count == 5 else f"House {new_count}"
+                    actions.append(f"{label} on {sq['name']}")
                     
                     if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
                     p['stats']['critical_moments'].append({
@@ -364,6 +406,10 @@ def attempt_buy_houses(p):
                     })
                 else:
                     break
+    # 🟢 RETURN THE SUMMARY FOR THE TICKER
+    if actions:
+        return "🏗️ Built: " + ", ".join(actions) + "."
+    return ""
 
 def draw_card(p, deck_type):
     if deck_type == "chance":
@@ -388,8 +434,8 @@ def draw_card(p, deck_type):
         p['pos'] = int(card['pos']) 
         if p['pos'] < old_pos: 
             p['cash'] += 200
-            # --- ADD THIS LINE ---
-            p['stats']['visits'][str(p['pos'])] += 1
+            
+        p['stats']['visits'][str(p['pos'])] += 1
             
     elif card['effect'] == "jail":
         send_to_jail(p)
@@ -436,7 +482,7 @@ def draw_card(p, deck_type):
         old_pos = p['pos']
         p['pos'] = int(min([r for r in targets if r > p['pos']] or [5]))
         if p['pos'] < old_pos: p['cash'] += 200
-        # --- ADD THIS LINE ---
+        
         p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "move_nearest_util":
@@ -444,7 +490,7 @@ def draw_card(p, deck_type):
         old_pos = p['pos']
         p['pos'] = int(min([u for u in targets if u > p['pos']] or [12]))
         if p['pos'] < old_pos: p['cash'] += 200
-        # --- ADD THIS LINE ---
+        
         p['stats']['visits'][str(p['pos'])] += 1
 
     # --- FINAL DECK MANAGEMENT ---
@@ -567,27 +613,15 @@ def run_turn(jail_action=None, silent=False):
         
         record_master_turn(p, st.session_state.last_move)
 
-        # --- STATS SYNC ---
-        p['stats']['visits'][str(10)] += 1
-        p['stats']['ends'][str(10)] += 1
-        # Keep the graph consistent
-        for player in st.session_state.players:
-            player['stats']['cash_history'].append(player['cash'])
-        
-        # --- BUILDING OPPORTUNITY ---
-        attempt_buy_houses(p)
-        
-        st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-        st.session_state.turn_count += 1
-        # Stop here so the bottom of the function doesn't double-count this turn
-        return
     else:
         old_pos = p['pos']
         p['pos'] = (p['pos'] + roll_sum) % 40
-        # --- 📈 DATA FIX: RECORD INITIAL LANDING ---
+        
+        # 🟢 RECORD VISIT IMMEDIATELY
         p['stats']['visits'][str(p['pos'])] += 1
         
-        if p['pos'] < old_pos:
+        # 💰 ROBUST PASS-GO CHECK (Fixes the $15k leak)
+        if p['pos'] < old_pos or (old_pos > 30 and p['pos'] == 0):
             if st.session_state.rules["double_go"] and p['pos'] == 0:
                 p['cash'] += 400
             else:
@@ -669,27 +703,7 @@ def run_turn(jail_action=None, silent=False):
                 
                 # 2. Move the player to 10
                 send_to_jail(p)
-                p['stats']['times_in_jail'] += 1
                 msg += "Go To Jail!"
-
-                record_master_turn(p, msg)
-                
-                # 3. Record the Visit and End at Square 10 (Jail)
-                p['stats']['visits'][str(10)] += 1
-                p['stats']['ends'][str(10)] += 1
-
-                # --- BUILDING OPPORTUNITY ---
-                attempt_buy_houses(p)
-                
-                # --- WEALTH SNAPSHOT (Safe Mode Sync) ---
-                for player in st.session_state.players:
-                    player['stats']['cash_history'].append(player['cash'])
-
-                # --- EXIT THE TURN ---
-                if not silent: st.session_state.last_move = msg
-                st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-                st.session_state.turn_count += 1
-                return
             
             else:
                 # Store the position BEFORE the card is drawn
@@ -707,18 +721,8 @@ def run_turn(jail_action=None, silent=False):
                 if p.get('in_jail'):
                     p['stats']['visits'][str(10)] += 1
                     p['stats']['times_in_jail'] += 1
-                    p['stats']['ends'][str(10)] += 1
-                    
-                    record_master_turn(p, msg)
-
-                    for player in st.session_state.players:
-                        player['stats']['cash_history'].append(player['cash'])
-                    
-                    if not silent: st.session_state.last_move = msg
-                    st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-                    st.session_state.turn_count += 1
-                    return # Exit turn immediately
-                # ---------------------------------
+                    # We do not return; we let it flow to the bottom 
+                    # so cash and turn counts are recorded once.
                 
                 # --- CLEANED CARD-MOVE PURCHASE LOGIC ---
                 if p['pos'] != old_pos:
@@ -793,7 +797,8 @@ def run_turn(jail_action=None, silent=False):
         record_master_turn(p, msg)
 
         # 5. Switch turn and increment turn count
-        if not is_double:
+        # FIX: If they are in jail, they don't get to roll again even if they rolled doubles to get there
+        if not is_double or p.get('in_jail'):
             st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         
         st.session_state.turn_count += 1
@@ -1330,5 +1335,14 @@ elif st.session_state.phase == "LIVE":
         else:
             st.sidebar.warning("No active simulation to restart!")
 
+    # --- SIDEBAR CONTROL CENTER ---
+    st.sidebar.divider()
+
+    # 1. 🟢 Call the integrity check here so it displays its metrics
+    verify_sim_integrity()
+
+    st.sidebar.markdown("---")
+
+    # 2. Your existing Reset button
     if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
         reset_lab()
