@@ -237,6 +237,30 @@ def get_owner(pid):
     # Checks for "1" then checks for 1. Returns "Bank" if neither found.
     return st.session_state.ownership.get(str(pid), st.session_state.ownership.get(int(pid), "Bank"))
 
+def get_effective_reserve(p, policy_type):
+    """
+    Calculates the cash floor based on player policy and global rules.
+    policy_type: 'buy_prop' or 'build_house'
+    """
+    pol = p['policy'].get(policy_type, "Always")
+    
+    # 1. Determine the base reserve
+    if pol == "Keep Reserve":
+        # Look for 'buy_res' or 'build_res' based on policy_type
+        res_key = 'buy_res' if policy_type == 'buy_prop' else 'build_res'
+        reserve = p['policy'].get(res_key, 500)
+    else:
+        # "Always" players have no floor
+        reserve = -float('inf')
+    
+    # 2. Factor in Global Rules (Debt protection)
+    global_allow_debt = st.session_state.rules.get("allow_negative_capital", True)
+    if not global_allow_debt:
+        # If debt is NOT allowed, the floor can never be lower than 0
+        return max(0, reserve)
+        
+    return reserve
+
 # --- DEBUGGER ---
 def verify_sim_integrity():
     total_turns = st.session_state.turn_count
@@ -374,7 +398,15 @@ def attempt_buy_houses(p):
                     'event': f"🏆 MONOPOLY: {color} set completed!"
                 })
 
-            # --- 3. BUILDING LOGIC (Corrected for UI Sync) ---
+            # --- 3. BUILDING LOGIC ---
+            
+            if p['policy'].get('build_house') == "Never":
+                # Only log the skip once to avoid cluttering the ticker
+                skip_msg = f"Skipped building on {color} (Policy: Never Build Houses)"
+                if skip_msg not in actions:
+                    actions.append(skip_msg)
+                continue 
+
             while True:
                 # 🟢 NEW: Use helper so manual UI houses are RECOGNIZED
                 counts = [get_house_count(idx) for idx in indices]
@@ -387,15 +419,8 @@ def attempt_buy_houses(p):
                 sq = PROPERTIES[int(target_idx)]
                 h_price = sq.get('h_cost', 50) 
                 
-                # 1. Resolve Policies
-                global_allow_debt = st.session_state.rules.get("allow_negative_capital", True)
-                player_reserve_limit = p.get('policy_reserve', -float('inf'))
-                
-                # 2. Hierarchy Check
-                if global_allow_debt:
-                    effective_floor = player_reserve_limit
-                else:
-                    effective_floor = max(0, player_reserve_limit)
+                # 🟢 NEW: Use the helper for the decision floor
+                effective_floor = get_effective_reserve(p, 'build_house')
 
                 # 3. DECISION
                 if (p['cash'] - h_price) >= effective_floor:
@@ -595,9 +620,7 @@ def run_turn(jail_action=None, silent=False):
                 p['stats']['visits'][str(10)] += 1
                 p['stats']['ends'][str(10)] += 1
                 
-                # --- INSERT THE HELPER CALL HERE ---
                 record_master_turn(p, st.session_state.last_move)
-                # ------------------------------------
 
                 # Keep the cash history synced so the graph doesn't skip a turn
                 for player in st.session_state.players:
@@ -664,19 +687,18 @@ def run_turn(jail_action=None, silent=False):
             elif owner == "Bank":
                 price = sq.get('price', 150)
                 pol = p['policy']['buy_prop']
-                res = p['policy']['buy_res']
+                effective_floor = get_effective_reserve(p, 'buy_prop')
                 
-                # 🟢 SAFE MODE: Default to False
-                should_buy = False 
+                should_buy = False
                 
                 # 🟢 EXPLICIT CHECKS: No "else" fall-through
-                if pol == "Never Buy":
+                if pol == "Never":
                     should_buy = False
-                    msg += f" (Policy: Never Buy - skipped {sq['name']})."
+                    msg += f" (Policy: Never Buy Properties - skipped {sq['name']})."
                 elif pol == "Always":
                     should_buy = True
                 elif pol == "Keep Reserve":
-                    if p['cash'] - price >= res:
+                    if p['cash'] - price >= effective_floor:
                         should_buy = True
                     else:
                         msg += f" (Policy: Keep Reserve - insufficient funds after reserve)."
@@ -749,19 +771,18 @@ def run_turn(jail_action=None, silent=False):
                         if owner == "Bank":
                             price = new_sq.get('price', 150)
                             pol = p['policy']['buy_prop']
-                            res = p['policy']['buy_res']
+                            effective_floor = get_effective_reserve(p, 'buy_prop')
 
-                            # 🟢 STEP 1: Safe Default (Crucial for card moves)
                             card_should_buy = False 
 
                             # 🟢 STEP 2: Strict Policy Mapping
-                            if pol == "Never Buy":
+                            if pol == "Never":
                                 card_should_buy = False
-                                msg += f" (Policy: Never Buy - skipped {new_sq['name']} via card)."
+                                msg += f" (Policy: Never Buy Properties - skipped {new_sq['name']} via card)."
                             elif pol == "Always":
                                 card_should_buy = True
                             elif pol == "Keep Reserve":
-                                if p['cash'] - price >= res:
+                                if p['cash'] - price >= effective_floor:
                                     card_should_buy = True
                                 else:
                                     msg += f" (Policy: Keep Reserve - insufficient funds for {new_sq['name']} via card)."
@@ -1055,25 +1076,33 @@ elif st.session_state.phase == "CHOICE":
     if c1.button("Standard Simulation"):
         import copy
         st.session_state.players = []
-        for name in st.session_state.p_names:
+        for i, name in enumerate(st.session_state.p_names):
+            # 🟢 Pull ALL current UI choices
+            ui_buy_prop = st.session_state.get(f"pol_b_{i}", "Always")
+            ui_build_house = st.session_state.get(f"pol_h_{i}", "Always")
+            
+            # Pull both reserves (assuming you have a 'pol_hr_{i}' for house reserve in the UI)
+            ui_buy_res = st.session_state.get(f"pol_br_{i}", 500)
+            ui_build_res = st.session_state.get(f"pol_hr_{i}", 500) 
+
             st.session_state.players.append({
                 "name": name,
                 "cash": 1500,
                 "pos": 0,
-                "in_jail": False,     # Added for consistency
+                "in_jail": False,
                 "jail_turns": 0,
-                "goo_cards": [],      # Added for consistency
+                "goo_cards": [],
                 "policy": {
-                    "buy_prop": "Always", 
-                    "buy_res": 500,
-                    "build_res": 500,      
-                    "build_house": "Always", 
+                    "buy_prop": ui_buy_prop,
+                    "buy_res": ui_buy_res,
+                    "build_house": ui_build_house,
+                    "build_res": ui_build_res,  # 🟢 Fixed: No longer hardcoded to 500
                     "sell_house": "Never",
                     "jail_exit": "Try Doubles"
                 },
-                "stats": {            # FULL SYNC WITH RESTART_GAME()
-                    "visits": {str(i): 0 for i in range(40)},
-                    "ends": {str(i): 0 for i in range(40)},
+                "stats": {
+                    "visits": {str(idx): 0 for idx in range(40)}, # Using 'idx' to avoid shadowing player 'i'
+                    "ends": {str(idx): 0 for idx in range(40)},
                     "rent_paid": 0,
                     "rent_collected": 0,
                     "times_in_jail": 0,
