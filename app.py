@@ -388,12 +388,16 @@ def draw_card(p, deck_type):
         p['pos'] = int(card['pos']) 
         if p['pos'] < old_pos: 
             p['cash'] += 200
+            # --- ADD THIS LINE ---
+            p['stats']['visits'][str(p['pos'])] += 1
             
     elif card['effect'] == "jail":
         send_to_jail(p)
         
     elif card['effect'] == "move_relative":
         p['pos'] = (p['pos'] + card['amt']) % 40
+        # --- ADD THIS LINE ---
+        p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "cash":
         if card['amt'] < 0: 
@@ -432,12 +436,16 @@ def draw_card(p, deck_type):
         old_pos = p['pos']
         p['pos'] = int(min([r for r in targets if r > p['pos']] or [5]))
         if p['pos'] < old_pos: p['cash'] += 200
+        # --- ADD THIS LINE ---
+        p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "move_nearest_util":
         targets = [12, 28]
         old_pos = p['pos']
         p['pos'] = int(min([u for u in targets if u > p['pos']] or [12]))
         if p['pos'] < old_pos: p['cash'] += 200
+        # --- ADD THIS LINE ---
+        p['stats']['visits'][str(p['pos'])] += 1
 
     # --- FINAL DECK MANAGEMENT ---
     # Only put the card back if the player didn't KEEP it (GOOJF)
@@ -576,6 +584,8 @@ def run_turn(jail_action=None, silent=False):
     else:
         old_pos = p['pos']
         p['pos'] = (p['pos'] + roll_sum) % 40
+        # --- 📈 DATA FIX: RECORD INITIAL LANDING ---
+        p['stats']['visits'][str(p['pos'])] += 1
         
         if p['pos'] < old_pos:
             if st.session_state.rules["double_go"] and p['pos'] == 0:
@@ -655,10 +665,8 @@ def run_turn(jail_action=None, silent=False):
             msg += f"Paid tax."
         elif sq['type'] == "Action":
             if p['pos'] == 30:
-                # 1. Record the visit to Square 30 BEFORE moving
-                p['stats']['visits'][str(30)] += 1 
-                # (Note: We don't record an 'end' here because they don't stay on 30)
-
+                # 1. (Visit to 30 is already recorded by the dice roll logic above)
+                
                 # 2. Move the player to 10
                 send_to_jail(p)
                 p['stats']['times_in_jail'] += 1
@@ -779,7 +787,7 @@ def run_turn(jail_action=None, silent=False):
             player['stats']['cash_history'].append(player['cash'])
 
         # 4. Record position stats
-        p['stats']['visits'][str(p['pos'])] += 1
+        # (Visits are now recorded at the moment of landing in the movement Phase)
         p['stats']['ends'][str(p['pos'])] += 1
 
         record_master_turn(p, msg)
