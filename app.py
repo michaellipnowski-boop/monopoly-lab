@@ -527,15 +527,14 @@ def record_master_turn(p, msg):
 
 
 def run_turn(jail_action=None, silent=False):
+    # 🏁 THE NEW HOME: Increment immediately!
+    st.session_state.turn_count += 1
     p = st.session_state.players[st.session_state.current_p]
     
     if not st.session_state.rules["allow_debt"] and p['cash'] < 0:
         # 1. Sync cash history for ALL players so the graphs stay aligned
         for player in st.session_state.players:
             player['stats']['cash_history'].append(player['cash'])
-        
-        # 2. Increment the turn count (time still passed even if they are broke)
-        st.session_state.turn_count += 1
 
         record_master_turn(p, "Turn skipped: Player is bankrupt/in debt.")
         
@@ -598,7 +597,6 @@ def run_turn(jail_action=None, silent=False):
                 # ----------------------------------
 
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-                st.session_state.turn_count += 1
                 return
     
     if is_double and not p.get('in_jail'):
@@ -800,8 +798,7 @@ def run_turn(jail_action=None, silent=False):
         # FIX: If they are in jail, they don't get to roll again even if they rolled doubles to get there
         if not is_double or p.get('in_jail'):
             st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-        
-        st.session_state.turn_count += 1
+            
 
 # --- UI FLOW ---
 if st.session_state.phase == "INIT":
