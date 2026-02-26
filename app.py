@@ -666,14 +666,22 @@ def run_turn(jail_action=None, silent=False):
                 pol = p['policy']['buy_prop']
                 res = p['policy']['buy_res']
                 
+                # 🟢 SAFE MODE: Default to False
+                should_buy = False 
+                
+                # 🟢 EXPLICIT CHECKS: No "else" fall-through
                 if pol == "Never Buy":
                     should_buy = False
-                    msg += f" (Policy: Never Buy - skipped {sq['name']})." # <--- AUDIT LOG
-                else:
-                    should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
-                    if not should_buy and p['cash'] >= price:
-                        msg += f" (Policy: Keep Reserve - insufficient funds after reserve)." # <--- AUDIT LOG
+                    msg += f" (Policy: Never Buy - skipped {sq['name']})."
+                elif pol == "Always":
+                    should_buy = True
+                elif pol == "Keep Reserve":
+                    if p['cash'] - price >= res:
+                        should_buy = True
+                    else:
+                        msg += f" (Policy: Keep Reserve - insufficient funds after reserve)."
                 
+                # 🟢 TRANSACTION: Only fires if should_buy was explicitly made True
                 if should_buy and p['cash'] >= price:
                     st.session_state.ownership[str(p['pos'])] = p['name']
                     p['cash'] -= price
@@ -708,8 +716,6 @@ def run_turn(jail_action=None, silent=False):
             msg += f"Paid tax."
         elif sq['type'] == "Action":
             if p['pos'] == 30:
-                # 1. (Visit to 30 is already recorded by the dice roll logic above)
-                
                 # 2. Move the player to 10
                 send_to_jail(p)
                 msg += "Go To Jail!"
@@ -745,14 +751,22 @@ def run_turn(jail_action=None, silent=False):
                             pol = p['policy']['buy_prop']
                             res = p['policy']['buy_res']
 
-                            card_should_buy = False
-                            if pol == "Never Buy":
-                                msg += f" (Policy: Never Buy - skipped {new_sq['name']})."
-                            else:
-                                card_should_buy = (pol == "Always") or (pol == "Keep Reserve" and p['cash'] - price >= res)
-                                if not card_should_buy and p['cash'] >= price:
-                                    msg += f" (Policy: Keep Reserve - insufficient funds after reserve)."
+                            # 🟢 STEP 1: Safe Default (Crucial for card moves)
+                            card_should_buy = False 
 
+                            # 🟢 STEP 2: Strict Policy Mapping
+                            if pol == "Never Buy":
+                                card_should_buy = False
+                                msg += f" (Policy: Never Buy - skipped {new_sq['name']} via card)."
+                            elif pol == "Always":
+                                card_should_buy = True
+                            elif pol == "Keep Reserve":
+                                if p['cash'] - price >= res:
+                                    card_should_buy = True
+                                else:
+                                    msg += f" (Policy: Keep Reserve - insufficient funds for {new_sq['name']} via card)."
+
+                            # 🟢 STEP 3: Transaction
                             if card_should_buy and p['cash'] >= price:
                                 p['cash'] -= price
                                 st.session_state.ownership[str(p['pos'])] = p['name']
@@ -760,20 +774,8 @@ def run_turn(jail_action=None, silent=False):
                                 if "property_stats" in st.session_state:
                                     st.session_state.property_stats[str(p['pos'])]["expenses"] += price
                                 
-                                # --- RAILROAD / UTILITY COUNTER ---
-                                extra_label = ""
-                                if new_sq['type'] in ["Railroad", "Utility"]:
-                                    count = sum(1 for pid, o_name in st.session_state.ownership.items() 
-                                                if o_name and str(o_name).strip().lower() == str(p['name']).strip().lower() 
-                                                and PROPERTIES[int(pid)].get('type') == new_sq['type'])
-                                    label = "Utilities" if new_sq['type'] == "Utility" else "Railroads"
-                                    extra_label = f" [Total {label}: {count}]"
-
-                                # --- LOG TO CRITICAL MOMENTS ---
-                                if 'critical_moments' not in p['stats']:
-                                    p['stats']['critical_moments'] = []
-                                
-                                event_text = f"🏠 Bought {new_sq['name']} (-${price}){extra_label} [via Card]"
+                                event_text = f"🏠 Bought {new_sq['name']} (-${price}) [via Card]"
+                                if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
                                 p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
                                 
                                 msg += f" Then bought {new_sq['name']}."
