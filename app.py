@@ -1439,40 +1439,40 @@ elif st.session_state.phase == "LIVE":
             df_history = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in history_dict.items()]))
             st.line_chart(df_history)
         
-        st.markdown("### 📊 Wealth Series Export")
-        excel_data = get_player_excel_data()
-        st.download_button(
-            label="Download Detailed Player Spreadsheets (Excel)",
-            data=excel_data,
-            file_name=f"monopoly_wealth_turn_{st.session_state.turn_count}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
 
-    # --- 📂 DATA WAREHOUSE (Flush Left at Bottom) ---
+    # --- 📂 DATA WAREHOUSE ---
     st.markdown("---")
     st.header("📂 Data Warehouse & Game Highlights")
-    
-    if "players" in st.session_state:
-        # A. PLAYER GAME HIGHLIGHTS (With Nested Subexpanders)
+
+    if "players" in st.session_state and len(st.session_state.players) > 0:
+        # A. PLAYER GAME HIGHLIGHTS
         with st.expander("🚩 Player Milestones & Critical Moments", expanded=True):
             cols = st.columns(len(st.session_state.players))
             for i, p in enumerate(st.session_state.players):
                 with cols[i]:
-                    # We put a subexpander here for each player
                     with st.expander(f"👤 {p['name']} Details", expanded=False):
                         st.write(f"**Jail Stays:** {p['stats'].get('times_in_jail', 0)}")
                         st.divider()
-                        
                         moments = p['stats'].get('critical_moments', [])
                         if moments:
                             for e in moments:
-                                # Using a cleaner format for nested display
                                 st.markdown(f"**T{e['turn']}:** {e['event']}")
                         else:
                             st.caption("No significant events.")
 
-        # B. THE FULL MASTER LOG (The 1,000-Turn Narrative)
+        # 🟢 NEW PLACEMENT: Detailed Spreadsheet (Excel)
+        # This sits right between the two main expanders
+        excel_data = get_player_excel_data()
+        st.download_button(
+            label="📥 Download Detailed Player Spreadsheets (Excel)",
+            data=excel_data,
+            file_name=f"monopoly_lab_audit_{st.session_state.turn_count}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="audit_excel_download_warehouse" # Unique key for safety
+        )
+
+        # B. THE FULL MASTER LOG
         with st.expander("📜 Full Play-by-Play Master Log", expanded=False):
             if st.session_state.get('master_log') and len(st.session_state.master_log) > 0:
                 # Create the DataFrame from our global log
