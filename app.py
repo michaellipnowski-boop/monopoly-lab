@@ -1447,9 +1447,24 @@ elif st.session_state.phase == "LIVE":
     with t_wealth:
         history_dict = {p['name']: p['stats']['cash_history'] for p in st.session_state.players}
         if history_dict:
-            # Safe Mode Series conversion to handle uneven turn counts if necessary
+            # 1. Show the Visual Chart (The one you've been hovering over)
             df_history = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in history_dict.items()]))
             st.line_chart(df_history)
+            
+            st.markdown("---")
+            
+            # 2. Add the ACTUAL Excel Export Button
+            # This is what triggers the multi-tab logic!
+            excel_data = get_player_excel_data() 
+            
+            st.download_button(
+                label="📥 Download Detailed Player Audit (Multi-Tab Excel)",
+                data=excel_data,
+                file_name=f"monopoly_audit_turn_{st.session_state.turn_count}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width="stretch", # Modern 2026 syntax
+                key=f"wealth_tab_excel_btn_{st.session_state.turn_count}" 
+            )
         
 
     # --- 📂 DATA WAREHOUSE ---
