@@ -995,6 +995,16 @@ elif st.session_state.phase == "POLICIES":
                 )
                 
     if st.button("Proceed to Mode Selection"):
+        # 🟢 THE FORCE-SAVE: Explicitly push UI values into the player objects
+        # before we change the phase.
+        for i, p in enumerate(st.session_state.players):
+            p['policy']['buy_prop'] = st.session_state.get(f"pol_b_{i}", p['policy']['buy_prop'])
+            p['policy']['build_house'] = st.session_state.get(f"pol_h_{i}", p['policy']['build_house'])
+            p['policy']['jail_exit'] = st.session_state.get(f"pol_j_{i}", p['policy']['jail_exit'])
+            # Do the same for reserves if you use them
+            if f"pol_br_{i}" in st.session_state:
+                p['policy']['buy_res'] = st.session_state[f"pol_br_{i}"]
+        
         st.session_state.phase = "CHOICE"
         st.rerun()
 
@@ -1213,19 +1223,34 @@ elif st.session_state.phase == "LIVE":
         st.sidebar.metric("Free Parking Jackpot", f"${st.session_state.jackpot}")
     for p in st.session_state.players:
         with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
-            # --- 🛡️ STRATEGY PROFILE ---
-            reserve = p.get('policy_reserve', -float('inf'))
-            if reserve == -float('inf'):
-                strategy_text = "Unlimited Debt"
-            elif reserve == 0:
-                strategy_text = "Zero-Cash Floor"
-            elif reserve < 0:
-                strategy_text = f"${abs(reserve)} Debt Limit"
-            else:
-                strategy_text = f"${reserve} Cash Cushion"
+            # --- INSERT THIS BLOCK ---
+            buy_pol = p['policy'].get('buy_prop', 'Always')
+            build_pol = p['policy'].get('build_house', 'Always')
             
-            st.caption(f"🛡️ Strategy: {strategy_text}")
+            # 1. Calculate the actual dollar floor for Buying
+            global_limit = p.get('policy_reserve', 0)
+            policy_limit = p['policy'].get('buy_res', 0)
+            effective_buy_floor = max(global_limit, policy_limit) if buy_pol == "Keep Reserve" else global_limit
+            
+            # 2. Color Coding for "Never" (Red Alert)
+            b_color = "red" if buy_pol == "Never" else "orange" if buy_pol == "Keep Reserve" else "green"
+            
+            # 3. Display the Live Strategy
+            st.markdown(f"**Prop Buying:** :{b_color}[{buy_pol}]")
+
+            if buy_pol == "Keep Reserve":
+                st.caption(f"🛡️ Target Floor: **${effective_buy_floor}**")
+                # Show how much "Safe Cash" they actually have above their limit
+                safe_cash = max(0, p['cash'] - effective_buy_floor)
+                st.caption(f"💰 Spendable: ${safe_cash}")
+            
+            st.markdown(f"**Building:** {build_pol}")
+            if build_pol == "Keep Reserve":
+                build_floor = max(global_limit, p['policy'].get('build_res', 0))
+                st.caption(f"🏠 Build Floor: **${build_floor}**")
+            
             st.markdown("---")
+            # -------------------------
 
             # --- STATUS & CARDS ---
             if p.get('in_jail'): 
