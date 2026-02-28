@@ -1208,28 +1208,41 @@ elif st.session_state.phase == "LIVE":
         st.sidebar.metric("Free Parking Jackpot", f"${st.session_state.jackpot}")
     for p in st.session_state.players:
         with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
-            # --- STRATEGY & RESERVES (COLOR SYNCED) ---
+            # --- 🛡️ STRATEGY & RESERVES (SYNCED WITH ENGINE) ---
+            
+            # 1. Get Effective Reserves from your function
+            buy_floor = get_effective_reserve(p, 'buy_prop')
+            build_floor = get_effective_reserve(p, 'build_house')
+            
+            # 2. Helper to turn those numbers into your specific phrasing
+            def get_policy_text(floor):
+                if floor == float('inf'):
+                    return "Blocked (Never)"
+                if floor == -float('inf'):
+                    return "Unlimited Debt" if st.session_state.rules.get("allow_debt") else "Zero-Cash Floor"
+                if floor < 0:
+                    return f"${abs(floor)} Debt Limit"
+                return f"${floor} Cash Cushion"
+
+            # 3. Color Coding
             buy_pol = p['policy'].get('buy_prop', 'Always')
             build_pol = p['policy'].get('build_house', 'Always')
-            
-            # 1. Calculate the actual dollar floor for Buying
-            global_limit = p.get('policy_reserve', 0)
-            policy_limit = p['policy'].get('buy_res', 0)
-            effective_buy_floor = max(global_limit, policy_limit) if buy_pol == "Keep Reserve" else global_limit
-            
-            # 2. Color Coding for BOTH Policies
             b_color = "red" if buy_pol == "Never" else "orange" if buy_pol == "Keep Reserve" else "green"
             h_color = "red" if build_pol == "Never" else "orange" if build_pol == "Keep Reserve" else "green"
-            
-            # 3. Display the Live Strategy with consistent coloring
-            st.markdown(f"**Prop Buying:** :{b_color}[{buy_pol}]")
 
-            if buy_pol == "Keep Reserve":
-                st.caption(f"🛡️ Target Floor: **${effective_buy_floor}**")
-                safe_cash = max(0, p['cash'] - effective_buy_floor)
-                st.caption(f"💰 Spendable: ${safe_cash}")
+            # 4. Display synchronized info
+            st.markdown(f"**Prop Buying:** :{b_color}[{buy_pol}]")
+            st.caption(f"🛡️ {get_policy_text(buy_floor)}")
             
-            st.markdown(f"**Building:** :{h_color}[{build_pol}]") # Now color-coded!
+            # Show "Spendable" only if there is a finite floor to calculate against
+            if buy_floor not in [float('inf'), -float('inf')]:
+                safe_cash = max(0, p['cash'] - buy_floor)
+                st.caption(f"💰 Spendable: ${safe_cash}")
+
+            st.markdown(f"**Building:** :{h_color}[{build_pol}]")
+            st.caption(f"🏠 {get_policy_text(build_floor)}")
+
+            st.markdown("---")
             
             if build_pol == "Keep Reserve":
                 build_floor = max(global_limit, p['policy'].get('build_res', 0))
