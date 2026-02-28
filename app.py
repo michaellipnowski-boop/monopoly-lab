@@ -1448,6 +1448,59 @@ elif st.session_state.phase == "LIVE":
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
+
+    # --- 📂 DATA WAREHOUSE (Flush Left at Bottom) ---
+    st.markdown("---")
+    st.header("📂 Data Warehouse & Game Highlights")
+    
+    if "players" in st.session_state:
+        # A. PLAYER GAME HIGHLIGHTS (The "Story" of each player)
+        with st.expander("🚩 Player Milestones & Critical Moments", expanded=True):
+            cols = st.columns(len(st.session_state.players))
+            for i, p in enumerate(st.session_state.players):
+                with cols[i]:
+                    st.subheader(f"📜 {p['name']}")
+                    st.write(f"**Jail Stays:** {p['stats'].get('times_in_jail', 0)}")
+                    st.divider()
+                    
+                    # Retrieve the critical moments we've been logging in run_turn
+                    moments = p['stats'].get('critical_moments', [])
+                    if moments:
+                        for e in moments:
+                            st.markdown(f"**Turn {e['turn']}:** {e['event']}")
+                    else:
+                        st.caption("No significant events recorded.")
+
+        # B. THE FULL MASTER LOG (The 1,000-Turn Narrative)
+        with st.expander("📜 Full Play-by-Play Master Log", expanded=False):
+            if st.session_state.get('master_log') and len(st.session_state.master_log) > 0:
+                # Create the DataFrame from our global log
+                df_master = pd.DataFrame(st.session_state.master_log)
+                
+                # Sort by turn so it reads chronologically
+                df_master = df_master.sort_values("Turn", ascending=True)
+                
+                # Display the interactive table
+                st.dataframe(df_master, use_container_width=True, hide_index=True)
+                
+                st.write("") # Small spacer
+                
+                # CSV Download Button (Safe Mode: using utf-8-sig for Excel compatibility)
+                csv_data = df_master.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="📥 Download Full Simulation Log (CSV)",
+                    data=csv_data,
+                    file_name=f"monopoly_full_log_turn_{st.session_state.turn_count}.csv",
+                    mime="text/csv",
+                    key="global_log_download_footer",
+                    use_container_width=True
+                )
+            else:
+                st.info("No turns have been recorded in the master log yet. Run some turns to see data!")
+    else:
+        st.info("Game not initialized. Please set up players in the sidebar.")
+        
+        
         
         st.markdown("---")
         st.subheader("📊 Player Game Highlights")
@@ -1513,57 +1566,3 @@ elif st.session_state.phase == "LIVE":
     # 2. Your existing Reset button
     if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
         reset_lab()
-
-
-
-
-# --- 📂 DATA WAREHOUSE (Flush Left at Bottom) ---
-st.markdown("---")
-st.header("📂 Data Warehouse & Game Highlights")
-
-if "players" in st.session_state:
-    # A. PLAYER GAME HIGHLIGHTS (The "Story" of each player)
-    with st.expander("🚩 Player Milestones & Critical Moments", expanded=True):
-        cols = st.columns(len(st.session_state.players))
-        for i, p in enumerate(st.session_state.players):
-            with cols[i]:
-                st.subheader(f"📜 {p['name']}")
-                st.write(f"**Jail Stays:** {p['stats'].get('times_in_jail', 0)}")
-                st.divider()
-                
-                # Retrieve the critical moments we've been logging in run_turn
-                moments = p['stats'].get('critical_moments', [])
-                if moments:
-                    for e in moments:
-                        st.markdown(f"**Turn {e['turn']}:** {e['event']}")
-                else:
-                    st.caption("No significant events recorded.")
-
-    # B. THE FULL MASTER LOG (The 1,000-Turn Narrative)
-    with st.expander("📜 Full Play-by-Play Master Log", expanded=False):
-        if st.session_state.get('master_log') and len(st.session_state.master_log) > 0:
-            # Create the DataFrame from our global log
-            df_master = pd.DataFrame(st.session_state.master_log)
-            
-            # Sort by turn so it reads chronologically
-            df_master = df_master.sort_values("Turn", ascending=True)
-            
-            # Display the interactive table
-            st.dataframe(df_master, use_container_width=True, hide_index=True)
-            
-            st.write("") # Small spacer
-            
-            # CSV Download Button (Safe Mode: using utf-8-sig for Excel compatibility)
-            csv_data = df_master.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="📥 Download Full Simulation Log (CSV)",
-                data=csv_data,
-                file_name=f"monopoly_full_log_turn_{st.session_state.turn_count}.csv",
-                mime="text/csv",
-                key="global_log_download_footer",
-                use_container_width=True
-            )
-        else:
-            st.info("No turns have been recorded in the master log yet. Run some turns to see data!")
-else:
-    st.info("Game not initialized. Please set up players in the sidebar.")
