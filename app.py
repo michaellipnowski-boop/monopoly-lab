@@ -138,42 +138,49 @@ if "phase" not in st.session_state:
 #--- SPREADSHEET FUNCTIONALITY ---
 def get_player_excel_data():
     import io
+    from collections import defaultdict
+    # pandas (pd) must be imported at the top of your app.py
     
     output = io.BytesIO()
-    # pd is now available from your top-level import
+    
+    # We MUST use xlsxwriter for multi-sheet support
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        for player in st.session_state.players:
-            # --- REPLACED BLOCK: Groups multiple events per turn ---
-            # defaultdict is now available from your top-level import
+        for p in st.session_state.players:
+            # 1. Group events by turn so we don't skip any data
             grouped_events = defaultdict(list)
-            for e in player['stats'].get('critical_moments', []):
-                # Group by turn number
+            for e in p['stats'].get('critical_moments', []):
                 grouped_events[e['turn']].append(str(e['event']))
             
-            # Combine multiple events (e.g., "Bought Park Place ; Built house")
+            # Combine multiple events into one string: "Bought Boardwalk ; Paid $50"
             event_map = {turn: " ; ".join(msgs) for turn, msgs in grouped_events.items()}
             
-            history = player['stats']['cash_history']
+            # 2. Build the dataset for this specific player
+            history = p['stats'].get('cash_history', [])
             data = []
-            
-            for turn_idx in range(len(history)):
-                # Get the event for this turn if it exists
-                action = event_map.get(turn_idx, "")
-                
+            for turn_idx, cash in enumerate(history):
                 data.append({
                     "Turn": turn_idx,
-                    "Cash Balance": history[turn_idx],
-                    "Action/Acquisition": action
+                    "Cash Balance": cash,
+                    "Action/Acquisition": event_map.get(turn_idx, "")
                 })
             
+            # 3. Create the DataFrame
             df = pd.DataFrame(data)
-            # Save to a dedicated tab (Sheet name limit 31 chars)
-            df.to_excel(writer, sheet_name=player['name'][:31], index=False)
             
-            # Auto-adjust column width for readability
-            worksheet = writer.sheets[player['name'][:31]]
-            worksheet.set_column('C:C', 50) # Bumped to 50 for longer event strings
+            # 4. WRITE TO A UNIQUE TAB
+            # Excel sheet names: max 31 chars, no special chars like [ ] : * ? / \
+            clean_name = "".join(filter(str.isalnum, p['name']))[:31]
+            if not clean_name: # Fallback if name is only emojis
+                clean_name = f"Player_{st.session_state.players.index(p)}"
+                
+            df.to_excel(writer, sheet_name=clean_name, index=False)
             
+            # 5. Column Formatting
+            worksheet = writer.sheets[clean_name]
+            worksheet.set_column('A:A', 8)   # Turn
+            worksheet.set_column('B:B', 15)  # Cash
+            worksheet.set_column('C:C', 65)  # Action (Nice and wide for 1,000 turns)
+
     return output.getvalue()
 
 #--- GAME RESET ---
