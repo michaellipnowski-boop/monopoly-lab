@@ -139,50 +139,23 @@ if "phase" not in st.session_state:
 def get_player_excel_data():
     import io
     from collections import defaultdict
-    # pandas (pd) must be imported at the top of your file
+    
+    print(f"DEBUG: Starting Excel Export. Player count: {len(st.session_state.players)}") # 🔍 CHECK 1
     
     output = io.BytesIO()
-    
-    # 1. Initialize the writer with the specific engine
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
     for p in st.session_state.players:
-        # Group events by turn
-        grouped_events = defaultdict(list)
-        for e in p['stats'].get('critical_moments', []):
-            grouped_events[e['turn']].append(str(e['event']))
+        print(f"DEBUG: Creating sheet for {p['name']}") # 🔍 CHECK 2
         
-        event_map = {turn: " ; ".join(msgs) for turn, msgs in grouped_events.items()}
-        
-        # Build the data list
-        history = p['stats'].get('cash_history', [])
-        data = []
-        for t, c in enumerate(history):
-            data.append({
-                "Turn": t,
-                "Cash Balance": c,
-                "Action/Acquisition": event_map.get(t, "")
-            })
+        # ... (rest of your existing logic) ...
         
         df = pd.DataFrame(data)
-        
-        # 2. Force a clean, unique sheet name (Excel is picky!)
-        # Remove any characters that aren't letters or numbers
         sheet_label = "".join(filter(str.isalnum, p['name']))[:31]
-        if not sheet_label:
-            sheet_label = f"Player_{st.session_state.players.index(p)}"
-            
-        # 3. Write this specific player to their own tab
         df.to_excel(writer, sheet_name=sheet_label, index=False)
         
-        # Format the width of the "Action" column
-        worksheet = writer.sheets[sheet_label]
-        worksheet.set_column('C:C', 60)
-
-    # 4. CRITICAL FINALIZATION STEPS
-    writer.close()   # Locks the tabs into the file
-    output.seek(0)   # Moves the "read pointer" back to the start for Streamlit
-    
+    writer.close()
+    output.seek(0)
     return output.getvalue()
 
 #--- GAME RESET ---
@@ -1470,15 +1443,19 @@ elif st.session_state.phase == "LIVE":
                             st.caption("No significant events.")
 
         # 🟢 NEW PLACEMENT: Detailed Spreadsheet (Excel)
-        # This sits right between the two main expanders
+        # Using a dynamic key to prevent caching of old "flat" file versions
+        import time
+        current_ts = int(time.time()) 
+        
         excel_data = get_player_excel_data()
+        
         st.download_button(
             label="📥 Download Detailed Player Spreadsheets (Excel)",
             data=excel_data,
-            file_name=f"monopoly_lab_audit_{st.session_state.turn_count}.xlsx",
+            file_name=f"monopoly_audit_T{st.session_state.turn_count}_{current_ts}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
-            key="audit_excel_download_warehouse" # Unique key for safety
+            key=f"audit_excel_{st.session_state.turn_count}_{current_ts}" 
         )
 
         # B. THE FULL MASTER LOG
