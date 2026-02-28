@@ -139,48 +139,50 @@ if "phase" not in st.session_state:
 def get_player_excel_data():
     import io
     from collections import defaultdict
-    # pandas (pd) must be imported at the top of your app.py
+    # pandas (pd) must be imported at the top of your file
     
     output = io.BytesIO()
     
-    # We MUST use xlsxwriter for multi-sheet support
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        for p in st.session_state.players:
-            # 1. Group events by turn so we don't skip any data
-            grouped_events = defaultdict(list)
-            for e in p['stats'].get('critical_moments', []):
-                grouped_events[e['turn']].append(str(e['event']))
+    # 1. Initialize the writer with the specific engine
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    
+    for p in st.session_state.players:
+        # Group events by turn
+        grouped_events = defaultdict(list)
+        for e in p['stats'].get('critical_moments', []):
+            grouped_events[e['turn']].append(str(e['event']))
+        
+        event_map = {turn: " ; ".join(msgs) for turn, msgs in grouped_events.items()}
+        
+        # Build the data list
+        history = p['stats'].get('cash_history', [])
+        data = []
+        for t, c in enumerate(history):
+            data.append({
+                "Turn": t,
+                "Cash Balance": c,
+                "Action/Acquisition": event_map.get(t, "")
+            })
+        
+        df = pd.DataFrame(data)
+        
+        # 2. Force a clean, unique sheet name (Excel is picky!)
+        # Remove any characters that aren't letters or numbers
+        sheet_label = "".join(filter(str.isalnum, p['name']))[:31]
+        if not sheet_label:
+            sheet_label = f"Player_{st.session_state.players.index(p)}"
             
-            # Combine multiple events into one string: "Bought Boardwalk ; Paid $50"
-            event_map = {turn: " ; ".join(msgs) for turn, msgs in grouped_events.items()}
-            
-            # 2. Build the dataset for this specific player
-            history = p['stats'].get('cash_history', [])
-            data = []
-            for turn_idx, cash in enumerate(history):
-                data.append({
-                    "Turn": turn_idx,
-                    "Cash Balance": cash,
-                    "Action/Acquisition": event_map.get(turn_idx, "")
-                })
-            
-            # 3. Create the DataFrame
-            df = pd.DataFrame(data)
-            
-            # 4. WRITE TO A UNIQUE TAB
-            # Excel sheet names: max 31 chars, no special chars like [ ] : * ? / \
-            clean_name = "".join(filter(str.isalnum, p['name']))[:31]
-            if not clean_name: # Fallback if name is only emojis
-                clean_name = f"Player_{st.session_state.players.index(p)}"
-                
-            df.to_excel(writer, sheet_name=clean_name, index=False)
-            
-            # 5. Column Formatting
-            worksheet = writer.sheets[clean_name]
-            worksheet.set_column('A:A', 8)   # Turn
-            worksheet.set_column('B:B', 15)  # Cash
-            worksheet.set_column('C:C', 65)  # Action (Nice and wide for 1,000 turns)
+        # 3. Write this specific player to their own tab
+        df.to_excel(writer, sheet_name=sheet_label, index=False)
+        
+        # Format the width of the "Action" column
+        worksheet = writer.sheets[sheet_label]
+        worksheet.set_column('C:C', 60)
 
+    # 4. CRITICAL FINALIZATION STEPS
+    writer.close()   # Locks the tabs into the file
+    output.seek(0)   # Moves the "read pointer" back to the start for Streamlit
+    
     return output.getvalue()
 
 #--- GAME RESET ---
