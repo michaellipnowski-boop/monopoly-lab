@@ -708,9 +708,20 @@ def run_turn(jail_action=None, silent=False):
     if st.session_state.double_count >= 3:
         send_to_jail(p)
         p['stats']['times_in_jail'] += 1
-        if not silent: st.session_state.last_move = f"{p['name']} rolled 3 doubles! Go to Jail!"
+        msg = f"{p['name']} rolled 3 doubles! Go to Jail!" 
+        if not silent: st.session_state.last_move = msg
         
-        record_master_turn(p, st.session_state.last_move)
+        # 🟢 SAFE MODE SYNC: Keep the history and turn clock moving
+        for player in st.session_state.players:
+            player['stats']['cash_history'].append(player['cash'])
+        
+        record_master_turn(p, msg)
+        
+        # 🚀 THE FIX: Increment and Switch
+        st.session_state.turn_count += 1
+        st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+        st.session_state.double_count = 0 # Reset for the next player
+        return
 
     else:
         old_pos = p['pos']
