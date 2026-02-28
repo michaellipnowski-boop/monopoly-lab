@@ -580,7 +580,7 @@ def draw_card(p, deck_type):
             should_buy_card = False
             # 🟢 Apply the exact same logic as your dice rolls
             if pol == "Never":
-                msg += f" 🚫 (Policy: Never - skipped {sq['name']} after card move)."
+                msg += f" 🚫 (Policy: Never Buy Properties - skipped {sq['name']} after card move)."
             elif pol == "Always":
                 should_buy_card = True
             elif pol == "Keep Reserve":
@@ -772,7 +772,7 @@ def run_turn(jail_action=None, silent=False):
                 # 🟢 POLICY CHECK
                 if pol == "Never":
                     should_buy = False
-                    msg += f" 🚫 (Policy: Never - skipped {sq['name']})."
+                    msg += f" 🚫 (Policy: Never Buy Properties - skipped {sq['name']})."
                 elif pol == "Always":
                     should_buy = True
                 elif pol == "Keep Reserve":
