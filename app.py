@@ -185,48 +185,60 @@ def reset_lab():
 def restart_game():
     import copy
     import random
+    import streamlit as st
 
     # 1. Reset Board and Game State
-    # 1. Initialize ALL 40 squares as "Bank" (or "None") to prevent look-up errors
+    # We use string keys for indices to match our property lookup standard
     st.session_state.ownership = {str(idx): "Bank" for idx in range(40)}
     st.session_state.houses = {str(pid): 0 for pid in range(40)}
-    st.session_state.last_move = "Game Restarted - Rules and custom totals preserved."
+    st.session_state.last_move = "Game Restarted - Rules and custom setup preserved."
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
     st.session_state.double_count = 0
-    st.session_state.jackpot = st.session_state.rules["fp_initial"]
-
+    st.session_state.jackpot = st.session_state.rules.get("fp_initial", 0)
     st.session_state.master_log = [] 
     
-    # 2. Initialize ALL 40 squares for property stats
+    # 🟢 MERGED: Reset property revenue/expenses for the new game
     st.session_state.property_stats = {
         str(idx): {"revenue": 0, "expenses": 0} for idx in range(40)
     }
 
-    
-    
     # 2. Reshuffle Decks
     st.session_state.c_deck_idx = list(range(16))
     random.shuffle(st.session_state.c_deck_idx)
     st.session_state.ch_deck_idx = list(range(16))
     random.shuffle(st.session_state.ch_deck_idx)
-    
-    # 3. Restore Players and Wipe Stats
-    if "starting_players" in st.session_state:
-        st.session_state.players = copy.deepcopy(st.session_state.starting_players)
-        
-        for p in st.session_state.players:
+
+    # 3. Smart Player Reset: Restore Physical State, Keep Mental Strategy
+    if "players" in st.session_state and "starting_players" in st.session_state:
+        for i, p in enumerate(st.session_state.players):
+            # Grab the physical starting point (Cash, Pos, Jail, Cards) from the snapshot
+            start_snap = st.session_state.starting_players[i]
+            
+            # --- PHYSICAL RESET ---
+            p['cash'] = start_snap.get('cash', 1500)
+            p['pos'] = start_snap.get('pos', 0)
+            p['in_jail'] = start_snap.get('in_jail', False)
+            p['jail_turns'] = start_snap.get('jail_turns', 0)
+            # Deepcopy ensures cards aren't linked back to the original snapshot hand
+            p['goo_cards'] = copy.deepcopy(start_snap.get('goo_cards', []))
+            
+            # 🟢 STRATEGY PRESERVATION: We do NOT touch p['policy']. 
+            # This allows "Never Buy" or "Keep Reserve" to stay active.
+
+            # --- STATS WIPE ---
             p['stats'] = {
-                "visits": {str(i): 0 for i in range(40)},
-                "ends": {str(i): 0 for i in range(40)},
+                "visits": {str(idx): 0 for idx in range(40)},
+                "ends": {str(idx): 0 for idx in range(40)},
                 "rent_paid": 0,
                 "rent_collected": 0,
                 "times_in_jail": 0,
                 "cash_history": [p['cash']], 
                 "critical_moments": []
             }
-    
-    # 4. The Final Kick
+
+    # 4. FIX: Explicitly stay on the game board screen
+    st.session_state.phase = "LIVE"
     st.rerun()
 
 def get_house_count(pid):
@@ -237,24 +249,33 @@ def get_owner(pid):
     # Checks for "1" then checks for 1. Returns "Bank" if neither found.
     return st.session_state.ownership.get(str(pid), st.session_state.ownership.get(int(pid), "Bank"))
 
-def get_effective_reserve(p, policy_type):
+def get_effective_reserve(p, action_context):
     """
     Calculates the cash floor based on player policy and global rules.
-    policy_type: 'buy_prop' or 'build_house'
+    action_context: 'buy_prop' or 'build_house'
     """
-    pol = p['policy'].get(policy_type, "Always")
+    # 🟢 KEY FIX: Map the context to the correct policy key
+    if action_context == 'buy_prop':
+        pol = p['policy'].get('buy_prop', "Always")
+        res_key = 'buy_res'
+    else: # 'build_house'
+        pol = p['policy'].get('build_house', "Always")
+        res_key = 'build_res'
     
     # 1. Determine the base reserve
     if pol == "Keep Reserve":
-        # Look for 'buy_res' or 'build_res' based on policy_type
-        res_key = 'buy_res' if policy_type == 'buy_prop' else 'build_res'
         reserve = p['policy'].get(res_key, 500)
+    elif pol == "Never":
+        # If policy is Never, the reserve is effectively infinite 
+        # (though run_turn handles "Never" earlier, this is a safe backup)
+        reserve = float('inf')
     else:
         # "Always" players have no floor
         reserve = -float('inf')
     
     # 2. Factor in Global Rules (Debt protection)
-    global_allow_debt = st.session_state.rules.get("allow_negative_capital", True)
+    # Note: Use the exact key from your rules dict (allow_debt)
+    global_allow_debt = st.session_state.rules.get("allow_debt", True)
     if not global_allow_debt:
         # If debt is NOT allowed, the floor can never be lower than 0
         return max(0, reserve)
@@ -906,13 +927,16 @@ elif st.session_state.phase == "POLICIES":
         with st.expander(f"Strategy: {p['name']}", expanded=True):
             col1, col2, col3 = st.columns(3)
             with col1:
-                p['policy']['buy_prop'] = st.selectbox("Property Buying", ["Always", "Keep Reserve", "Never"], key=f"pol_b_{i}")
-                if p['policy']['buy_prop'] == "Keep Reserve":
-                    p['policy']['buy_res'] = st.number_input("Reserve ($)", 0, 5000, p['policy']['buy_res'], 50, key=f"pol_br_{i}")
+            p['policy']['buy_prop'] = st.selectbox("Property Buying", ["Always", "Keep Reserve", "Never"], key=f"pol_b_{i}")
+            if p['policy']['buy_prop'] == "Keep Reserve":
+                # 🟢 SAFE: Uses .get(..., 500) to prevent a crash if the key is missing
+                p['policy']['buy_res'] = st.number_input("Reserve ($)", 0, 5000, p['policy'].get('buy_res', 500), 50, key=f"pol_br_{i}")
+        
             with col2:
                 p['policy']['build_house'] = st.selectbox("House Building", ["Always", "Keep Reserve", "Never"], key=f"pol_h_{i}")
                 if p['policy']['build_house'] == "Keep Reserve":
-                    p['policy']['build_res'] = st.number_input("Reserve ($)", 0, 5000, p['policy']['build_res'], 50, key=f"pol_hr_{i}")
+                    # 🟢 SAFE: Uses .get(..., 500) for house reserves
+                    p['policy']['build_res'] = st.number_input("Reserve ($)", 0, 5000, p['policy'].get('build_res', 500), 50, key=f"pol_hr_{i}")
             with col3:
                 p['policy']['jail_exit'] = st.selectbox("Jail Strategy", ["Try Doubles", "Pay Immediately"], key=f"pol_j_{i}")
                 
@@ -1047,13 +1071,17 @@ elif st.session_state.phase == "SETUP":
     if st.button("Start Live Simulation"):
         import copy 
         
-        # --- SAFE MODE: Ensure every player has the full policy set ---
-        for p in st.session_state.players:
-            # Check for keys missing from previous versions of the app
-            if 'build_res' not in p['policy']: p['policy']['build_res'] = 500
-            if 'build_house' not in p['policy']: p['policy']['build_house'] = "Always"
+        # --- SYNC MODE: Force player data to match UI selections ---
+        for i, p in enumerate(st.session_state.players):
+            # 🟢 Pull the latest values from the 'POLICIES' page widgets
+            p['policy']['buy_prop'] = st.session_state.get(f"pol_b_{i}", p['policy'].get('buy_prop', "Always"))
+            p['policy']['build_house'] = st.session_state.get(f"pol_h_{i}", p['policy'].get('build_house', "Always"))
+            p['policy']['buy_res'] = st.session_state.get(f"pol_br_{i}", p['policy'].get('buy_res', 500))
+            p['policy']['build_res'] = st.session_state.get(f"pol_hr_{i}", p['policy'].get('build_res', 500))
+            p['policy']['jail_exit'] = st.session_state.get(f"pol_j_{i}", p['policy'].get('jail_exit', "Try Doubles"))
+            
+            # Keep sell_house logic as is for now
             if 'sell_house' not in p['policy']: p['policy']['sell_house'] = "Never"
-            if 'jail_exit' not in p['policy']: p['policy']['jail_exit'] = "Try Doubles"
             
             # Initialize the first data point for the graph
             p['stats']['cash_history'] = [p['cash']]
@@ -1077,14 +1105,12 @@ elif st.session_state.phase == "CHOICE":
         import copy
         st.session_state.players = []
         for i, name in enumerate(st.session_state.p_names):
-            # 🟢 Pull ALL current UI choices
+            # 🟢 THE FIX: Pull the EXACT current UI choices using st.session_state.get
             ui_buy_prop = st.session_state.get(f"pol_b_{i}", "Always")
             ui_build_house = st.session_state.get(f"pol_h_{i}", "Always")
-            
-            # Pull both reserves (assuming you have a 'pol_hr_{i}' for house reserve in the UI)
             ui_buy_res = st.session_state.get(f"pol_br_{i}", 500)
             ui_build_res = st.session_state.get(f"pol_hr_{i}", 500) 
-
+    
             st.session_state.players.append({
                 "name": name,
                 "cash": 1500,
@@ -1096,12 +1122,12 @@ elif st.session_state.phase == "CHOICE":
                     "buy_prop": ui_buy_prop,
                     "buy_res": ui_buy_res,
                     "build_house": ui_build_house,
-                    "build_res": ui_build_res,  # 🟢 Fixed: No longer hardcoded to 500
+                    "build_res": ui_build_res,
                     "sell_house": "Never",
-                    "jail_exit": "Try Doubles"
+                    "jail_exit": st.session_state.get(f"pol_j_{i}", "Try Doubles") # Added Jail Sync
                 },
                 "stats": {
-                    "visits": {str(idx): 0 for idx in range(40)}, # Using 'idx' to avoid shadowing player 'i'
+                    "visits": {str(idx): 0 for idx in range(40)},
                     "ends": {str(idx): 0 for idx in range(40)},
                     "rent_paid": 0,
                     "rent_collected": 0,
@@ -1110,7 +1136,8 @@ elif st.session_state.phase == "CHOICE":
                     "critical_moments": []
                 }
             })
-        
+    
+        # Create the reference snapshot for future restarts
         st.session_state.starting_players = copy.deepcopy(st.session_state.players)
         st.session_state.phase = "LIVE"
         st.rerun()
