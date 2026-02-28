@@ -202,44 +202,37 @@ def get_full_log_excel():
     df_master = df_master.sort_values("Turn", ascending=True)
 
     # 3. Write to Excel
+    # Use context manager to ensure proper closing
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         # Create the Master Tab
         df_master.to_excel(writer, sheet_name="Full_Play_by_Play", index=False)
         
+        # Format Master columns (Adjust column letter if 'Action' is not C)
         worksheet_master = writer.sheets["Full_Play_by_Play"]
-        worksheet_master.set_column('C:C', 65)
+        worksheet_master.set_column('C:C', 60)
         
-        # 4. Create Individual Player Tabs
-        # Identify which column contains the player name (handles 'Player' vs 'player')
-        col_name = next((c for c in df_master.columns if c.lower() == 'player'), None)
-
+        # Create Individual Player Tabs
         for i, p in enumerate(st.session_state.players):
-            p_name = str(p['name']).strip()
+            p_name = p['name']
+            # Filter rows where the 'Player' column matches
+            df_player = df_master[df_master['Player'] == p_name]
             
-            if col_name:
-                # SURGICAL FIX: Use .str.contains or exact match with stripping 
-                # to ensure we catch the player's actions
-                df_player = df_master[df_master[col_name].astype(str).str.contains(p_name, na=False, case=False)]
-            else:
-                df_player = pd.DataFrame()
-            
-            # Only create tab if data exists for this player
             if not df_player.empty:
-                # Clean name: alphanumeric only, max 25 chars
+                # Clean name: alphanumeric only, max 31 chars
                 clean_name = "".join(filter(str.isalnum, p_name))[:25]
-                safe_name = f"{i}_{clean_name}" if clean_name else f"P{i}"
+                safe_name = f"{i}_{clean_name}" if clean_name else f"Player_{i}"
                 
                 df_player.to_excel(writer, sheet_name=safe_name, index=False)
                 
                 # Format Player-specific tab
                 worksheet_p = writer.sheets[safe_name]
-                worksheet_p.set_column('C:C', 65)
-                # Freeze the top row so headers stay visible
-                worksheet_p.freeze_panes(1, 0)
+                worksheet_p.set_column('C:C', 60)
 
-    # 5. Finalize
+    # 4. Finalize
+    # This happens AFTER the 'with' block finishes/closes the writer
     output.seek(0)
-    return output.getvalue()
+    final_data = output.getvalue()
+    return final_data
     
 
 #--- GAME RESET ---
