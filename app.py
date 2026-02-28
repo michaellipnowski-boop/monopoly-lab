@@ -680,7 +680,7 @@ def run_turn(jail_action=None, silent=False):
                 charge_player(p, 50)
                 p['in_jail'] = False
                 if not silent: st.session_state.last_move = f"{p['name']} failed 3rd double attempt, paid $50."
-            else:
+            else: # Failed doubles in Jail
                 p['jail_turns'] += 1
                 if not silent: st.session_state.last_move = f"{p['name']} failed doubles, stays in Jail."
                 
@@ -689,14 +689,14 @@ def run_turn(jail_action=None, silent=False):
                 
                 record_master_turn(p, st.session_state.last_move)
 
-                # Keep the cash history synced so the graph doesn't skip a turn
                 for player in st.session_state.players:
                     player['stats']['cash_history'].append(player['cash'])
                 
-                # --- ADDED BUILDING OPPORTUNITY ---
                 attempt_buy_houses(p) 
-                # ----------------------------------
 
+                # 🚀 ADD THIS LINE HERE:
+                st.session_state.turn_count += 1
+                
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                 return
     
