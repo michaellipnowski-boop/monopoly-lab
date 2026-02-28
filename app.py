@@ -611,29 +611,37 @@ def record_master_turn(p, msg):
     if "master_log" not in st.session_state:
         st.session_state.master_log = []
         
+    # 🟢 SAFE LOOKUP: Ensures the Square name is found without crashing
+    try:
+        current_square = PROPERTIES[p['pos']]['name']
+    except (IndexError, KeyError, TypeError):
+        current_square = "N/A"
+
     st.session_state.master_log.append({
         "Turn": st.session_state.turn_count,
         "Player": p['name'],
         "Position": p['pos'],
-        "Square": PROPERTIES[p['pos']]['name'],
+        "Square": current_square,
         "Cash": p['cash'],
         "Action": msg.strip()
     })
 
 
 def run_turn(jail_action=None, silent=False):
-    # 🏁 THE NEW HOME: Increment immediately!
-    st.session_state.turn_count += 1
+    # 🏁 TURN COUNT REMOVED FROM HERE
     p = st.session_state.players[st.session_state.current_p]
     
+    # --- 1. THE DEBT CHECK (Safe Mode Sync) ---
     if not st.session_state.rules["allow_debt"] and p['cash'] < 0:
-        # 1. Sync cash history for ALL players so the graphs stay aligned
+        # Sync history for all so graphs don't break
         for player in st.session_state.players:
             player['stats']['cash_history'].append(player['cash'])
 
-        record_master_turn(p, "Turn skipped: Player is bankrupt/in debt.")
+        msg = f"Turn skipped: {p['name']} is bankrupt/in debt."
+        record_master_turn(p, msg)
         
-        # 3. Move to the next player and exit
+        # 🚀 SYNC FIX: We must increment BEFORE returning for a skipped turn
+        st.session_state.turn_count += 1
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         return
     
@@ -873,6 +881,10 @@ def run_turn(jail_action=None, silent=False):
 
         record_master_turn(p, msg)
 
+        # 🚀 THE SYNC FIX: Increment count AFTER the move is recorded 
+        # but BEFORE the player switches.
+        st.session_state.turn_count += 1
+        
         # 5. Switch turn and increment turn count
         # FIX: If they are in jail, they don't get to roll again even if they rolled doubles to get there
         if not is_double or p.get('in_jail'):
