@@ -927,10 +927,10 @@ elif st.session_state.phase == "POLICIES":
         with st.expander(f"Strategy: {p['name']}", expanded=True):
             col1, col2, col3 = st.columns(3)
             with col1:
-            p['policy']['buy_prop'] = st.selectbox("Property Buying", ["Always", "Keep Reserve", "Never"], key=f"pol_b_{i}")
-            if p['policy']['buy_prop'] == "Keep Reserve":
-                # 🟢 SAFE: Uses .get(..., 500) to prevent a crash if the key is missing
-                p['policy']['buy_res'] = st.number_input("Reserve ($)", 0, 5000, p['policy'].get('buy_res', 500), 50, key=f"pol_br_{i}")
+                p['policy']['buy_prop'] = st.selectbox("Property Buying", ["Always", "Keep Reserve", "Never"], key=f"pol_b_{i}")
+                if p['policy']['buy_prop'] == "Keep Reserve":
+                    # 🟢 SAFE: Uses .get(..., 500) to prevent a crash if the key is missing
+                    p['policy']['buy_res'] = st.number_input("Reserve ($)", 0, 5000, p['policy'].get('buy_res', 500), 50, key=f"pol_br_{i}")
         
             with col2:
                 p['policy']['build_house'] = st.selectbox("House Building", ["Always", "Keep Reserve", "Never"], key=f"pol_h_{i}")
