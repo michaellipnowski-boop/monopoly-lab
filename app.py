@@ -1520,3 +1520,57 @@ elif st.session_state.phase == "LIVE":
     # 2. Your existing Reset button
     if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
         reset_lab()
+
+
+# --- THE DATA WAREHOUSE (At the bottom of the page) ---
+st.markdown("---")
+st.header("📂 Data Warehouse & Audit Logs")
+st.caption("Deep-dive analytics, critical player milestones, and full turn history.")
+
+# 1. 🔍 THE CRITICAL MOMENTS (Grouped by Player)
+with st.expander("🚩 Critical Game Moments (Bankruptcies, Purchases, Jail)", expanded=False):
+    cols = st.columns(len(st.session_state.players))
+    for i, p in enumerate(st.session_state.players):
+        with cols[i]:
+            st.subheader(p['name'])
+            moments = p['stats'].get('critical_moments', [])
+            if moments:
+                for m in moments:
+                    st.write(f"**Turn {m['turn']}:** {m['event']}")
+            else:
+                st.write("No critical moments recorded.")
+
+# 2. 📝 THE MASTER LOG (The 1,000-Turn Narrative)
+with st.expander("📜 Full Simulation Master Log (CSV Ready)", expanded=False):
+    if "master_log" in st.session_state and st.session_state.master_log:
+        log_df = pd.DataFrame(st.session_state.master_log)
+        
+        # Display the table
+        st.dataframe(log_df, use_container_width=True, hide_index=True)
+        
+        # Safe Mode Download Button
+        csv_data = log_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download 1,000-Turn Log as CSV",
+            data=csv_data,
+            file_name=f"monopoly_sim_turns_{st.session_state.turn_count}.csv",
+            mime="text/csv",
+        )
+
+# 3. 📊 PLAYER PERFORMANCE SPREADSHEETS
+with st.expander("📊 Player Property & Wealth Spreadsheets", expanded=False):
+    for p in st.session_state.players:
+        st.write(f"### {p['name']} Performance Data")
+        
+        # Calculate specialized stats for the table
+        p_data = {
+            "Stat Category": ["Final Cash", "Rent Paid", "Rent Collected", "Properties Owned", "Times in Jail"],
+            "Value": [
+                f"${p['cash']}", 
+                f"${p['stats']['rent_paid']}", 
+                f"${p['stats']['rent_collected']}", 
+                len([k for k, v in st.session_state.ownership.items() if v == p['name']]),
+                p['stats']['times_in_jail']
+            ]
+        }
+        st.table(pd.DataFrame(p_data))
