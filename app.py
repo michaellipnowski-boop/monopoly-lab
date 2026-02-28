@@ -139,48 +139,51 @@ if "phase" not in st.session_state:
 def get_player_excel_data():
     import io
     from collections import defaultdict
-    # pandas (pd) must be imported at the top of your file
-    
-    print(f"DEBUG: Starting Excel Export. Player count: {len(st.session_state.players)}")
+    import pandas as pd
     
     output = io.BytesIO()
+    # Explicitly using xlsxwriter for multi-tab support
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
-    # Use XlsxWriter engine for proper multi-tab support
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        for p in st.session_state.players:
-            print(f"DEBUG: Creating sheet for {p['name']}")
-            
-            # 1. Group events by turn
-            grouped_events = defaultdict(list)
-            for e in p['stats'].get('critical_moments', []):
-                grouped_events[e['turn']].append(str(e['event']))
-            
-            event_map = {turn: " ; ".join(msgs) for turn, msgs in grouped_events.items()}
-            
-            # 2. DEFINE DATA HERE (Fixes the NameError)
-            history = p['stats'].get('cash_history', [])
-            data = [] 
-            
-            for t, c in enumerate(history):
-                data.append({
-                    "Turn": t,
-                    "Cash Balance": c,
-                    "Action/Acquisition": event_map.get(t, "")
-                })
-            
-            # 3. Create DataFrame and write to sheet
-            df = pd.DataFrame(data)
-            sheet_label = "".join(filter(str.isalnum, p['name']))[:31]
-            if not sheet_label:
-                sheet_label = f"Player_{st.session_state.players.index(p)}"
-                
-            df.to_excel(writer, sheet_name=sheet_label, index=False)
-            
-            # Formatting
-            worksheet = writer.sheets[sheet_label]
-            worksheet.set_column('C:C', 60)
+    print(f"DEBUG: Starting Export for {len(st.session_state.players)} players.")
 
-    # 4. Finalize
+    for p in st.session_state.players:
+        p_name = p['name']
+        print(f"DEBUG: Processing {p_name}...")
+        
+        # Group events by turn
+        grouped_events = defaultdict(list)
+        for e in p['stats'].get('critical_moments', []):
+            grouped_events[e['turn']].append(str(e['event']))
+        
+        event_map = {t: " ; ".join(msgs) for t, msgs in grouped_events.items()}
+        
+        # --- FIXED: data is now defined inside the player loop ---
+        player_export_data = [] 
+        history = p['stats'].get('cash_history', [])
+        
+        for t, c in enumerate(history):
+            player_export_data.append({
+                "Turn": t,
+                "Cash Balance": c,
+                "Action/Acquisition": event_map.get(t, "")
+            })
+        
+        df = pd.DataFrame(player_export_data)
+        
+        # Clean sheet name (Excel limit 31 chars)
+        safe_name = "".join(filter(str.isalnum, p_name))[:31]
+        if not safe_name:
+            safe_name = f"Player_{st.session_state.players.index(p)}"
+            
+        df.to_excel(writer, sheet_name=safe_name, index=False)
+        
+        # Formatting
+        worksheet = writer.sheets[safe_name]
+        worksheet.set_column('C:C', 60)
+
+    writer.close()
+    output.seek(0)
     return output.getvalue()
     
 
@@ -1474,14 +1477,13 @@ elif st.session_state.phase == "LIVE":
         current_ts = int(time.time()) 
         
         excel_data = get_player_excel_data()
-        
         st.download_button(
             label="📥 Download Detailed Player Spreadsheets (Excel)",
             data=excel_data,
-            file_name=f"monopoly_audit_T{st.session_state.turn_count}_{current_ts}.xlsx",
+            file_name=f"monopoly_lab_audit_{st.session_state.turn_count}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-            key=f"audit_excel_{st.session_state.turn_count}_{current_ts}" 
+            use_container_width=True, # This is correct for the button component
+            key=f"audit_xl_{st.session_state.turn_count}"
         )
 
         # B. THE FULL MASTER LOG
