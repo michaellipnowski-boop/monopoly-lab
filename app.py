@@ -1401,18 +1401,15 @@ elif st.session_state.phase == "LIVE":
     if st.session_state.last_move:
         st.info(st.session_state.last_move)
 
-    # --- PHASE 3: ANALYTICS DASHBOARD ---
+   # --- PHASE 3: ANALYTICS DASHBOARD (Visuals Only) ---
     st.markdown("---")
     st.header("🔬 Stats Analytics")
     
-    # NEW: Added t_wealth to the unpacking and "📈 Wealth Curve" to the list
     t_visits, t_ends, t_fin, t_wealth = st.tabs([
         "🚶 Total Visits", "🛑 Turn Ends", "💰 Rent Flow", "📈 Wealth Curve"
     ])
     
     with t_visits:
-        # (Your existing visit logic stays here)
-        # Change p['stats']['visits'][i] to p['stats']['visits'][str(i)]
         visit_data = {
             f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['visits'].get(str(i), 0) for p in st.session_state.players) 
             for i in range(40)
@@ -1420,7 +1417,6 @@ elif st.session_state.phase == "LIVE":
         st.bar_chart(visit_data)
 
     with t_ends:
-        # (Your existing ends logic stays here)
         ends_data = {
             f"{i:02d}: {PROPERTIES[i]['name']}": sum(p['stats']['ends'].get(str(i), 0) for p in st.session_state.players) 
             for i in range(40)
@@ -1428,25 +1424,22 @@ elif st.session_state.phase == "LIVE":
         st.bar_chart(ends_data)
 
     with t_fin:
-        # (Your existing rent logic stays here)
         fin_list = []
         for p in st.session_state.players:
             fin_list.append({"Player": p['name'], "Type": "Collected", "Amount": p['stats']['rent_collected']})
             fin_list.append({"Player": p['name'], "Type": "Paid", "Amount": p['stats']['rent_paid']})
         if fin_list:
-            import pandas as pd 
             df_fin = pd.DataFrame(fin_list)
             st.bar_chart(data=df_fin, x="Player", y="Amount", color="Type", stack=False)
 
     with t_wealth:
-        # --- 8 SPACES START HERE ---
-        import pandas as pd
         history_dict = {p['name']: p['stats']['cash_history'] for p in st.session_state.players}
         if history_dict:
+            # Safe Mode Series conversion to handle uneven turn counts if necessary
             df_history = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in history_dict.items()]))
             st.line_chart(df_history)
-    
-        st.markdown("### 📥 Download Lab Data")
+        
+        st.markdown("### 📊 Wealth Series Export")
         excel_data = get_player_excel_data()
         st.download_button(
             label="Download Detailed Player Spreadsheets (Excel)",
@@ -1522,55 +1515,15 @@ elif st.session_state.phase == "LIVE":
         reset_lab()
 
 
-# --- THE DATA WAREHOUSE (At the bottom of the page) ---
+
+        
+# --- 🚀 NEW DATA WAREHOUSE HERE (FLUSH LEFT) ---
 st.markdown("---")
-st.header("📂 Data Warehouse & Audit Logs")
-st.caption("Deep-dive analytics, critical player milestones, and full turn history.")
+st.header("📂 Data Warehouse & Game Highlights")
 
-# 1. 🔍 THE CRITICAL MOMENTS (Grouped by Player)
-with st.expander("🚩 Critical Game Moments (Bankruptcies, Purchases, Jail)", expanded=False):
-    cols = st.columns(len(st.session_state.players))
-    for i, p in enumerate(st.session_state.players):
-        with cols[i]:
-            st.subheader(p['name'])
-            moments = p['stats'].get('critical_moments', [])
-            if moments:
-                for m in moments:
-                    st.write(f"**Turn {m['turn']}:** {m['event']}")
-            else:
-                st.write("No critical moments recorded.")
+if "players" in st.session_state:
+    with st.expander("🚩 Player Milestones & Critical Moments", expanded=True):
+        # ... (Milestones code) ...
 
-# 2. 📝 THE MASTER LOG (The 1,000-Turn Narrative)
-with st.expander("📜 Full Simulation Master Log (CSV Ready)", expanded=False):
-    if "master_log" in st.session_state and st.session_state.master_log:
-        log_df = pd.DataFrame(st.session_state.master_log)
-        
-        # Display the table
-        st.dataframe(log_df, use_container_width=True, hide_index=True)
-        
-        # Safe Mode Download Button
-        csv_data = log_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download 1,000-Turn Log as CSV",
-            data=csv_data,
-            file_name=f"monopoly_sim_turns_{st.session_state.turn_count}.csv",
-            mime="text/csv",
-        )
-
-# 3. 📊 PLAYER PERFORMANCE SPREADSHEETS
-with st.expander("📊 Player Property & Wealth Spreadsheets", expanded=False):
-    for p in st.session_state.players:
-        st.write(f"### {p['name']} Performance Data")
-        
-        # Calculate specialized stats for the table
-        p_data = {
-            "Stat Category": ["Final Cash", "Rent Paid", "Rent Collected", "Properties Owned", "Times in Jail"],
-            "Value": [
-                f"${p['cash']}", 
-                f"${p['stats']['rent_paid']}", 
-                f"${p['stats']['rent_collected']}", 
-                len([k for k, v in st.session_state.ownership.items() if v == p['name']]),
-                p['stats']['times_in_jail']
-            ]
-        }
-        st.table(pd.DataFrame(p_data))
+    with st.expander("📜 Full Play-by-Play Master Log", expanded=False):
+        # ... (Master Log code) ...
