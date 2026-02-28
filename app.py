@@ -1208,7 +1208,7 @@ elif st.session_state.phase == "LIVE":
         st.sidebar.metric("Free Parking Jackpot", f"${st.session_state.jackpot}")
     for p in st.session_state.players:
         with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
-            # --- INSERT THIS BLOCK ---
+            # --- STRATEGY & RESERVES (COLOR SYNCED) ---
             buy_pol = p['policy'].get('buy_prop', 'Always')
             build_pol = p['policy'].get('build_house', 'Always')
             
@@ -1217,25 +1217,25 @@ elif st.session_state.phase == "LIVE":
             policy_limit = p['policy'].get('buy_res', 0)
             effective_buy_floor = max(global_limit, policy_limit) if buy_pol == "Keep Reserve" else global_limit
             
-            # 2. Color Coding for "Never" (Red Alert)
+            # 2. Color Coding for BOTH Policies
             b_color = "red" if buy_pol == "Never" else "orange" if buy_pol == "Keep Reserve" else "green"
+            h_color = "red" if build_pol == "Never" else "orange" if build_pol == "Keep Reserve" else "green"
             
-            # 3. Display the Live Strategy
+            # 3. Display the Live Strategy with consistent coloring
             st.markdown(f"**Prop Buying:** :{b_color}[{buy_pol}]")
 
             if buy_pol == "Keep Reserve":
                 st.caption(f"🛡️ Target Floor: **${effective_buy_floor}**")
-                # Show how much "Safe Cash" they actually have above their limit
                 safe_cash = max(0, p['cash'] - effective_buy_floor)
                 st.caption(f"💰 Spendable: ${safe_cash}")
             
-            st.markdown(f"**Building:** {build_pol}")
+            st.markdown(f"**Building:** :{h_color}[{build_pol}]") # Now color-coded!
+            
             if build_pol == "Keep Reserve":
                 build_floor = max(global_limit, p['policy'].get('build_res', 0))
                 st.caption(f"🏠 Build Floor: **${build_floor}**")
             
             st.markdown("---")
-            # -------------------------
 
             # --- STATUS & CARDS ---
             if p.get('in_jail'): 
