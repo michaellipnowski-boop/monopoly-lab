@@ -1167,49 +1167,34 @@ elif st.session_state.phase == "CHOICE":
     c1, c2 = st.columns(2)
     if c1.button("Standard Simulation"):
         import copy
-        # 1. Clear any existing player data to start fresh
-        st.session_state.players = []
         
-        # 2. Rebuild the player list using the UI values from the POLICIES page
-        for i, name in enumerate(st.session_state.p_names):
-            # 🟢 THE SYNC: Pull EXACT current UI choices using st.session_state.get
-            # These keys (pol_b_i, etc.) match the ones in your POLICIES widgets
-            ui_buy_prop = st.session_state.get(f"pol_b_{i}", "Always")
-            ui_build_house = st.session_state.get(f"pol_h_{i}", "Always")
-            ui_buy_res = st.session_state.get(f"pol_br_{i}", 500)
-            ui_build_res = st.session_state.get(f"pol_hr_{i}", 500) 
-            ui_jail = st.session_state.get(f"pol_j_{i}", "Try Doubles")
+        # 🟢 STEP 1: Loop through the EXISTING players we configured on the Policies page.
+        # We do NOT clear the list; we simply reset their starting values.
+        for p in st.session_state.players:
+            p['cash'] = 1500
+            p['pos'] = 0
+            p['in_jail'] = False
+            p['jail_turns'] = 0
+            p['goo_cards'] = []
+            
+            # 🛡️ THE POLICY IS PRESERVED:
+            # Because we don't overwrite p['policy'], Student B stays on "Never".
 
-            st.session_state.players.append({
-                "name": name,
-                "cash": 1500,
-                "pos": 0,
-                "in_jail": False,
-                "jail_turns": 0,
-                "goo_cards": [],
-                "policy": {
-                    "buy_prop": ui_buy_prop,
-                    "buy_res": ui_buy_res,
-                    "build_house": ui_build_house,
-                    "build_res": ui_build_res,
-                    "sell_house": "Never",
-                    "jail_exit": ui_jail
-                },
-                "stats": {
-                    "visits": {str(idx): 0 for idx in range(40)},
-                    "ends": {str(idx): 0 for idx in range(40)},
-                    "rent_paid": 0,
-                    "rent_collected": 0,
-                    "times_in_jail": 0,
-                    "cash_history": [1500],
-                    "critical_moments": []
-                }
-            })
-    
-        # 3. Create the reference snapshot for future restarts (after syncing is done)
+            # STEP 2: Clear stats for the fresh 1,000 turn run
+            p['stats'] = {
+                "visits": {str(idx): 0 for idx in range(40)},
+                "ends": {str(idx): 0 for idx in range(40)},
+                "rent_paid": 0,
+                "rent_collected": 0,
+                "times_in_jail": 0,
+                "cash_history": [1500],
+                "critical_moments": []
+            }
+        
+        # STEP 3: Create the snapshot for the Restart button
         st.session_state.starting_players = copy.deepcopy(st.session_state.players)
         
-        # 4. Launch the board
+        # STEP 4: Launch
         st.session_state.phase = "LIVE"
         st.rerun()
     if c2.button("Customization Setup"): st.session_state.phase = "SETUP"; st.rerun()
