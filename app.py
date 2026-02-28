@@ -566,6 +566,44 @@ def draw_card(p, deck_type):
             else: 
                 st.session_state.ch_deck_idx.append(idx)
                 
+    # --- POST-MOVE EVALUATION (The Policy Leak Fix) ---
+    # If the card moved the player, we must check if they want to buy the new property
+    move_effects = ["move", "move_relative", "move_nearest_rr", "move_nearest_util"]
+    if card['effect'] in move_effects:
+        sq = PROPERTIES[p['pos']]
+        owner = st.session_state.ownership.get(str(p['pos']), "Bank")
+        
+        if owner == "Bank" and sq['type'] in ["Street", "Railroad", "Utility"]:
+            price = sq.get('price', 150)
+            pol = p['policy'].get('buy_prop', "Always")
+            
+            should_buy_card = False
+            # 🟢 Apply the exact same logic as your dice rolls
+            if pol == "Never":
+                msg += f" 🚫 (Policy: Never - skipped {sq['name']} after card move)."
+            elif pol == "Always":
+                should_buy_card = True
+            elif pol == "Keep Reserve":
+                floor = get_effective_reserve(p, 'buy_prop')
+                if p['cash'] - price >= floor:
+                    should_buy_card = True
+                else:
+                    msg += f" 💰 (Policy: Reserve - skipped {sq['name']} after card move)."
+            
+            # 🟢 EXECUTE PURCHASE
+            if should_buy_card and p['cash'] >= price:
+                st.session_state.ownership[str(p['pos'])] = p['name']
+                p['cash'] -= price
+                
+                # Log to stats
+                if "property_stats" in st.session_state:
+                    st.session_state.property_stats[str(p['pos'])]["expenses"] += price
+                
+                event_text = f"🏠 Bought {sq['name']} (-${price}) via card"
+                if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
+                p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                msg += f" {event_text}."
+        
     return msg
 
 def record_master_turn(p, msg):
@@ -707,53 +745,39 @@ def run_turn(jail_action=None, silent=False):
             # CASE B: BANK OWNS IT (PURCHASE)
             elif owner == "Bank":
                 price = sq.get('price', 150)
-                pol = p['policy']['buy_prop']
+                pol = p['policy'].get('buy_prop', "Always")
                 effective_floor = get_effective_reserve(p, 'buy_prop')
                 
                 should_buy = False
                 
-                # 🟢 EXPLICIT CHECKS: No "else" fall-through
+                # 🟢 POLICY CHECK
                 if pol == "Never":
                     should_buy = False
-                    msg += f" (Policy: Never Buy Properties - skipped {sq['name']})."
+                    msg += f" 🚫 (Policy: Never - skipped {sq['name']})."
                 elif pol == "Always":
                     should_buy = True
                 elif pol == "Keep Reserve":
                     if p['cash'] - price >= effective_floor:
                         should_buy = True
                     else:
-                        msg += f" (Policy: Keep Reserve - insufficient funds after reserve)."
+                        msg += f" 💰 (Policy: Reserve - insufficient funds for {sq['name']})."
                 
-                # 🟢 TRANSACTION: Only fires if should_buy was explicitly made True
+                # 🟢 TRANSACTION
                 if should_buy and p['cash'] >= price:
                     st.session_state.ownership[str(p['pos'])] = p['name']
                     p['cash'] -= price
                     
-                    # --- TRACK PROPERTY EXPENSE ---
+                    # Track stats
                     if "property_stats" in st.session_state:
                         st.session_state.property_stats[str(p['pos'])]["expenses"] += price
 
-                    # Monopoly logic is now handled by the Auditor function
-                    buy_bonus = ""
-                    
-                    # Special labeling for Railroads/Utilities
-                    extra_label = ""
-                    if sq['type'] in ["Railroad", "Utility"]:
-                        # We iterate through ownership items, ensuring we convert pid to int to look up in PROPERTIES
-                        count = sum(1 for pid, o_name in st.session_state.ownership.items() 
-                                    if o_name and str(o_name).strip().lower() == str(p['name']).strip().lower() 
-                                    and PROPERTIES[int(pid)].get('type') == sq['type'])
-                        label = "Utilities" if sq['type'] == "Utility" else "Railroads"
-                        extra_label = f" [Total {label}: {count}]"
-
-                    # --- LOG TO CRITICAL MOMENTS ---
-                    if 'critical_moments' not in p['stats']:
+                    # Log Critical Moment
+                    event_text = f"🏠 Bought {sq['name']} (-${price})"
+                    if 'critical_moments' not in p['stats']: 
                         p['stats']['critical_moments'] = []
-                    
-                    event_text = f"🏠 Bought {sq['name']} (-${price}){buy_bonus}{extra_label}"
                     p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
                     
-                    msg += f"{event_text}. "
+                    msg += f" {event_text}."
         elif sq['type'] == "Tax":
             charge_player(p, sq.get('cost', 100))
             msg += f"Paid tax."
@@ -926,19 +950,49 @@ elif st.session_state.phase == "POLICIES":
     for i, p in enumerate(st.session_state.players):
         with st.expander(f"Strategy: {p['name']}", expanded=True):
             col1, col2, col3 = st.columns(3)
+            
             with col1:
-                p['policy']['buy_prop'] = st.selectbox("Property Buying", ["Always", "Keep Reserve", "Never"], key=f"pol_b_{i}")
+                buy_opts = ["Always", "Keep Reserve", "Never"]
+                # 🟢 Look up the current saved policy to find its position (0, 1, or 2)
+                curr_b = p['policy'].get('buy_prop', "Always")
+                # This line finds the index so the dropdown "stays" on your choice
+                b_idx = buy_opts.index(curr_b) if curr_b in buy_opts else 0
+                
+                p['policy']['buy_prop'] = st.selectbox(
+                    "Property Buying", buy_opts, index=b_idx, key=f"pol_b_{i}"
+                )
+                
                 if p['policy']['buy_prop'] == "Keep Reserve":
-                    # 🟢 SAFE: Uses .get(..., 500) to prevent a crash if the key is missing
-                    p['policy']['buy_res'] = st.number_input("Reserve ($)", 0, 5000, p['policy'].get('buy_res', 500), 50, key=f"pol_br_{i}")
+                    p['policy']['buy_res'] = st.number_input(
+                        "Reserve ($)", 0, 5000, 
+                        value=p['policy'].get('buy_res', 500), 
+                        step=50, key=f"pol_br_{i}"
+                    )
         
             with col2:
-                p['policy']['build_house'] = st.selectbox("House Building", ["Always", "Keep Reserve", "Never"], key=f"pol_h_{i}")
+                build_opts = ["Always", "Keep Reserve", "Never"]
+                curr_h = p['policy'].get('build_house', "Always")
+                h_idx = build_opts.index(curr_h) if curr_h in build_opts else 0
+                
+                p['policy']['build_house'] = st.selectbox(
+                    "House Building", build_opts, index=h_idx, key=f"pol_h_{i}"
+                )
+                
                 if p['policy']['build_house'] == "Keep Reserve":
-                    # 🟢 SAFE: Uses .get(..., 500) for house reserves
-                    p['policy']['build_res'] = st.number_input("Reserve ($)", 0, 5000, p['policy'].get('build_res', 500), 50, key=f"pol_hr_{i}")
+                    p['policy']['build_res'] = st.number_input(
+                        "Reserve ($)", 0, 5000, 
+                        value=p['policy'].get('build_res', 500), 
+                        step=50, key=f"pol_hr_{i}"
+                    )
+
             with col3:
-                p['policy']['jail_exit'] = st.selectbox("Jail Strategy", ["Try Doubles", "Pay Immediately"], key=f"pol_j_{i}")
+                jail_opts = ["Try Doubles", "Pay Immediately"]
+                curr_j = p['policy'].get('jail_exit', "Try Doubles")
+                j_idx = jail_opts.index(curr_j) if curr_j in jail_opts else 0
+                
+                p['policy']['jail_exit'] = st.selectbox(
+                    "Jail Strategy", jail_opts, index=j_idx, key=f"pol_j_{i}"
+                )
                 
     if st.button("Proceed to Mode Selection"):
         st.session_state.phase = "CHOICE"
