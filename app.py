@@ -186,6 +186,53 @@ def get_player_excel_data():
     writer.close()
     output.seek(0)
     return output.getvalue()
+
+def get_full_log_excel():
+    import io
+    import pandas as pd
+    
+    # 1. Validation
+    if not st.session_state.get('master_log') or len(st.session_state.master_log) == 0:
+        return None
+
+    output = io.BytesIO()
+    
+    # 2. Process Data
+    df_master = pd.DataFrame(st.session_state.master_log)
+    df_master = df_master.sort_values("Turn", ascending=True)
+
+    # 3. Write to Excel
+    # Use context manager to ensure proper closing
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        # Create the Master Tab
+        df_master.to_excel(writer, sheet_name="Full_Play_by_Play", index=False)
+        
+        # Format Master columns (Adjust column letter if 'Action' is not C)
+        worksheet_master = writer.sheets["Full_Play_by_Play"]
+        worksheet_master.set_column('C:C', 60)
+        
+        # Create Individual Player Tabs
+        for i, p in enumerate(st.session_state.players):
+            p_name = p['name']
+            # Filter rows where the 'Player' column matches
+            df_player = df_master[df_master['Player'] == p_name]
+            
+            if not df_player.empty:
+                # Clean name: alphanumeric only, max 31 chars
+                clean_name = "".join(filter(str.isalnum, p_name))[:25]
+                safe_name = f"{i}_{clean_name}" if clean_name else f"Player_{i}"
+                
+                df_player.to_excel(writer, sheet_name=safe_name, index=False)
+                
+                # Format Player-specific tab
+                worksheet_p = writer.sheets[safe_name]
+                worksheet_p.set_column('C:C', 60)
+
+    # 4. Finalize
+    # This happens AFTER the 'with' block finishes/closes the writer
+    output.seek(0)
+    final_data = output.getvalue()
+    return final_data
     
 
 #--- GAME RESET ---
@@ -1502,7 +1549,6 @@ elif st.session_state.phase == "LIVE":
             key=f"audit_xl_btn_{st.session_state.turn_count}"
         )
 
-        # B. THE FULL MASTER LOG
         with st.expander("📜 Full Play-by-Play Master Log", expanded=False):
             if st.session_state.get('master_log') and len(st.session_state.master_log) > 0:
                 # Create the DataFrame from our global log
@@ -1510,26 +1556,28 @@ elif st.session_state.phase == "LIVE":
                 
                 # Sort by turn so it reads chronologically
                 df_master = df_master.sort_values("Turn", ascending=True)
-                
+        
                 # Display the interactive table
-                st.dataframe(df_master, use_container_width=True, hide_index=True)
+                # Using the width='stretch' as requested by your terminal logs
+                st.dataframe(df_master, width="stretch", hide_index=True)
                 
                 st.write("") # Small spacer
                 
-                # CSV Download Button (Safe Mode: using utf-8-sig for Excel compatibility)
-                csv_data = df_master.to_csv(index=False).encode('utf-8-sig')
-                st.download_button(
-                    label="📥 Download Full Simulation Log (CSV)",
-                    data=csv_data,
-                    file_name=f"monopoly_full_log_turn_{st.session_state.turn_count}.csv",
-                    mime="text/csv",
-                    key="global_log_download_footer",
-                    use_container_width=True
-                )
+                # --- NEW EXCEL LOGIC REPLACES CSV LOGIC ---
+                excel_log_data = get_full_log_excel()
+                
+                if excel_log_data:
+                    st.download_button(
+                        label="📥 Download Full Log (Multi-Tab Excel)",
+                        data=excel_log_data,
+                        file_name=f"monopoly_master_audit_T{st.session_state.turn_count}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        width="stretch",
+                        key=f"global_log_xl_{st.session_state.turn_count}"
+                    )
             else:
+                # This MUST be aligned with the 'if' above
                 st.info("No turns have been recorded in the master log yet. Run some turns to see data!")
-    else:
-        st.info("Game not initialized. Please set up players in the sidebar.")
         
         
         
