@@ -139,24 +139,50 @@ if "phase" not in st.session_state:
 def get_player_excel_data():
     import io
     from collections import defaultdict
+    # pandas (pd) must be imported at the top of your file
     
-    print(f"DEBUG: Starting Excel Export. Player count: {len(st.session_state.players)}") # 🔍 CHECK 1
+    print(f"DEBUG: Starting Excel Export. Player count: {len(st.session_state.players)}")
     
     output = io.BytesIO()
-    writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
-    for p in st.session_state.players:
-        print(f"DEBUG: Creating sheet for {p['name']}") # 🔍 CHECK 2
-        
-        # ... (rest of your existing logic) ...
-        
-        df = pd.DataFrame(data)
-        sheet_label = "".join(filter(str.isalnum, p['name']))[:31]
-        df.to_excel(writer, sheet_name=sheet_label, index=False)
-        
-    writer.close()
-    output.seek(0)
+    # Use XlsxWriter engine for proper multi-tab support
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        for p in st.session_state.players:
+            print(f"DEBUG: Creating sheet for {p['name']}")
+            
+            # 1. Group events by turn
+            grouped_events = defaultdict(list)
+            for e in p['stats'].get('critical_moments', []):
+                grouped_events[e['turn']].append(str(e['event']))
+            
+            event_map = {turn: " ; ".join(msgs) for turn, msgs in grouped_events.items()}
+            
+            # 2. DEFINE DATA HERE (Fixes the NameError)
+            history = p['stats'].get('cash_history', [])
+            data = [] 
+            
+            for t, c in enumerate(history):
+                data.append({
+                    "Turn": t,
+                    "Cash Balance": c,
+                    "Action/Acquisition": event_map.get(t, "")
+                })
+            
+            # 3. Create DataFrame and write to sheet
+            df = pd.DataFrame(data)
+            sheet_label = "".join(filter(str.isalnum, p['name']))[:31]
+            if not sheet_label:
+                sheet_label = f"Player_{st.session_state.players.index(p)}"
+                
+            df.to_excel(writer, sheet_name=sheet_label, index=False)
+            
+            # Formatting
+            worksheet = writer.sheets[sheet_label]
+            worksheet.set_column('C:C', 60)
+
+    # 4. Finalize
     return output.getvalue()
+    
 
 #--- GAME RESET ---
 def reset_lab():
