@@ -145,7 +145,8 @@ def get_player_excel_data():
     # Explicitly using xlsxwriter for multi-tab support
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
     
-    print(f"DEBUG: Starting Export for {len(st.session_state.players)} players.")
+    # Check the terminal to see if this says "2"
+    print(f"DEBUG: Exporting {len(st.session_state.players)} players.")
 
     for p in st.session_state.players:
         p_name = p['name']
@@ -158,7 +159,7 @@ def get_player_excel_data():
         
         event_map = {t: " ; ".join(msgs) for t, msgs in grouped_events.items()}
         
-        # --- FIXED: data is now defined inside the player loop ---
+        # --- FIXED: 'player_export_data' is now defined INSIDE the player loop ---
         player_export_data = [] 
         history = p['stats'].get('cash_history', [])
         
@@ -1482,8 +1483,8 @@ elif st.session_state.phase == "LIVE":
             data=excel_data,
             file_name=f"monopoly_lab_audit_{st.session_state.turn_count}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True, # This is correct for the button component
-            key=f"audit_xl_{st.session_state.turn_count}"
+            width="stretch", 
+            key=f"audit_xl_btn_{st.session_state.turn_count}"
         )
 
         # B. THE FULL MASTER LOG
