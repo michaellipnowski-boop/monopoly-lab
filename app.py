@@ -1454,22 +1454,23 @@ elif st.session_state.phase == "LIVE":
     st.header("📂 Data Warehouse & Game Highlights")
     
     if "players" in st.session_state:
-        # A. PLAYER GAME HIGHLIGHTS (The "Story" of each player)
+        # A. PLAYER GAME HIGHLIGHTS (With Nested Subexpanders)
         with st.expander("🚩 Player Milestones & Critical Moments", expanded=True):
             cols = st.columns(len(st.session_state.players))
             for i, p in enumerate(st.session_state.players):
                 with cols[i]:
-                    st.subheader(f"📜 {p['name']}")
-                    st.write(f"**Jail Stays:** {p['stats'].get('times_in_jail', 0)}")
-                    st.divider()
-                    
-                    # Retrieve the critical moments we've been logging in run_turn
-                    moments = p['stats'].get('critical_moments', [])
-                    if moments:
-                        for e in moments:
-                            st.markdown(f"**Turn {e['turn']}:** {e['event']}")
-                    else:
-                        st.caption("No significant events recorded.")
+                    # We put a subexpander here for each player
+                    with st.expander(f"👤 {p['name']} Details", expanded=False):
+                        st.write(f"**Jail Stays:** {p['stats'].get('times_in_jail', 0)}")
+                        st.divider()
+                        
+                        moments = p['stats'].get('critical_moments', [])
+                        if moments:
+                            for e in moments:
+                                # Using a cleaner format for nested display
+                                st.markdown(f"**T{e['turn']}:** {e['event']}")
+                        else:
+                            st.caption("No significant events.")
 
         # B. THE FULL MASTER LOG (The 1,000-Turn Narrative)
         with st.expander("📜 Full Play-by-Play Master Log", expanded=False):
