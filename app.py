@@ -191,48 +191,55 @@ def get_full_log_excel():
     import io
     import pandas as pd
     
-    # 1. Validation
-    if not st.session_state.get('master_log') or len(st.session_state.master_log) == 0:
+    # 1. Validation: Exit early if no log exists
+    if not st.session_state.get('master_log'):
         return None
 
-    output = io.BytesIO()
-    
-    # 2. Process Data
-    df_master = pd.DataFrame(st.session_state.master_log)
-    df_master = df_master.sort_values("Turn", ascending=True)
-
-    # 3. Write to Excel
-    # Use context manager to ensure proper closing
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Create the Master Tab
-        df_master.to_excel(writer, sheet_name="Full_Play_by_Play", index=False)
+    try:
+        output = io.BytesIO()
+        df_master = pd.DataFrame(st.session_state.master_log)
         
-        # Format Master columns (Adjust column letter if 'Action' is not C)
-        worksheet_master = writer.sheets["Full_Play_by_Play"]
-        worksheet_master.set_column('C:C', 60)
-        
-        # Create Individual Player Tabs
-        for i, p in enumerate(st.session_state.players):
-            p_name = p['name']
-            # Filter rows where the 'Player' column matches
-            df_player = df_master[df_master['Player'] == p_name]
-            
-            if not df_player.empty:
-                # Clean name: alphanumeric only, max 31 chars
-                clean_name = "".join(filter(str.isalnum, p_name))[:25]
-                safe_name = f"{i}_{clean_name}" if clean_name else f"Player_{i}"
-                
-                df_player.to_excel(writer, sheet_name=safe_name, index=False)
-                
-                # Format Player-specific tab
-                worksheet_p = writer.sheets[safe_name]
-                worksheet_p.set_column('C:C', 60)
+        # 2. Sort Logic: Ensures Turn -1 (Setup) is at the top for the Audit
+        if "Turn" in df_master.columns:
+            df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors='coerce')
+            # Sort by Turn (Ascending) then by Player Name
+            df_master = df_master.sort_values(by=["Turn", "Player"], ascending=[True, True])
 
-    # 4. Finalize
-    # This happens AFTER the 'with' block finishes/closes the writer
-    output.seek(0)
-    final_data = output.getvalue()
-    return final_data
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            # --- TAB A: THE ORIGINAL UNMODIFIED LOG ---
+            df_master.to_excel(writer, sheet_name="Full_Play_by_Play", index=False)
+            ws_master = writer.sheets["Full_Play_by_Play"]
+            ws_master.set_column('F:F', 70)  # Make 'Action' column wide
+            ws_master.freeze_panes(1, 0)     # Keep headers visible
+
+            # --- TAB B: THE INDIVIDUAL PLAYER TABS ---
+            # Loop through the players currently in the session
+            for i, p in enumerate(st.session_state.players):
+                p_name = str(p['name']).strip()
+                
+                # Filter the master dataframe for THIS player only
+                df_player = df_master[df_master['Player'].astype(str).str.strip() == p_name]
+                
+                if not df_player.empty:
+                    # Excel tab names: Max 31 chars, no special symbols
+                    clean_name = "".join(filter(str.isalnum, p_name))[:25]
+                    safe_sheet_name = f"{i}_{clean_name}"
+                    
+                    # Write the player-specific data to its own tab
+                    df_player.to_excel(writer, sheet_name=safe_sheet_name, index=False)
+                    
+                    # Apply formatting to the player tab
+                    ws_p = writer.sheets[safe_sheet_name]
+                    ws_p.set_column('F:F', 70)
+                    ws_p.freeze_panes(1, 0)
+
+        output.seek(0)
+        return output.getvalue()
+        
+    except Exception as e:
+        # Prevent app-wide crash; log error to Streamlit terminal
+        st.error(f"Excel Export Error: {e}")
+        return None
     
 
 #--- GAME RESET ---
@@ -246,18 +253,19 @@ def restart_game():
     import random
     import streamlit as st
 
-    # 1. Reset Board and Game State
-    # We use string keys for indices to match our property lookup standard
-    st.session_state.ownership = {str(idx): "Bank" for idx in range(40)}
-    st.session_state.houses = {str(pid): 0 for pid in range(40)}
-    st.session_state.last_move = "Game Restarted - Rules and custom setup preserved."
+    # 1. Restore Board and Game State FROM BLUEPRINT
+    # ❌ OLD: st.session_state.ownership = {str(idx): "Bank" for idx in range(40)}
+    # ✅ NEW: We pull the exact state from our Phase 1 Save Point
+    st.session_state.ownership = copy.deepcopy(st.session_state.get('starting_ownership', {}))
+    st.session_state.houses = copy.deepcopy(st.session_state.get('starting_houses', {}))
+    
+    st.session_state.last_move = "Game Restarted - Rules and custom setup restored."
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
     st.session_state.double_count = 0
     st.session_state.jackpot = st.session_state.rules.get("fp_initial", 0)
     st.session_state.master_log = [] 
     
-    # 🟢 MERGED: Reset property revenue/expenses for the new game
     st.session_state.property_stats = {
         str(idx): {"revenue": 0, "expenses": 0} for idx in range(40)
     }
@@ -271,19 +279,38 @@ def restart_game():
     # 3. Smart Player Reset: Restore Physical State, Keep Mental Strategy
     if "players" in st.session_state and "starting_players" in st.session_state:
         for i, p in enumerate(st.session_state.players):
-            # Grab the physical starting point (Cash, Pos, Jail, Cards) from the snapshot
             start_snap = st.session_state.starting_players[i]
             
-            # --- PHYSICAL RESET ---
+            # --- PHYSICAL RESET (Now includes explicit mapping from snapshot) ---
             p['cash'] = start_snap.get('cash', 1500)
             p['pos'] = start_snap.get('pos', 0)
             p['in_jail'] = start_snap.get('in_jail', False)
             p['jail_turns'] = start_snap.get('jail_turns', 0)
-            # Deepcopy ensures cards aren't linked back to the original snapshot hand
             p['goo_cards'] = copy.deepcopy(start_snap.get('goo_cards', []))
-            
-            # 🟢 STRATEGY PRESERVATION: We do NOT touch p['policy']. 
-            # This allows "Never Buy" or "Keep Reserve" to stay active.
+
+            # --- 🚀 NEW: RE-LOG INITIAL STATE FOR AUDIT ---
+            # This ensures the new log starts with a record of the restored setup
+            st.session_state.master_log.append({
+                "Turn": -1,
+                "Player": p['name'],
+                "Position": p['pos'],
+                "Square": PROPERTIES[p['pos']]['name'],
+                "Cash": p['cash'],
+                "Action": f"RESTART: Game reset. Started with ${p['cash']}"
+            })
+
+            # Re-log Parachuted Assets so they appear in the new Excel Log
+            for prop_id, owner_name in st.session_state.ownership.items():
+                if owner_name == p['name']:
+                    p_name = PROPERTIES[int(prop_id)]['name']
+                    st.session_state.master_log.append({
+                        "Turn": -1,
+                        "Player": p['name'],
+                        "Position": p['pos'],
+                        "Square": PROPERTIES[p['pos']]['name'],
+                        "Cash": p['cash'],
+                        "Action": f"PARACHUTE RESTORED: Began game owning {p_name}"
+                    })
 
             # --- STATS WIPE ---
             p['stats'] = {
@@ -1216,26 +1243,49 @@ elif st.session_state.phase == "SETUP":
 
     if st.button("Start Live Simulation"):
         import copy 
+    
+        # --- 📸 0. THE BOARD BLUEPRINT ---
+        # We save the EXACT state of the board from the Customization tabs
+        # so we can put the deeds and houses back later if we restart.
+        st.session_state.starting_ownership = copy.deepcopy(st.session_state.ownership)
+        st.session_state.starting_houses = copy.deepcopy(st.session_state.houses)
         
-        # --- SYNC MODE: Force player data to match UI selections ---
+        # 1. Initialize/Reset the Audit Log for the fresh game
+        st.session_state.master_log = []
+    
+        # 🟢 STEP 1: Sync Mode & Audit Setup
         for i, p in enumerate(st.session_state.players):
-            # 🟢 Pull the latest values from the 'POLICIES' page widgets
-            p['policy']['buy_prop'] = st.session_state.get(f"pol_b_{i}", p['policy'].get('buy_prop', "Always"))
-            p['policy']['build_house'] = st.session_state.get(f"pol_h_{i}", p['policy'].get('build_house', "Always"))
-            p['policy']['buy_res'] = st.session_state.get(f"pol_br_{i}", p['policy'].get('buy_res', 500))
-            p['policy']['build_res'] = st.session_state.get(f"pol_hr_{i}", p['policy'].get('build_res', 500))
-            p['policy']['jail_exit'] = st.session_state.get(f"pol_j_{i}", p['policy'].get('jail_exit', "Try Doubles"))
+            # ... [Your existing policy syncing code goes here] ...
             
-            # Keep sell_house logic as is for now
-            if 'sell_house' not in p['policy']: p['policy']['sell_house'] = "Never"
-            
-            # Initialize the first data point for the graph
-            p['stats']['cash_history'] = [p['cash']]
+            # --- 🚀 AUDIT INJECTION (TURN -1) ---
+            # This records the starting cash/pos in the log
+            st.session_state.master_log.append({
+                "Turn": -1,
+                "Player": p['name'],
+                "Position": p['pos'],
+                "Square": PROPERTIES[p['pos']]['name'],
+                "Cash": p['cash'],
+                "Action": f"SETUP: Started with ${p['cash']}"
+            })
+    
+            # Record Parachuted Assets for the log
+            for prop_id, owner_name in st.session_state.ownership.items():
+                if owner_name == p['name']:
+                    p_name = PROPERTIES[int(prop_id)]['name']
+                    st.session_state.master_log.append({
+                        "Turn": -1,
+                        "Player": p['name'],
+                        "Position": p['pos'],
+                        "Square": PROPERTIES[p['pos']]['name'],
+                        "Cash": p['cash'],
+                        "Action": f"PARACHUTE ASSET: Began game owning {p_name}"
+                    })
         
-        # --- THE CHANGE: CREATE THE SAVE POINT ---
-        # This now saves the policies we just verified/added above
+        # --- 📸 2. THE PLAYER SNAPSHOT ---
+        # This saves cash, position, and GOOJF cards as they are RIGHT NOW.
         st.session_state.starting_players = copy.deepcopy(st.session_state.players)
         
+        # 3. Launch
         st.session_state.phase = "LIVE"
         st.rerun()
 
@@ -1555,7 +1605,8 @@ elif st.session_state.phase == "LIVE":
                 df_master = pd.DataFrame(st.session_state.master_log)
                 
                 # Sort by turn so it reads chronologically
-                df_master = df_master.sort_values("Turn", ascending=True)
+                df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors = 'coerce')
+                df_master = df_master.sort_values(by = ["Turn", "Player"], ascending = [True, True])
         
                 # Display the interactive table
                 # Using the width='stretch' as requested by your terminal logs
@@ -1606,7 +1657,8 @@ elif st.session_state.phase == "LIVE":
             if st.session_state.get('master_log'):
                 df_master = pd.DataFrame(st.session_state.master_log)
                 # Sort by turn so the CSV reads like a book
-                df_master = df_master.sort_values("Turn", ascending=True)
+                df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors = 'coerce')
+                df_master = df_master.sort_values(by = ["Turn", "Player"], ascending = [True, True])
                 # We use utf-8-sig so Excel recognizes the icons/emojis correctly
                 csv_data = df_master.to_csv(index=False).encode('utf-8-sig')
                 
