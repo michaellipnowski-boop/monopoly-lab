@@ -299,18 +299,35 @@ def restart_game():
                 "Action": f"RESTART: Game reset. Started with ${p['cash']}"
             })
 
-            # Re-log Parachuted Assets so they appear in the new Excel Log
+            # Re-log Parachuted Assets and Houses so they appear in the new Excel Log
             for prop_id, owner_name in st.session_state.ownership.items():
                 if owner_name == p['name']:
                     p_name = PROPERTIES[int(prop_id)]['name']
+                    
+                    # Log the Property
                     st.session_state.master_log.append({
                         "Turn": -1,
                         "Player": p['name'],
-                        "Position": p['pos'],
-                        "Square": PROPERTIES[p['pos']]['name'],
-                        "Cash": p['cash'],
-                        "Action": f"PARACHUTE RESTORED: Began game owning {p_name}"
+                        "Position": p['pos'],                      # Added
+                        "Square": PROPERTIES[p['pos']]['name'],    # Added
+                        "Cash": p['cash'],                          # Added
+                        "Action": f"PARACHUTE RESTORED: {p_name}"
                     })
+                    
+                    # 🏠 LOG HOUSES & HOTELS (RESTART VERSION)
+                    h_count = st.session_state.houses.get(str(prop_id), 0)
+                    if h_count > 0:
+                        # Enhanced terminology for student clarity
+                        label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
+                        
+                        st.session_state.master_log.append({
+                            "Turn": -1,
+                            "Player": p['name'],
+                            "Position": p['pos'],
+                            "Square": PROPERTIES[p['pos']]['name'],
+                            "Cash": p['cash'],
+                            "Action": f"SETUP RESTORED: {p_name} has {label}"
+                        })
 
             # --- STATS WIPE ---
             p['stats'] = {
@@ -1280,6 +1297,20 @@ elif st.session_state.phase == "SETUP":
                         "Cash": p['cash'],
                         "Action": f"PARACHUTE ASSET: Began game owning {p_name}"
                     })
+                    
+                    # 🏠 REFINED: Record House/Hotel counts for the Audit Trail
+                    h_count = st.session_state.houses.get(str(prop_id), 0)
+                    if h_count > 0:
+                        # terminology check for student clarity
+                        label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
+                        st.session_state.master_log.append({
+                            "Turn": -1,
+                            "Player": p['name'],
+                            "Position": p['pos'],
+                            "Square": PROPERTIES[p['pos']]['name'],
+                            "Cash": p['cash'],
+                            "Action": f"PARACHUTE SETUP: {p_name} starts with {label}"
+                        })
         
         # --- 📸 2. THE PLAYER SNAPSHOT ---
         # This saves cash, position, and GOOJF cards as they are RIGHT NOW.
