@@ -134,6 +134,8 @@ if "phase" not in st.session_state:
         "fp_initial": 0,
         "shuffle_mode": "Cyclic"
     }
+    # 🏦 NEW: BANKER'S AUDIT INITIALIZATION
+    st.session_state.bank_ledger = []
 
 #--- SPREADSHEET FUNCTIONALITY ---
 def get_player_excel_data():
@@ -240,7 +242,20 @@ def get_full_log_excel():
         # Prevent app-wide crash; log error to Streamlit terminal
         st.error(f"Excel Export Error: {e}")
         return None
-    
+
+def log_bank_transaction(p_name, action, amount):
+    """
+    Standardizes how we record money entering/exiting the bank.
+    Positive amount = Bank is paying the player (Inflationary).
+    Negative amount = Player is paying the bank (Asset Sink).
+    """
+    st.session_state.bank_ledger.append({
+        "Turn": st.session_state.turn_count,
+        "Player": p_name,
+        "Action": action,
+        "Amount": amount,
+        "Balance": sum(entry['Amount'] for entry in st.session_state.bank_ledger) + amount
+    })
 
 #--- GAME RESET ---
 def reset_lab():
@@ -1262,60 +1277,58 @@ elif st.session_state.phase == "SETUP":
         import copy 
     
         # --- 📸 0. THE BOARD BLUEPRINT & SANITIZER ---
-        # Force keys to strings to prevent "Missing House" log errors
         current_houses = {str(k): v for k, v in st.session_state.houses.items()}
         st.session_state.starting_houses = copy.deepcopy(current_houses)
         st.session_state.starting_ownership = copy.deepcopy(st.session_state.ownership)
         
-        # 1. Initialize/Reset the Audit Log
+        # 1. Initialize/Reset the Audit Logs
         st.session_state.master_log = []
+        st.session_state.bank_ledger = [] # 🏦 Reset for the new game
     
         # 🟢 STEP 1: Sync Mode & Audit Setup
         for i, p in enumerate(st.session_state.players):
-            # [Your existing policy syncing code remains here...]
-            
-            # --- 🚀 AUDIT INJECTION (TURN -1) ---
+            # Record basic start state in Master Log
             st.session_state.master_log.append({
-                "Turn": -1,
-                "Player": p['name'],
-                "Position": p['pos'],
-                "Square": PROPERTIES[p['pos']]['name'],
-                "Cash": p['cash'],
+                "Turn": -1, "Player": p['name'], "Position": p['pos'],
+                "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
                 "Action": f"SETUP: Started with ${p['cash']}"
             })
     
-            # Record Parachuted Assets AND Buildings for the log
+            # Record Parachuted Assets for Logs AND Bank Ledger
             for prop_id, owner_name in st.session_state.ownership.items():
                 if owner_name == p['name']:
                     p_name = PROPERTIES[int(prop_id)]['name']
+                    prop_price = PROPERTIES[int(prop_id)].get('price', 0)
                     
-                    # A. Log the Property Deed
+                    # A. Master Log Entry
                     st.session_state.master_log.append({
-                        "Turn": -1,
-                        "Player": p['name'],
-                        "Position": p['pos'],
-                        "Square": PROPERTIES[p['pos']]['name'],
-                        "Cash": p['cash'],
+                        "Turn": -1, "Player": p['name'], "Position": p['pos'],
+                        "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
                         "Action": f"PARACHUTE ASSET: Began game owning {p_name}"
                     })
 
-                    # 🏠 B. Log the Houses/Hotels (Using the Sanitized Dictionary)
+                    # B. 🏦 BANKER'S AUDIT: Record property cost
+                    log_bank_transaction(p['name'], f"SETUP: Asset Deed ({p_name})", -prop_price)
+
+                    # 🏠 C. Houses/Hotels
                     h_count = current_houses.get(str(prop_id), 0)
                     if h_count > 0:
+                        h_price = PROPERTIES[int(prop_id)].get('house_price', 50)
+                        total_h_cost = h_count * h_price
                         label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
+                        
+                        # Master Log Entry
                         st.session_state.master_log.append({
-                            "Turn": -1,
-                            "Player": p['name'],
-                            "Position": p['pos'],
-                            "Square": PROPERTIES[p['pos']]['name'],
-                            "Cash": p['cash'],
+                            "Turn": -1, "Player": p['name'], "Position": p['pos'],
+                            "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
                             "Action": f"PARACHUTE SETUP: {p_name} starts with {label}"
                         })
+
+                        # 🏦 BANKER'S AUDIT: Record building costs
+                        log_bank_transaction(p['name'], f"SETUP: {label} on {p_name}", -total_h_cost)
         
-        # --- 📸 2. THE PLAYER SNAPSHOT ---
+        # Finalize Snapshot
         st.session_state.starting_players = copy.deepcopy(st.session_state.players)
-        
-        # 3. Launch
         st.session_state.phase = "LIVE"
         st.rerun()
         
