@@ -1700,15 +1700,16 @@ elif st.session_state.phase == "LIVE":
             display_df = df_bank[['Turn', 'Player', 'Reason', 'Amount']].copy()
             st.dataframe(display_df, use_container_width=True, hide_index=True)
     
-            # 5. 📥 The Download Button
-            csv_audit = display_df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="📥 Download Banker's Audit (CSV)",
-                data=csv_audit,
-                file_name=f"bank_audit_turn_{st.session_state.turn_count}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+            # 5. 📥 The Download Button (Now Multi-Tab Excel)
+            excel_data = get_full_log_excel()
+            if excel_data:
+                st.download_button(
+                    label="📥 Download Full Banker's Audit (Excel)",
+                    data=excel_data,
+                    file_name=f"bank_audit_turn_{st.session_state.turn_count}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
     
 
     # --- 📂 DATA WAREHOUSE ---
