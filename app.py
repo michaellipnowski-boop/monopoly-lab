@@ -1262,20 +1262,17 @@ elif st.session_state.phase == "SETUP":
         import copy 
     
         # --- 📸 0. THE BOARD BLUEPRINT ---
-        # We save the EXACT state of the board from the Customization tabs
-        # so we can put the deeds and houses back later if we restart.
         st.session_state.starting_ownership = copy.deepcopy(st.session_state.ownership)
         st.session_state.starting_houses = copy.deepcopy(st.session_state.houses)
         
-        # 1. Initialize/Reset the Audit Log for the fresh game
+        # 1. Initialize/Reset the Audit Log
         st.session_state.master_log = []
     
         # 🟢 STEP 1: Sync Mode & Audit Setup
         for i, p in enumerate(st.session_state.players):
-            # ... [Your existing policy syncing code goes here] ...
+            # [Your existing policy syncing code remains here...]
             
             # --- 🚀 AUDIT INJECTION (TURN -1) ---
-            # This records the starting cash/pos in the log
             st.session_state.master_log.append({
                 "Turn": -1,
                 "Player": p['name'],
@@ -1285,10 +1282,12 @@ elif st.session_state.phase == "SETUP":
                 "Action": f"SETUP: Started with ${p['cash']}"
             })
     
-            # Record Parachuted Assets for the log
+            # Record Parachuted Assets AND Buildings for the log
             for prop_id, owner_name in st.session_state.ownership.items():
                 if owner_name == p['name']:
                     p_name = PROPERTIES[int(prop_id)]['name']
+                    
+                    # A. Log the Property Deed
                     st.session_state.master_log.append({
                         "Turn": -1,
                         "Player": p['name'],
@@ -1297,11 +1296,10 @@ elif st.session_state.phase == "SETUP":
                         "Cash": p['cash'],
                         "Action": f"PARACHUTE ASSET: Began game owning {p_name}"
                     })
-                    
-                    # 🏠 REFINED: Record House/Hotel counts for the Audit Trail
+
+                    # 🏠 B. Log the Houses/Hotels (THE MISSING LINK)
                     h_count = st.session_state.houses.get(str(prop_id), 0)
                     if h_count > 0:
-                        # terminology check for student clarity
                         label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
                         st.session_state.master_log.append({
                             "Turn": -1,
@@ -1311,6 +1309,13 @@ elif st.session_state.phase == "SETUP":
                             "Cash": p['cash'],
                             "Action": f"PARACHUTE SETUP: {p_name} starts with {label}"
                         })
+        
+        # --- 📸 2. THE PLAYER SNAPSHOT ---
+        st.session_state.starting_players = copy.deepcopy(st.session_state.players)
+        
+        # 3. Launch
+        st.session_state.phase = "LIVE"
+        st.rerun()
         
         # --- 📸 2. THE PLAYER SNAPSHOT ---
         # This saves cash, position, and GOOJF cards as they are RIGHT NOW.
