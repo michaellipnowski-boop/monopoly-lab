@@ -1261,9 +1261,11 @@ elif st.session_state.phase == "SETUP":
     if st.button("Start Live Simulation"):
         import copy 
     
-        # --- 📸 0. THE BOARD BLUEPRINT ---
+        # --- 📸 0. THE BOARD BLUEPRINT & SANITIZER ---
+        # Force keys to strings to prevent "Missing House" log errors
+        current_houses = {str(k): v for k, v in st.session_state.houses.items()}
+        st.session_state.starting_houses = copy.deepcopy(current_houses)
         st.session_state.starting_ownership = copy.deepcopy(st.session_state.ownership)
-        st.session_state.starting_houses = copy.deepcopy(st.session_state.houses)
         
         # 1. Initialize/Reset the Audit Log
         st.session_state.master_log = []
@@ -1297,8 +1299,8 @@ elif st.session_state.phase == "SETUP":
                         "Action": f"PARACHUTE ASSET: Began game owning {p_name}"
                     })
 
-                    # 🏠 B. Log the Houses/Hotels (THE MISSING LINK)
-                    h_count = st.session_state.houses.get(str(prop_id), 0)
+                    # 🏠 B. Log the Houses/Hotels (Using the Sanitized Dictionary)
+                    h_count = current_houses.get(str(prop_id), 0)
                     if h_count > 0:
                         label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
                         st.session_state.master_log.append({
@@ -1317,14 +1319,6 @@ elif st.session_state.phase == "SETUP":
         st.session_state.phase = "LIVE"
         st.rerun()
         
-        # --- 📸 2. THE PLAYER SNAPSHOT ---
-        # This saves cash, position, and GOOJF cards as they are RIGHT NOW.
-        st.session_state.starting_players = copy.deepcopy(st.session_state.players)
-        
-        # 3. Launch
-        st.session_state.phase = "LIVE"
-        st.rerun()
-
 elif st.session_state.phase == "CHOICE":
     st.title("⚖️ Mode Selection")
     # --- DROP-IN BACK BUTTON ---
