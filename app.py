@@ -1681,25 +1681,7 @@ elif st.session_state.phase == "LIVE":
                                 st.markdown(f"**Turn {e['turn']}:** {e['event']}")
                         else:
                             st.caption("No significant events recorded.")
-        
-            # 2. UPDATED: The Full Master Log Download
-            # We check the master_log we built in run_turn instead of just the highlights
-            if st.session_state.get('master_log'):
-                df_master = pd.DataFrame(st.session_state.master_log)
-                # Sort by turn so the CSV reads like a book
-                df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors = 'coerce')
-                df_master = df_master.sort_values(by = ["Turn", "Player"], ascending = [True, True])
-                # We use utf-8-sig so Excel recognizes the icons/emojis correctly
-                csv_data = df_master.to_csv(index=False).encode('utf-8-sig')
-                
-                st.write("") # Spacer
-                st.download_button(
-                    label="📥 Download Full Simulation Log (CSV)",
-                    data=csv_data,
-                    file_name=f"monopoly_full_play_by_play_{st.session_state.turn_count}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
+    
             else:
                 st.info("No turns recorded in the master log yet.")
         else:
