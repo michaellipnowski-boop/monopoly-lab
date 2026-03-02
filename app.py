@@ -1704,8 +1704,8 @@ elif st.session_state.phase == "LIVE":
     if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
         reset_lab()
 
-     # --- SIDEBAR CONTROL CENTER ---
-    st.sidebar.divider()
+    # --- SIDEBAR CONTROL CENTER ---
+    # st.sidebar.divider()
 
     # 🟢 Call the integrity check here so it displays its metrics
     verify_sim_integrity()
