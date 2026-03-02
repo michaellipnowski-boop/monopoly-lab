@@ -204,7 +204,6 @@ def get_full_log_excel():
         # 2. Sort Logic: Ensures Turn -1 (Setup) is at the top for the Audit
         if "Turn" in df_master.columns:
             df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors='coerce')
-            # Sort by Turn (Ascending) then by Player Name
             df_master = df_master.sort_values(by=["Turn", "Player"], ascending=[True, True])
 
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -214,23 +213,29 @@ def get_full_log_excel():
             ws_master.set_column('F:F', 70)  # Make 'Action' column wide
             ws_master.freeze_panes(1, 0)     # Keep headers visible
 
-            # --- TAB B: THE INDIVIDUAL PLAYER TABS ---
-            # Loop through the players currently in the session
+            # --- TAB B: THE BANKER'S AUDIT (NEW INSERTION) ---
+            # This captures the money flow logic we just fixed
+            if 'bank_audit' in st.session_state:
+                df_audit = pd.DataFrame(st.session_state.bank_audit)
+                if not df_audit.empty:
+                    # Calculate running total for the Excel sheet
+                    df_audit['Net_Liquidity'] = df_audit['Amount'].cumsum()
+                    df_audit.to_excel(writer, sheet_name="Bankers_Audit", index=False)
+                    ws_audit = writer.sheets["Bankers_Audit"]
+                    # Column C is usually 'Reason' in bank_audit
+                    ws_audit.set_column('C:C', 50) 
+                    ws_audit.freeze_panes(1, 0)
+
+            # --- TAB C: THE INDIVIDUAL PLAYER TABS ---
             for i, p in enumerate(st.session_state.players):
                 p_name = str(p['name']).strip()
-                
-                # Filter the master dataframe for THIS player only
                 df_player = df_master[df_master['Player'].astype(str).str.strip() == p_name]
                 
                 if not df_player.empty:
-                    # Excel tab names: Max 31 chars, no special symbols
                     clean_name = "".join(filter(str.isalnum, p_name))[:25]
                     safe_sheet_name = f"{i}_{clean_name}"
                     
-                    # Write the player-specific data to its own tab
                     df_player.to_excel(writer, sheet_name=safe_sheet_name, index=False)
-                    
-                    # Apply formatting to the player tab
                     ws_p = writer.sheets[safe_sheet_name]
                     ws_p.set_column('F:F', 70)
                     ws_p.freeze_panes(1, 0)
@@ -239,7 +244,6 @@ def get_full_log_excel():
         return output.getvalue()
         
     except Exception as e:
-        # Prevent app-wide crash; log error to Streamlit terminal
         st.error(f"Excel Export Error: {e}")
         return None
 
@@ -269,12 +273,10 @@ def restart_game():
     import streamlit as st
 
     # 1. Restore Board and Game State FROM BLUEPRINT
-    # ❌ OLD: st.session_state.ownership = {str(idx): "Bank" for idx in range(40)}
-    # ✅ NEW: We pull the exact state from our Phase 1 Save Point
     st.session_state.ownership = copy.deepcopy(st.session_state.get('starting_ownership', {}))
     st.session_state.houses = copy.deepcopy(st.session_state.get('starting_houses', {}))
 
-    # 🏦 BANKER'S AUDIT: Wipe the old game data 
+    # 🏦 BANKER'S AUDIT: Full wipe to ensure no carryover from the previous game
     st.session_state.bank_audit = []
     
     st.session_state.last_move = "Game Restarted - Rules and custom setup restored."
@@ -294,74 +296,22 @@ def restart_game():
     st.session_state.ch_deck_idx = list(range(16))
     random.shuffle(st.session_state.ch_deck_idx)
 
-    # 3. Smart Player Reset: Restore Physical State, Keep Mental Strategy
+    # 3. Smart Player Reset
     if "players" in st.session_state and "starting_players" in st.session_state:
+        
+        # --- LOOP A: RESET PLAYER WALLETS & LOG INITIAL CASH ---
+        # This treats starting cash as "Money Entering the Game" (Positive)
         for i, p in enumerate(st.session_state.players):
             start_snap = st.session_state.starting_players[i]
             
-            # --- PHYSICAL RESET (Now includes explicit mapping from snapshot) ---
             p['cash'] = start_snap.get('cash', 1500)
             p['pos'] = start_snap.get('pos', 0)
             p['in_jail'] = start_snap.get('in_jail', False)
             p['jail_turns'] = start_snap.get('jail_turns', 0)
             p['goo_cards'] = copy.deepcopy(start_snap.get('goo_cards', []))
 
-            # --- 🚀 NEW: RE-LOG INITIAL STATE FOR AUDIT ---
-            # This ensures the new log starts with a record of the restored setup
-            st.session_state.master_log.append({
-                "Turn": -1,
-                "Player": p['name'],
-                "Position": p['pos'],
-                "Square": PROPERTIES[p['pos']]['name'],
-                "Cash": p['cash'],
-                "Action": f"RESTART: Game reset. Started with ${p['cash']}"
-            })
-
-            # 🏦 NEW: RE-LOG INITIAL CASH FOR AUDIT
-            log_bank_transaction(p['name'], "Initial Investment (Restart)", p['cash'])
-            
-            # Re-log Parachuted Assets and Houses so they appear in the new Excel Log
-            for prop_id, owner_name in st.session_state.ownership.items():
-                if owner_name == p['name']:
-                    p_info = PROPERTIES[int(prop_id)]
-                    p_name = PROPERTIES[int(prop_id)]['name']
-
-                    # 🏦 NEW: RE-LOG PROPERTY VALUE
-                    # We subtract the price because that value is already "Out of the Bank"
-                    price = p_info.get('price', 150)
-                    log_bank_transaction(p['name'], f"Parachute Asset: {p_name}", -price)
-
-                    # 🏦 NEW: RE-LOG PRE-BUILT HOUSES
-                    h_count = st.session_state.houses.get(str(prop_id), 0)
-                    if h_count > 0:
-                        h_cost = p_info.get('house_cost', 50)
-                        total_h_val = h_count * h_cost
-                        log_bank_transaction(p['name'], f"Parachute Houses: {p_name}", -total_h_val)
-                    
-                    # Log the Property
-                    st.session_state.master_log.append({
-                        "Turn": -1,
-                        "Player": p['name'],
-                        "Position": p['pos'],                      # Added
-                        "Square": PROPERTIES[p['pos']]['name'],    # Added
-                        "Cash": p['cash'],                          # Added
-                        "Action": f"PARACHUTE RESTORED: {p_name}"
-                    })
-                    
-                    # 🏠 LOG HOUSES & HOTELS (RESTART VERSION)
-                    h_count = st.session_state.houses.get(str(prop_id), 0)
-                    if h_count > 0:
-                        # Enhanced terminology for student clarity
-                        label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
-                        
-                        st.session_state.master_log.append({
-                            "Turn": -1,
-                            "Player": p['name'],
-                            "Position": p['pos'],
-                            "Square": PROPERTIES[p['pos']]['name'],
-                            "Cash": p['cash'],
-                            "Action": f"SETUP RESTORED: {p_name} has {label}"
-                        })
+            # 🏦 AUDIT: Initial Cash entering the economy
+            log_bank_transaction(p['name'], "Initial Cash (Restart)", p['cash'])
 
             # --- STATS WIPE ---
             p['stats'] = {
@@ -373,6 +323,40 @@ def restart_game():
                 "cash_history": [p['cash']], 
                 "critical_moments": []
             }
+
+            st.session_state.master_log.append({
+                "Turn": -1,
+                "Player": p['name'],
+                "Position": p['pos'],
+                "Square": PROPERTIES[p['pos']]['name'],
+                "Cash": p['cash'],
+                "Action": f"RESTART: Started with ${p['cash']}"
+            })
+
+        # --- LOOP B: ACCOUNT FOR PROPERTY SINKS (OUTSIDE PLAYER LOOP) ---
+        # This treats Parachuted Assets as "Money already spent/returned to Bank" (Negative)
+        for prop_id, owner_name in st.session_state.ownership.items():
+            if owner_name and owner_name != "Bank":
+                p_info = PROPERTIES[int(prop_id)]
+                p_name = p_info['name']
+                
+                # 🏦 AUDIT: Property value considered "Sunk" into the Bank
+                price = p_info.get('price', 150)
+                log_bank_transaction(owner_name, f"Parachute Asset: {p_name}", -price)
+                
+                # 🏦 AUDIT: Houses/Hotels considered "Sunk" into the Bank
+                h_count = st.session_state.houses.get(str(prop_id), 0)
+                if h_count > 0:
+                    h_cost = p_info.get('h_cost', 50)
+                    total_h_val = h_count * h_cost
+                    log_bank_transaction(owner_name, f"Parachute Houses: {p_name}", -total_h_val)
+                
+                # Add to Master Log for clarity
+                st.session_state.master_log.append({
+                    "Turn": -1,
+                    "Player": owner_name,
+                    "Action": f"SETUP RESTORED: {p_name} assigned (Value deducted from Game Liquidity)"
+                })
 
     # 4. FIX: Explicitly stay on the game board screen
     st.session_state.phase = "LIVE"
@@ -1659,11 +1643,11 @@ elif st.session_state.phase == "LIVE":
         st.header("🏦 Central Bank Audit")
         st.info("This ledger tracks the 'Money Supply'. Inflows (GO/Cards) increase liquidity; Outflows (Deeds/Houses/Taxes) sink capital into the bank.")
     
-        if not st.session_state.get('bank_ledger'):
+        if not st.session_state.get('bank_audit'):
             st.warning("No bank transactions recorded. Run a turn to see the audit!")
         else:
             # 1. Prepare Data
-            df_bank = pd.DataFrame(st.session_state.bank_ledger)
+            df_bank = pd.DataFrame(st.session_state.bank_audit)
             
             # Calculate Metrics
             total_injected = df_bank[df_bank['Amount'] > 0]['Amount'].sum()
@@ -1680,17 +1664,14 @@ elif st.session_state.phase == "LIVE":
     
             st.divider()
     
-            # 3. 📈 The Liquidity Curve (With Breakeven Line)
+            # 3. 📈 The Liquidity Curve
             st.subheader("Out of the Bank Over Time")
             
-            # Calculate the running total
+            # Calculate the running total for the graph
             df_bank['Running_Total'] = df_bank['Amount'].cumsum()
-            
-            # Add a reference line at $0 to show the 'Horizon'
             df_bank['Breakeven'] = 0 
             
-            # Plot both lines
-            # Running_Total (Red) vs Breakeven (Grey)
+            # Plot
             st.line_chart(
                 df_bank, 
                 x="Turn", 
@@ -1706,10 +1687,11 @@ elif st.session_state.phase == "LIVE":
             st.subheader("Transaction History")
             
             # Clean up the display table
-            display_df = df_bank[['Turn', 'Player', 'Action', 'Amount']].copy()
+            # Ensuring columns match our log_bank_transaction function ('Reason' vs 'Action')
+            display_df = df_bank[['Turn', 'Player', 'Reason', 'Amount']].copy()
             st.dataframe(display_df, use_container_width=True, hide_index=True)
     
-            # 5. 📥 The Download Button (Excel/CSV)
+            # 5. 📥 The Download Button
             csv_audit = display_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download Banker's Audit (CSV)",
