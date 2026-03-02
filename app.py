@@ -134,8 +134,8 @@ if "phase" not in st.session_state:
         "fp_initial": 0,
         "shuffle_mode": "Cyclic"
     }
-    # 🏦 NEW: BANKER'S AUDIT INITIALIZATION
-    st.session_state.bank_ledger = []
+    # 🏦 FIXED: Standardize the name to match Dashboard and Excel functions
+    st.session_state.bank_audit = []
 
 #--- SPREADSHEET FUNCTIONALITY ---
 def get_player_excel_data():
@@ -247,18 +247,21 @@ def get_full_log_excel():
         st.error(f"Excel Export Error: {e}")
         return None
 
-def log_bank_transaction(p_name, action, amount):
+def log_bank_transaction(p_name, reason, amount):
     """
     Standardizes how we record money entering/exiting the bank.
-    Positive amount = Bank is paying the player (Inflationary).
-    Negative amount = Player is paying the bank (Asset Sink).
+    Matches the Dashboard and Excel Export variables.
     """
-    st.session_state.bank_ledger.append({
-        "Turn": st.session_state.turn_count,
+    # Ensure the list exists (Safety Check)
+    if 'bank_audit' not in st.session_state:
+        st.session_state.bank_audit = []
+    
+    # Log to 'bank_audit' using 'Reason' (not Action)
+    st.session_state.bank_audit.append({
+        "Turn": st.session_state.get('turn_count', 0),
         "Player": p_name,
-        "Action": action,
-        "Amount": amount,
-        "Balance": sum(entry['Amount'] for entry in st.session_state.bank_ledger) + amount
+        "Reason": reason, 
+        "Amount": amount
     })
 
 #--- GAME RESET ---
@@ -1308,7 +1311,7 @@ elif st.session_state.phase == "SETUP":
 
     if st.button("Start Live Simulation"):
         import copy 
-    
+
         # --- 📸 0. THE BOARD BLUEPRINT & SANITIZER ---
         current_houses = {str(k): v for k, v in st.session_state.houses.items()}
         st.session_state.starting_houses = copy.deepcopy(current_houses)
@@ -1316,7 +1319,9 @@ elif st.session_state.phase == "SETUP":
         
         # 1. Initialize/Reset the Audit Logs
         st.session_state.master_log = []
-        st.session_state.bank_ledger = [] # 🏦 Reset for the new game
+        
+        # 🏦 RENAME THIS LINE:
+        st.session_state.bank_audit = [] # Changed from bank_ledger to bank_audit
     
         # 🟢 STEP 1: Sync Mode & Audit Setup
         for i, p in enumerate(st.session_state.players):
