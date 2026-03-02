@@ -1329,6 +1329,10 @@ elif st.session_state.phase == "SETUP":
     
         # 🟢 STEP 1: Sync Mode & Audit Setup
         for i, p in enumerate(st.session_state.players):
+            # --- THE MISSING LINK ---
+            # Record the initial cash injection so Net Liquidity is correct from Turn 0
+            log_bank_transaction(p['name'], "SETUP: Starting Cash Injection", p['cash'])
+
             # Record basic start state in Master Log
             st.session_state.master_log.append({
                 "Turn": -1, "Player": p['name'], "Position": p['pos'],
@@ -1336,9 +1340,10 @@ elif st.session_state.phase == "SETUP":
                 "Action": f"SETUP: Started with ${p['cash']}"
             })
     
-            # Record Parachuted Assets for Logs AND Bank Ledger
+            # Record Parachuted Assets (The "Sinks")
             for prop_id, owner_name in st.session_state.ownership.items():
                 if owner_name == p['name']:
+                    # ... (rest of your property/house logging logic remains the same)
                     p_name = PROPERTIES[int(prop_id)]['name']
                     prop_price = PROPERTIES[int(prop_id)].get('price', 0)
                     
@@ -1355,7 +1360,7 @@ elif st.session_state.phase == "SETUP":
                     # 🏠 C. Houses/Hotels
                     h_count = current_houses.get(str(prop_id), 0)
                     if h_count > 0:
-                        h_price = PROPERTIES[int(prop_id)].get('house_price', 50)
+                        h_price = PROPERTIES[int(prop_id)].get('h_cost', 50)
                         total_h_cost = h_count * h_price
                         label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
                         
