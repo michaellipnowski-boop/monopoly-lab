@@ -418,20 +418,27 @@ def verify_sim_integrity():
 
 # --- HELPER LOGIC ---
 def charge_player(p, amt):
-    # 1. Deduct the cash
+    # 1. Deduct the cash from the player's wallet
     p['cash'] -= amt
     
-    # 2. Feed the Jackpot if the rule is active
+    # 🏦 BANKER'S AUDIT & JACKPOT LOGIC
+    # ---------------------------------------------------------
     if st.session_state.rules["fp_jackpot"] and amt > 0:
+        # Rule Active: Money stays on the board in the 'Jackpot' pile.
         st.session_state.jackpot += amt
-        
-    # 🟢 3. Debt Alert (Internal logging for your Wealth Curve)
+        # 💡 We do NOT log_bank_transaction because the money 
+        # is still 'Out of the Bank' (circulating).
+    else:
+        # Standard: Money is paid directly back to the Bank.
+        # Check if the function exists before calling to be safe
+        if "log_bank_transaction" in globals() or "log_bank_transaction" in locals():
+            log_bank_transaction(p['name'], "Bank Payment (Tax/Fine)", -amt)
+    # ---------------------------------------------------------
+    
+    # 🟢 3. Debt Alert (Internal logging)
     if p['cash'] < 0:
-        # We don't stop the game here (run_turn handles the skip next time),
-        # but we ensure the 'critical moments' reflects the struggle.
         event_text = f"🚨 Went into DEBT (-${abs(p['cash'])}) after paying ${amt}"
         if 'critical_moments' in p['stats']:
-            # Avoid duplicate logs if they are already in debt
             if not any("DEBT" in m['event'] for m in p['stats']['critical_moments'][-1:]):
                 p['stats']['critical_moments'].append({
                     'turn': st.session_state.turn_count, 
@@ -609,6 +616,8 @@ def draw_card(p, deck_type):
         p['pos'] = int(card['pos']) 
         if p['pos'] < old_pos: 
             p['cash'] += 200
+            # 🏦 BANKER'S AUDIT: Record the salary from a card move
+            log_bank_transaction(p['name'], "Passed GO (via Card)", 200)
             
         p['stats']['visits'][str(p['pos'])] += 1
             
@@ -848,12 +857,19 @@ def run_turn(jail_action=None, silent=False):
         # 🟢 RECORD VISIT IMMEDIATELY
         p['stats']['visits'][str(p['pos'])] += 1
         
-        # 💰 ROBUST PASS-GO CHECK (Fixes the $15k leak)
+        # 💰 ROBUST PASS-GO CHECK
         if p['pos'] < old_pos or (old_pos > 30 and p['pos'] == 0):
+            # Determine the amount to pay out
             if st.session_state.rules["double_go"] and p['pos'] == 0:
-                p['cash'] += 400
+                salary = 400
             else:
-                p['cash'] += 200
+                salary = 200
+            
+            # Apply to player
+            p['cash'] += salary
+            
+            # 🏦 BANKER'S AUDIT: Record the new money entering the game
+            log_bank_transaction(p['name'], "Passed GO (Salary)", salary)
         
         sq = PROPERTIES.get(p['pos'])
         msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
@@ -903,6 +919,9 @@ def run_turn(jail_action=None, silent=False):
                 if should_buy and p['cash'] >= price:
                     st.session_state.ownership[str(p['pos'])] = p['name']
                     p['cash'] -= price
+
+                    # 🏦 BANKER'S AUDIT: Capital returns to the vault
+                    log_bank_transaction(p['name'], f"Bought {sq['name']}", -price)
                     
                     # Track stats
                     if "property_stats" in st.session_state:
@@ -973,6 +992,9 @@ def run_turn(jail_action=None, silent=False):
                             if card_should_buy and p['cash'] >= price:
                                 p['cash'] -= price
                                 st.session_state.ownership[str(p['pos'])] = p['name']
+
+                                # 🏦 BANKER'S AUDIT: Capital returns to the vault via card
+                                log_bank_transaction(p['name'], f"Bought {new_sq['name']} (Card)", -price)
                                 
                                 if "property_stats" in st.session_state:
                                     st.session_state.property_stats[str(p['pos'])]["expenses"] += price
@@ -1557,8 +1579,8 @@ elif st.session_state.phase == "LIVE":
     st.markdown("---")
     st.header("🔬 Stats Analytics")
     
-    t_visits, t_ends, t_fin, t_wealth = st.tabs([
-        "🚶 Total Visits", "🛑 Turn Ends", "💰 Rent Flow", "📈 Wealth Curve"
+    t_visits, t_ends, t_fin, t_wealth, t_bank = st.tabs([
+        "🚶 Visits", "🛑 Ends", "💰 Rent", "📈 Wealth", "🏦 Banker's Audit"
     ])
     
     with t_visits:
@@ -1605,7 +1627,71 @@ elif st.session_state.phase == "LIVE":
                 width="stretch", # Modern 2026 syntax
                 key=f"wealth_tab_excel_btn_{st.session_state.turn_count}" 
             )
-        
+
+    with t_bank:
+        st.header("🏦 Central Bank Audit")
+        st.info("This ledger tracks the 'Money Supply'. Inflows (GO/Cards) increase liquidity; Outflows (Deeds/Houses/Taxes) sink capital into the bank.")
+    
+        if not st.session_state.get('bank_ledger'):
+            st.warning("No bank transactions recorded. Run a turn to see the audit!")
+        else:
+            # 1. Prepare Data
+            df_bank = pd.DataFrame(st.session_state.bank_ledger)
+            
+            # Calculate Metrics
+            total_injected = df_bank[df_bank['Amount'] > 0]['Amount'].sum()
+            total_sunk = abs(df_bank[df_bank['Amount'] < 0]['Amount'].sum())
+            net_liquidity = total_injected - total_sunk
+            
+            # 2. Key Performance Indicators
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total Injected (GO/Cards)", f"${total_injected}")
+            m2.metric("Total Sunk (Assets/Taxes)", f"${total_sunk}")
+            # Color delta: Green if money is entering the game, Red if the bank is winning
+            m3.metric("Net Game Liquidity", f"${net_liquidity}", 
+                      delta="Inflationary" if net_liquidity > 0 else "Contractionary")
+    
+            st.divider()
+    
+            # 3. 📈 The Liquidity Curve (With Breakeven Line)
+            st.subheader("Out of the Bank Over Time")
+            
+            # Calculate the running total
+            df_bank['Running_Total'] = df_bank['Amount'].cumsum()
+            
+            # Add a reference line at $0 to show the 'Horizon'
+            df_bank['Breakeven'] = 0 
+            
+            # Plot both lines
+            # Running_Total (Red) vs Breakeven (Grey)
+            st.line_chart(
+                df_bank, 
+                x="Turn", 
+                y=["Running_Total", "Breakeven"], 
+                color=["#FF4B4B", "#808080"]
+            )
+            
+            st.caption("🔴 Red Line: Net Liquidity (Money in Game) | ⚪ Grey Line: Breakeven ($0 Horizon)")
+            
+            st.divider()
+
+            # 4. 📋 The Raw Audit Table
+            st.subheader("Transaction History")
+            
+            # Clean up the display table
+            display_df = df_bank[['Turn', 'Player', 'Action', 'Amount']].copy()
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+    
+            # 5. 📥 The Download Button (Excel/CSV)
+            csv_audit = display_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 Download Banker's Audit (CSV)",
+                data=csv_audit,
+                file_name=f"bank_audit_turn_{st.session_state.turn_count}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+    
 
     # --- 📂 DATA WAREHOUSE ---
     st.markdown("---")
