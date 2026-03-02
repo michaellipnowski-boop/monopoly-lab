@@ -1692,7 +1692,7 @@ elif st.session_state.phase == "LIVE":
     # These are now outside the tab, but still inside the LIVE phase
     st.sidebar.markdown("---")
     
-    if st.sidebar.button("🔄 RESTART GAME (Keep Policies)", use_container_width=True):
+    if st.sidebar.button("🔄 RESTART GAME (Keep Policies and Customizations)", use_container_width=True):
         if "starting_players" in st.session_state:
             restart_game()
         else:
