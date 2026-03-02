@@ -1698,14 +1698,14 @@ elif st.session_state.phase == "LIVE":
         else:
             st.sidebar.warning("No active simulation to restart!")
 
-    # --- SIDEBAR CONTROL CENTER ---
-    st.sidebar.divider()
-
-    # 1. 🟢 Call the integrity check here so it displays its metrics
-    verify_sim_integrity()
-
     st.sidebar.markdown("---")
 
     # 2. Your existing Reset button
     if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
         reset_lab()
+
+     # --- SIDEBAR CONTROL CENTER ---
+    st.sidebar.divider()
+
+    # 🟢 Call the integrity check here so it displays its metrics
+    verify_sim_integrity()
