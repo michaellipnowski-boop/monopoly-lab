@@ -273,6 +273,9 @@ def restart_game():
     # ✅ NEW: We pull the exact state from our Phase 1 Save Point
     st.session_state.ownership = copy.deepcopy(st.session_state.get('starting_ownership', {}))
     st.session_state.houses = copy.deepcopy(st.session_state.get('starting_houses', {}))
+
+    # 🏦 BANKER'S AUDIT: Wipe the old game data 
+    st.session_state.bank_audit = []
     
     st.session_state.last_move = "Game Restarted - Rules and custom setup restored."
     st.session_state.turn_count = 0
@@ -314,10 +317,26 @@ def restart_game():
                 "Action": f"RESTART: Game reset. Started with ${p['cash']}"
             })
 
+            # 🏦 NEW: RE-LOG INITIAL CASH FOR AUDIT
+            log_bank_transaction(p['name'], "Initial Investment (Restart)", p['cash'])
+            
             # Re-log Parachuted Assets and Houses so they appear in the new Excel Log
             for prop_id, owner_name in st.session_state.ownership.items():
                 if owner_name == p['name']:
+                    p_info = PROPERTIES[int(prop_id)]
                     p_name = PROPERTIES[int(prop_id)]['name']
+
+                    # 🏦 NEW: RE-LOG PROPERTY VALUE
+                    # We subtract the price because that value is already "Out of the Bank"
+                    price = p_info.get('price', 150)
+                    log_bank_transaction(p['name'], f"Parachute Asset: {p_name}", -price)
+
+                    # 🏦 NEW: RE-LOG PRE-BUILT HOUSES
+                    h_count = st.session_state.houses.get(str(prop_id), 0)
+                    if h_count > 0:
+                        h_cost = p_info.get('house_cost', 50)
+                        total_h_val = h_count * h_cost
+                        log_bank_transaction(p['name'], f"Parachute Houses: {p_name}", -total_h_val)
                     
                     # Log the Property
                     st.session_state.master_log.append({
@@ -570,17 +589,25 @@ def attempt_buy_houses(p):
 
                 # 3. DECISION
                 if (p['cash'] - h_price) >= effective_floor:
+                    # Deduct the cash
                     p['cash'] -= h_price
                     
-                    # 🟢 NEW: Get current count from helper and increment
+                    # 🟢 NEW: Get current count and define labels early for the Audit
                     current_h = get_house_count(target_idx)
-                    st.session_state.houses[str(target_idx)] = current_h + 1
-                    
                     new_count = current_h + 1
                     label = "Hotel" if new_count == 5 else f"House {new_count}"
+
+                    # 🏦 BANKER'S AUDIT: Capital is sunk into infrastructure
+                    log_bank_transaction(p['name'], f"Built {label} on {sq['name']}", -h_price)
                     
+                    # Update house count in state
+                    st.session_state.houses[str(target_idx)] = new_count
+                    
+                    # Update logs and stats
                     actions.append(f"{label} on {sq['name']}")
-                    if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
+                    if 'critical_moments' not in p['stats']: 
+                        p['stats']['critical_moments'] = []
+                    
                     p['stats']['critical_moments'].append({
                         'turn': st.session_state.turn_count, 
                         'event': f"🏗️ Built {label} on {sq['name']} (-${h_price})"
