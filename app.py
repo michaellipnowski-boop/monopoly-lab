@@ -193,7 +193,6 @@ def get_full_log_excel():
     import io
     import pandas as pd
     
-    # 1. Validation: Exit early if no log exists
     if not st.session_state.get('master_log'):
         return None
 
@@ -201,44 +200,49 @@ def get_full_log_excel():
         output = io.BytesIO()
         df_master = pd.DataFrame(st.session_state.master_log)
         
-        # 2. Sort Logic: Ensures Turn -1 (Setup) is at the top for the Audit
         if "Turn" in df_master.columns:
             df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors='coerce')
             df_master = df_master.sort_values(by=["Turn", "Player"], ascending=[True, True])
 
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            # --- TAB A: THE ORIGINAL UNMODIFIED LOG ---
-            df_master.to_excel(writer, sheet_name="Full_Play_by_Play", index=False)
-            ws_master = writer.sheets["Full_Play_by_Play"]
-            ws_master.set_column('F:F', 70)  # Make 'Action' column wide
-            ws_master.freeze_panes(1, 0)     # Keep headers visible
+            # --- TAB 1: THE MASTER PLAY-BY-PLAY ---
+            df_master.to_excel(writer, sheet_name="0_Full_Play_by_Play", index=False)
+            ws_master = writer.sheets["0_Full_Play_by_Play"]
+            ws_master.set_column('F:F', 70)
+            ws_master.freeze_panes(1, 0)
 
-            # --- TAB B: THE BANKER'S AUDIT (NEW INSERTION) ---
-            # This captures the money flow logic we just fixed
-            if 'bank_audit' in st.session_state:
+            # --- TAB 2: THE GLOBAL BANKER'S AUDIT ---
+            if 'bank_audit' in st.session_state and st.session_state.bank_audit:
                 df_audit = pd.DataFrame(st.session_state.bank_audit)
-                if not df_audit.empty:
-                    # Calculate running total for the Excel sheet
-                    df_audit['Net_Liquidity'] = df_audit['Amount'].cumsum()
-                    df_audit.to_excel(writer, sheet_name="Bankers_Audit", index=False)
-                    ws_audit = writer.sheets["Bankers_Audit"]
-                    # Column C is usually 'Reason' in bank_audit
-                    ws_audit.set_column('C:C', 50) 
-                    ws_audit.freeze_panes(1, 0)
+                df_audit['Net_Liquidity'] = df_audit['Amount'].cumsum()
+                df_audit.to_excel(writer, sheet_name="1_Bank_Master_Ledger", index=False)
+                
+                # --- NEW: CATEGORICAL SUB-TABS (The "Old Experience") ---
+                # 1. Injections (Positive Money: GO, Cards, etc.)
+                df_injections = df_audit[df_audit['Amount'] > 0]
+                if not df_injections.empty:
+                    df_injections.to_excel(writer, sheet_name="2_Injections_GO_Cards", index=False)
 
-            # --- TAB C: THE INDIVIDUAL PLAYER TABS ---
+                # 2. Sinks (Negative Money: Deeds, Houses, Hotels)
+                df_sinks = df_audit[df_audit['Amount'] < 0]
+                if not df_sinks.empty:
+                    df_sinks.to_excel(writer, sheet_name="3_Sinks_Assets_Taxes", index=False)
+
+                # Formatting for Audit Tabs
+                for s_name in ["1_Bank_Master_Ledger", "2_Injections_GO_Cards", "3_Sinks_Assets_Taxes"]:
+                    if s_name in writer.sheets:
+                        writer.sheets[s_name].set_column('C:C', 50)
+                        writer.sheets[s_name].freeze_panes(1, 0)
+
+            # --- TAB 3: INDIVIDUAL PLAYER TABS ---
             for i, p in enumerate(st.session_state.players):
                 p_name = str(p['name']).strip()
                 df_player = df_master[df_master['Player'].astype(str).str.strip() == p_name]
-                
                 if not df_player.empty:
                     clean_name = "".join(filter(str.isalnum, p_name))[:25]
-                    safe_sheet_name = f"{i}_{clean_name}"
-                    
+                    safe_sheet_name = f"P{i}_{clean_name}"
                     df_player.to_excel(writer, sheet_name=safe_sheet_name, index=False)
-                    ws_p = writer.sheets[safe_sheet_name]
-                    ws_p.set_column('F:F', 70)
-                    ws_p.freeze_panes(1, 0)
+                    writer.sheets[safe_sheet_name].set_column('F:F', 70)
 
         output.seek(0)
         return output.getvalue()
