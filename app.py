@@ -1686,45 +1686,45 @@ elif st.session_state.phase == "LIVE":
                             st.caption("No significant events.")
 
         # --- GENERATE DATA OBJECTS ---
-        # 🏦 For the Technical/Financial Button
-        audit_excel = get_full_log_excel(mode="audit")
+        # 📖 The Narrative/Story (What you wanted as the primary!)
+        narrative_excel = get_full_log_excel(mode="narrative")
         
-        # 📖 For the Narrative/Story Button
-        narrative_excel = get_full_log_excel(mode="narrative") 
+        # 🏦 The Technical/Financial Audit
+        audit_excel = get_full_log_excel(mode="audit") 
 
-        # 📥 Button 1: Financial Audit Focus
-        # (This is the banker's forensic ledger, kept separate from the story)
-        if audit_excel:
+        # 📥 Button 1: NARRATIVE HIGHLIGHTS (The "Story" Button)
+        # This is now the FIRST thing the user sees.
+        if narrative_excel:
             st.download_button(
-                label="📥 Download Detailed Player Financial Ledgers (Excel)",
-                data=audit_excel,
-                file_name=f"monopoly_financial_audit_T{st.session_state.turn_count}.xlsx",
+                label="📥 Download Player Narrative Highlights (Excel)",
+                data=narrative_excel,
+                file_name=f"monopoly_game_story_T{st.session_state.turn_count}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"audit_xl_btn_{st.session_state.turn_count}"
+                key=f"narrative_xl_btn_{st.session_state.turn_count}"
             )
 
         # 📜 Master Log Display
         with st.expander("📜 Full Play-by-Play Master Log", expanded=False):
             if st.session_state.get('master_log') and len(st.session_state.master_log) > 0:
                 df_master = pd.DataFrame(st.session_state.master_log)
-                # Ensure chronological order
                 df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors='coerce')
                 df_master = df_master.sort_values(by=["Turn", "Player"], ascending=[True, True])
         
                 st.dataframe(df_master, width="stretch", hide_index=True)
                 st.write("") 
                 
-                # 🟢 THE FIX: Button inside the Log is now the NARRATIVE (The Story)
-                if narrative_excel:
+                # 📥 Button 2: FINANCIAL AUDIT (The "Banker" Button)
+                # We tuck the technical math here for the "Forensic" users.
+                if audit_excel:
                     st.download_button(
-                        label="📥 Download Full Narrative Play-by-Play (Excel)",
-                        data=narrative_excel,
-                        file_name=f"monopoly_game_story_T{st.session_state.turn_count}.xlsx",
+                        label="📥 Download Full Banker's Financial Audit (Excel)",
+                        data=audit_excel,
+                        file_name=f"monopoly_financial_audit_T{st.session_state.turn_count}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"narrative_log_xl_{st.session_state.turn_count}"
+                        key=f"global_audit_xl_{st.session_state.turn_count}"
                     )
             else:
-                st.info("No turns have been recorded in the master log yet. Run some turns to see data!")
+                st.info("No turns have been recorded in the master log yet.")
         
         
         
