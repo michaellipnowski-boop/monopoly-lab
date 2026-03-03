@@ -141,8 +141,9 @@ if "phase" not in st.session_state:
 def get_full_log_excel():
     import io
     import pandas as pd
+    import streamlit as st
     
-    # 🟢 SAFE MODE: Changed check to bank_audit since that is our primary data source now
+    # 🟢 SAFE MODE: Ensure data exists before proceeding
     if not st.session_state.get('bank_audit'):
         return None
 
@@ -153,51 +154,78 @@ def get_full_log_excel():
             
             # --- 🎨 PROFESSIONAL FORMATTING ---
             money_fmt = workbook.add_format({'num_format': '$#,##0.00', 'align': 'center'})
-            # header_fmt is available if you want to apply it to headers later
             header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
+            moment_header_fmt = workbook.add_format({'bold': True, 'bg_color': '#DEEBF7', 'border': 1})
             
             # --- TAB 1: THE GLOBAL BANKER'S AUDIT ---
-            # (Promoted to the first tab, and the Play-by-Play block is removed)
             df_audit = pd.DataFrame(st.session_state.bank_audit)
             df_audit.to_excel(writer, sheet_name="1_Bank_Master_Ledger", index=False)
             ws_audit = writer.sheets["1_Bank_Master_Ledger"]
-            
-            # Column width/format for Money In and Running Total
             ws_audit.set_column('D:E', 25, money_fmt)
-            ws_audit.set_column('C:C', 40) # Wider Event/Reason column
+            ws_audit.set_column('C:C', 40) 
             
             # --- TAB 2 & 3: INJECTIONS & SINKS ---
             df_injections = df_audit[df_audit['Money In'] > 0].copy()
             if not df_injections.empty:
-                df_injections['Running Total Money In'] = df_injections['Money In'].cumsum()
+                df_injections['Running Total'] = df_injections['Money In'].cumsum()
                 df_injections.to_excel(writer, sheet_name="2_Injections_GO_Cards", index=False)
                 writer.sheets["2_Injections_GO_Cards"].set_column('D:E', 25, money_fmt)
 
             df_sinks = df_audit[df_audit['Money In'] < 0].copy()
             if not df_sinks.empty:
-                df_sinks['Running Total Money In'] = df_sinks['Money In'].cumsum()
+                df_sinks['Running Total'] = df_sinks['Money In'].cumsum()
                 df_sinks.to_excel(writer, sheet_name="3_Sinks_Assets_Taxes", index=False)
                 writer.sheets["3_Sinks_Assets_Taxes"].set_column('D:E', 25, money_fmt)
 
-            # --- TAB 4+: INDIVIDUAL PLAYER TABS ---
+            # --- TAB 4+: INDIVIDUAL PLAYER NARRATIVE & FINANCIAL AUDIT ---
             for i, p in enumerate(st.session_state.players):
-                p_audit = [e for e in st.session_state.bank_audit if e['Player'] == p['name']]
+                p_name = p['name']
                 
+                # 1. Financial Ledger Data
+                p_audit = [e for e in st.session_state.bank_audit if e['Player'] == p_name]
+                
+                # 2. Narrative Milestone Data (The "Critical Moments")
+                p_moments = p['stats'].get('critical_moments', [])
+                
+                clean_name = "".join(filter(str.isalnum, p_name))[:20]
+                safe_sheet_name = f"P{i}_{clean_name}_Audit"
+                
+                # Create the sheet
+                df_dummy = pd.DataFrame() 
+                df_dummy.to_excel(writer, sheet_name=safe_sheet_name)
+                ws_p = writer.sheets[safe_sheet_name]
+
+                # --- PART A: WRITE FINANCIAL LEDGER (Left Side) ---
                 if p_audit:
                     df_p = pd.DataFrame(p_audit)
-                    df_p['Running Total Money In'] = df_p['Money In'].cumsum()
-                    
+                    df_p['Running Total'] = df_p['Money In'].cumsum()
                     if 'Player' in df_p.columns:
                         df_p = df_p.drop(columns=['Player'])
                     
-                    clean_name = "".join(filter(str.isalnum, p['name']))[:20]
-                    safe_sheet_name = f"P{i}_{clean_name}_Audit"
-                    df_p.to_excel(writer, sheet_name=safe_sheet_name, index=False)
+                    # Write headers manually to apply style
+                    for col_num, value in enumerate(df_p.columns.values):
+                        ws_p.write(0, col_num, value, header_fmt)
                     
-                    ws_p = writer.sheets[safe_sheet_name]
-                    ws_p.set_column('B:B', 45) # Event column
-                    ws_p.set_column('C:D', 25, money_fmt) # Money In & Running Total columns
-                    ws_p.autofilter(0, 0, len(df_p), len(df_p.columns) - 1)
+                    df_p.to_excel(writer, sheet_name=safe_sheet_name, index=False, startrow=1, header=False)
+                
+                # --- PART B: WRITE CRITICAL MOMENTS (Right Side - Column G) ---
+                if p_moments:
+                    df_m = pd.DataFrame(p_moments)
+                    df_m.columns = ["Turn", "Game Milestone / Event Description"]
+                    
+                    # Start at Column G (Index 6)
+                    start_col = 6
+                    for col_num, value in enumerate(df_m.columns.values):
+                        ws_p.write(0, start_col + col_num, value, moment_header_fmt)
+                    
+                    df_m.to_excel(writer, sheet_name=safe_sheet_name, index=False, startrow=1, startcol=start_col, header=False)
+
+                # --- FORMATTING ---
+                ws_p.set_column('B:B', 35)      # Ledger: Event/Reason
+                ws_p.set_column('C:D', 20, money_fmt) # Ledger: Amounts
+                ws_p.set_column('E:F', 5)       # Buffer space
+                ws_p.set_column('G:G', 10)      # Moments: Turn
+                ws_p.set_column('H:H', 65)      # Moments: The Story
 
         output.seek(0)
         return output.getvalue()
