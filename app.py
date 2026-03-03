@@ -221,8 +221,10 @@ def log_bank_transaction(p_name, reason, amount):
     st.session_state.bank_audit.append({
         "Turn": st.session_state.get('turn_count', 0),
         "Player": p_name,
-        "Reason": reason, 
-        "Contribution to Net Liquidity": amount,
+        "Event": reason,        # 🟢 UI Compatible Key
+        "Reason": reason,       # Keep your original key
+        "Amount": amount,       # 🟢 UI Compatible Key
+        "Contribution to Net Liquidity": amount, # Keep your original key
         "Running Liquidity (Global)": new_global_total
     })
     
