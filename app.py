@@ -224,6 +224,31 @@ def log_bank_transaction(p_name, reason, amount):
         "Money In": amt,
         "Running Total Money In": new_total 
     })
+
+
+def log_parachuted_asset(p_name, property_name):
+    """Logs asset allocation to both the UI highlights and the Excel audit."""
+    turn = st.session_state.get('turn_count', 0)
+    event_text = f"🪂 PARACHUTED: Received {property_name} via setup/allocation."
+    
+    # 1. Update Critical Moments for the UI
+    for p in st.session_state.players:
+        if p['name'] == p_name:
+            if 'critical_moments' not in p['stats']: 
+                p['stats']['critical_moments'] = []
+            p['stats']['critical_moments'].append({
+                'turn': turn, 
+                'event': event_text
+            })
+            break
+    
+    # 2. Update Banker's Audit for the spreadsheet ($0 transaction)
+    log_bank_transaction(
+        p_name=p_name,
+        reason=f"Asset Allocation: {property_name} (Parachuted)",
+        amount=0  
+    )
+
     
 
 #--- GAME RESET ---
@@ -280,16 +305,19 @@ def restart_game():
                 amount=float(p['cash'])
             )
 
-            # STATS WIPE
+            # 🏦 STATS WIPE & INITIAL MOMENT
             p['stats'] = {
                 "visits": {str(idx): 0 for idx in range(40)},
                 "ends": {str(idx): 0 for idx in range(40)},
                 "rent_paid": 0, "rent_collected": 0, "times_in_jail": 0,
                 "cash_history": [p['cash']], 
-                "critical_moments": []
+                "critical_moments": [{
+                    "turn": 0, 
+                    "event": f"💰 RESTART: Started with ${p['cash']}"
+                }]
             }
 
-            # 📜 LOG: Changed to Turn 0 for Sidebar Sync
+            # 📜 LOG: Master Log Entry (Turn 0 for Sidebar Sync)
             st.session_state.master_log.append({
                 "Turn": 0,
                 "Player": p['name'],
@@ -299,38 +327,50 @@ def restart_game():
                 "Action": f"RESTART: Started with ${p['cash']}"
             })
 
-        # --- LOOP B: ACCOUNT FOR PROPERTY SINKS ---
+        # --- LOOP B: ACCOUNT FOR PROPERTY SINKS (RESTART SYNC) ---
         for prop_id, owner_name in st.session_state.ownership.items():
             if owner_name and owner_name != "Bank":
-                p_info = PROPERTIES[int(prop_id)]
+                pid_int = int(prop_id)
+                p_info = PROPERTIES[pid_int]
                 p_name = p_info['name']
                 price = p_info.get('price', 150)
                 
+                # 🔍 Find the player object to update their specific UI highlights
+                owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
+                
+                if owner_obj:
+                    # 🟢 SYNC: Push the property to the UI Highlight table
+                    owner_obj['stats']['critical_moments'].append({
+                        "turn": 0, 
+                        "event": f"🪂 RESTART: Restored ownership of {p_name}"
+                    })
+
                 # 🏦 AUDIT: Property values subtracted from Bank liquidity
-                log_bank_transaction(
-                    p_name=owner_name, 
-                    reason=f"Setup: {p_name} Value", 
-                    amount=-float(price)
-                )
+                log_bank_transaction(owner_name, f"Setup: {p_name} Value", -float(price))
                 
                 h_count = st.session_state.houses.get(str(prop_id), 0)
                 if h_count > 0:
                     h_cost = p_info.get('h_cost', 50)
                     total_h_val = h_count * h_cost
+                    label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
+                    
+                    if owner_obj:
+                        # 🟢 SYNC: Push the houses to the UI Highlight table
+                        owner_obj['stats']['critical_moments'].append({
+                            "turn": 0, 
+                            "event": f"🏗️ RESTART: {p_name} restored with {label}"
+                        })
+
                     # 🏦 AUDIT: House values subtracted from Bank liquidity
-                    log_bank_transaction(
-                        p_name=owner_name, 
-                        reason=f"Setup: {p_name} Improvements", 
-                        amount=-float(total_h_val)
-                    )
+                    log_bank_transaction(owner_name, f"Setup: {p_name} Improvements", -float(total_h_val))
                 
-                # 📜 LOG: Record the asset restoration as Turn 0
+                # 📜 LOG: Record the asset restoration in Master Log
                 st.session_state.master_log.append({
                     "Turn": 0,
                     "Player": owner_name,
-                    "Position": p_info.get('pos', int(prop_id)),
+                    "Position": p_info.get('pos', pid_int),
                     "Square": p_name,
-                    "Cash": "N/A", # Asset value is already deducted from cash above
+                    "Cash": "N/A", 
                     "Action": f"SETUP RESTORED: {p_name} assigned"
                 })
 
@@ -1147,16 +1187,22 @@ elif st.session_state.phase == "SETUP":
         st.session_state.bank_audit = [] 
         st.session_state.turn_count = 0 
     
-        # 🟢 STEP 1: Loop through players (CASH ONLY)
+        # 🟢 STEP 1: Loop through players (CASH & STATS INITIALIZATION)
         for p in st.session_state.players:
-            # Wealth Curve Protection
+            # Wealth Curve Protection: Start the history with the initial cash
             p['stats']['cash_history'] = [p['cash']]
-            p['stats']['critical_moments'] = []
+            
+            # 📜 NEW: Initialize Critical Moments with the Starting Capital
+            # This ensures the table is NEVER empty on Turn 0.
+            p['stats']['critical_moments'] = [{
+                'turn': 0, 
+                'event': f"💰 INITIAL: Received starting capital of ${p['cash']}"
+            }]
 
-            # 🏦 BANKER'S AUDIT: Starting Cash Injection
+            # 🏦 BANKER'S AUDIT: Starting Cash Injection for the Excel file
             log_bank_transaction(p['name'], "SETUP: Starting Cash Injection", p['cash'])
             
-            # Baseline Master Log Entry (Turn 0)
+            # 📜 Master Log: Baseline Entry for the turn-by-turn table
             st.session_state.master_log.append({
                 "Turn": 0, "Player": p['name'], "Position": p['pos'],
                 "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
@@ -1165,16 +1211,24 @@ elif st.session_state.phase == "SETUP":
 
         # 🏗️ STEP 1.5: Record Assets (Loop through properties only ONCE)
         for prop_id_str, owner_name in st.session_state.ownership.items():
-            # If it's not owned by the Bank, it's a Parachuted Asset
             if owner_name != "Bank":
                 pid = int(prop_id_str)
                 p_info = PROPERTIES[pid]
                 p_name = p_info['name']
                 
-                # Find the owner's current stats for the Master Log
+                # Find the owner's object to update their specific stats bucket
                 owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
-                p_pos = owner_obj['pos'] if owner_obj else 0
-                p_cash = owner_obj['cash'] if owner_obj else 0
+                if not owner_obj:
+                    continue
+
+                p_pos = owner_obj['pos']
+                p_cash = owner_obj['cash']
+
+                # 🟢 NEW: Record the Asset in the Player's Critical Moments UI
+                owner_obj['stats']['critical_moments'].append({
+                    'turn': 0, 
+                    'event': f"🪂 PARACHUTED: Started game owning {p_name}"
+                })
 
                 # 🏦 1. Banker's Audit: The Deed Sink
                 prop_price = p_info.get('price', 0)
@@ -1194,6 +1248,12 @@ elif st.session_state.phase == "SETUP":
                     total_h_cost = h_count * h_price
                     label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
                     
+                    # 🟢 NEW: Record Development in Critical Moments UI
+                    owner_obj['stats']['critical_moments'].append({
+                        'turn': 0, 
+                        'event': f"🏗️ SETUP: {p_name} pre-developed with {label}"
+                    })
+
                     # 🏦 Banker's Audit: Consolidated Entry
                     log_bank_transaction(owner_name, f"SETUP: {label} on {p_name}", -total_h_cost)
 
@@ -1623,7 +1683,8 @@ elif st.session_state.phase == "LIVE":
                         moments = p['stats'].get('critical_moments', [])
                         if moments:
                             for e in moments:
-                                st.markdown(f"**T{e['turn']}:** {e['event']}")
+                                # This adds a small "badge" look to the Turn number and keeps the events tidy
+                                st.markdown(f"**` T{e['turn']} `** {e['event']}")
                         else:
                             st.caption("No significant events.")
 
