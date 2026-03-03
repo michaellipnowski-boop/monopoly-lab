@@ -210,16 +210,19 @@ def log_bank_transaction(p_name, reason, amount):
     if 'bank_audit' not in st.session_state:
         st.session_state.bank_audit = []
     
-    # Calculate global liquidity once so it's stored in the data itself
-    prev_total = st.session_state.bank_audit[-1]['Running Total Money In'] if st.session_state.bank_audit else 0
-    new_total = prev_total + float(amount)
+    # Force whole numbers immediately
+    amt = int(amount)
+    
+    # Calculate global liquidity using integer math
+    prev_total = int(st.session_state.bank_audit[-1]['Running Total Money In']) if st.session_state.bank_audit else 0
+    new_total = prev_total + amt
 
     st.session_state.bank_audit.append({
         "Turn": st.session_state.get('turn_count', 0),
         "Player": p_name,
         "Event": reason,
-        "Money In": float(amount),
-        "Running Total Money In": new_total  # Stores the global state
+        "Money In": amt,
+        "Running Total Money In": new_total 
     })
     
 
@@ -478,8 +481,12 @@ def send_to_jail(p):
     p['stats']['visits'][str(10)] += 1
     p['stats']['times_in_jail'] += 1
 
+
 def attempt_buy_houses(p):
     actions = []
+    # Track builds this turn to group logs: {target_idx: {'count': X, 'cost': Y, 'name': Z}}
+    session_builds = {}
+    
     # 1. Identify all color groups
     color_groups = {}
     for idx, sq in PROPERTIES.items(): 
@@ -490,69 +497,56 @@ def attempt_buy_houses(p):
             color_groups[color].append(str(idx))
 
     for color, indices in color_groups.items():
-        # 1. Count ownership
-        player_owned_count = 0
-        for idx in indices:
-            owner_name = get_owner(idx)
-            if owner_name and str(owner_name).strip().lower() == str(p['name']).strip().lower():
-                player_owned_count += 1
-        
-        # 2. Monopoly Check
+        # ownership check...
+        player_owned_count = sum(1 for idx in indices if get_owner(idx) == p['name'])
         total_in_set = len(indices)
         is_monopoly = (player_owned_count == total_in_set) and (total_in_set > 0)
         
         if is_monopoly:
-            # Monopoly Trophy (Once per color)
-            monopoly_key = f"monopoly_achieved_{color}"
-            if not p['stats'].get(monopoly_key):
-                p['stats'][monopoly_key] = True
-                if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
-                p['stats']['critical_moments'].append({
-                    'turn': st.session_state.turn_count, 
-                    'event': f"🏆 MONOPOLY: {color} set completed!"
-                })
-
             # Building Policy Check
             if p['policy'].get('build_house') == "Never":
                 continue 
 
             while True:
-                # 🟢 SAFE SYNC: Ensure we get the latest counts (AI + Manual UI)
                 counts = [get_house_count(idx) for idx in indices]
-                
                 if all(c >= 5 for c in counts): 
                     break 
                 
-                # Identify property with fewest houses to build evenly
                 target_idx = indices[counts.index(min(counts))]
                 sq = PROPERTIES[int(target_idx)]
-                h_price = sq.get('h_cost', 50) 
+                h_price = int(sq.get('h_cost', 50)) # Ensure integer
                 
                 effective_floor = get_effective_reserve(p, 'build_house')
 
-                # Decision Logic
                 if (p['cash'] - h_price) >= effective_floor:
                     p['cash'] -= h_price
-                    
                     current_h = get_house_count(target_idx)
                     new_count = current_h + 1
-                    label = "Hotel" if new_count == 5 else f"House {new_count}"
-
-                    # 🏦 BANKER'S AUDIT
-                    log_bank_transaction(p['name'], f"Built {label} on {sq['name']}", -h_price)
                     
-                    # Update house count in state (Force String Key)
+                    # Update internal state immediately
                     st.session_state.houses[str(target_idx)] = new_count
                     
-                    # Update logs
+                    # --- 🏗️ GROUPING LOGIC ---
+                    if target_idx not in session_builds:
+                        session_builds[target_idx] = {'units': 0, 'total_cost': 0, 'name': sq['name']}
+                    
+                    session_builds[target_idx]['units'] += 1
+                    session_builds[target_idx]['total_cost'] += h_price
+                    # -------------------------
+
+                    label = "Hotel" if new_count == 5 else f"House {new_count}"
                     actions.append(f"{label} on {sq['name']}")
-                    if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
-                    p['stats']['critical_moments'].append({
-                        'turn': st.session_state.turn_count, 
-                        'event': f"🏗️ Built {label} on {sq['name']} (-${h_price})"
-                    })
                 else:
                     break
+
+    # 🏦 BANKER'S AUDIT: Fire one log per property built upon
+    for t_idx, data in session_builds.items():
+        unit_type = "Improvement(s)" if data['units'] > 1 else "House/Hotel"
+        log_bank_transaction(
+            p_name=p['name'], 
+            reason=f"Built {data['units']} {unit_type} on {data['name']}", 
+            amount=-int(data['total_cost'])
+        )
 
     if actions:
         return "🏗️ Built: " + ", ".join(actions) + "."
@@ -570,20 +564,19 @@ def draw_card(p, deck_type):
         name = "Community Chest"
     
     msg = f"drew {name}: '{card['text']}'"
-    kept_card = False  # Initialize the flag
+    kept_card = False  
     
     if card['effect'] == "goo_card":
         p['goo_cards'].append({"deck": deck_type, "index": idx})
-        kept_card = True  # Set flag so it's not added back to deck list
+        kept_card = True  
     
     elif card['effect'] == "move":
-        # LANDMINE FIX: Force integer to protect % 40 math later
         old_pos = p['pos']
         p['pos'] = int(card['pos']) 
         if p['pos'] < old_pos: 
             p['cash'] += 200
-            # 🏦 BANKER'S AUDIT: Record the salary from a card move
-            log_bank_transaction(p_name=p['name'], reason="Passed GO (Card Move)", amount=200.0)
+            # 🟢 Cleaned: Removed 200.0
+            log_bank_transaction(p_name=p['name'], reason="Passed GO (Card Move)", amount=200)
             
         p['stats']['visits'][str(p['pos'])] += 1
             
@@ -592,21 +585,19 @@ def draw_card(p, deck_type):
         
     elif card['effect'] == "move_relative":
         p['pos'] = (p['pos'] + card['amt']) % 40
-        # --- ADD THIS LINE ---
         p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "cash":
-        amount = float(card['amt'])
+        # 🟢 Cleaned: Use int() instead of float()
+        amount = int(card['amt'])
         if amount < 0: 
-            # 💸 THE SINK: Money leaving the player to the Bank
             charge_player(p, abs(amount))
             log_bank_transaction(
                 p_name=p['name'], 
                 reason=f"Card: {card['text'][:30]}...", 
-                amount=amount # amount is already negative here
+                amount=amount 
             )
         else: 
-            # 💰 THE INJECTION: Money coming from the Bank to the player
             p['cash'] += amount
             log_bank_transaction(
                 p_name=p['name'], 
@@ -615,11 +606,11 @@ def draw_card(p, deck_type):
             )
             
     elif card['effect'] == "birthday":
+        gift = int(card['amt'])
         for op in st.session_state.players:
-            # Normalized comparison to ensure no one skips paying the birthday gift!
             if str(op['name']).strip().lower() != str(p['name']).strip().lower():
-                op['cash'] -= card['amt']
-                p['cash'] += card['amt']
+                op['cash'] -= gift
+                p['cash'] += gift
                 
     elif card['effect'] == "repairs":
         cost = 0
@@ -627,21 +618,20 @@ def draw_card(p, deck_type):
             owner = st.session_state.ownership.get(str(pid))
             if owner and str(owner).strip().lower() == str(p['name']).strip().lower():
                 if h_count == 5: # Hotel
-                    cost += card['H']
+                    cost += int(card['H'])
                 else: # Houses
-                    cost += (h_count * card['h'])
+                    cost += (h_count * int(card['h']))
         
-        # 💸 THE SINK: Charge the player and log it for the Bank
         charge_player(p, cost)
         
         if cost > 0:
+            # 🟢 Cleaned: Removed -float(cost)
             log_bank_transaction(
                 p_name=p['name'], 
                 reason="Maintenance: Property Repairs (Card)", 
-                amount=-float(cost)
+                amount=-cost
             )
             
-        # Log to stats (Safe Mode: preserving existing ROI logic)
         if "property_stats" in st.session_state and cost > 0:
             p['stats']['rent_paid'] += cost
         
@@ -651,7 +641,7 @@ def draw_card(p, deck_type):
         p['pos'] = int(min([r for r in targets if r > p['pos']] or [5]))
         if p['pos'] < old_pos: 
             p['cash'] += 200
-            log_bank_transaction(p_name=p['name'], reason="Passed GO (Nearest RR Card)", amount=200.0)
+            log_bank_transaction(p_name=p['name'], reason="Passed GO (Nearest RR Card)", amount=200)
         p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "move_nearest_util":
@@ -660,11 +650,10 @@ def draw_card(p, deck_type):
         p['pos'] = int(min([u for u in targets if u > p['pos']] or [12]))
         if p['pos'] < old_pos: 
             p['cash'] += 200
-            log_bank_transaction(p_name=p['name'], reason="Passed GO (Nearest Util Card)", amount=200.0)
+            log_bank_transaction(p_name=p['name'], reason="Passed GO (Nearest Util Card)", amount=200)
         p['stats']['visits'][str(p['pos'])] += 1
 
     # --- FINAL DECK MANAGEMENT ---
-    # Only put the card back if the player didn't KEEP it (GOOJF)
     if not kept_card:
         if st.session_state.rules["shuffle_mode"] == "True Random":
             if deck_type == "chance": 
@@ -679,39 +668,30 @@ def draw_card(p, deck_type):
             else: 
                 st.session_state.ch_deck_idx.append(idx)
                 
-    # --- POST-MOVE EVALUATION (The Policy Leak Fix) ---
-    # If the card moved the player, we must check if they want to buy the new property
+    # --- POST-MOVE EVALUATION ---
     move_effects = ["move", "move_relative", "move_nearest_rr", "move_nearest_util"]
     if card['effect'] in move_effects:
         sq = PROPERTIES[p['pos']]
         owner = st.session_state.ownership.get(str(p['pos']), "Bank")
         
         if owner == "Bank" and sq['type'] in ["Street", "Railroad", "Utility"]:
-            price = sq.get('price', 150)
+            price = int(sq.get('price', 150)) # Force int
             pol = p['policy'].get('buy_prop', "Always")
             
             should_buy_card = False
-            # 🟢 Apply the exact same logic as your dice rolls
-            if pol == "Never":
-                msg += f" 🚫 (Policy: Never Buy Properties - skipped {sq['name']} after card move)."
-            elif pol == "Always":
+            if pol == "Always":
                 should_buy_card = True
             elif pol == "Keep Reserve":
                 floor = get_effective_reserve(p, 'buy_prop')
                 if p['cash'] - price >= floor:
                     should_buy_card = True
-                else:
-                    msg += f" 💰 (Policy: Reserve - skipped {sq['name']} after card move)."
             
-            # 🟢 EXECUTE PURCHASE
             if should_buy_card and p['cash'] >= price:
                 st.session_state.ownership[str(p['pos'])] = p['name']
                 p['cash'] -= price
-
-                # 🏦 ADD THIS LINE: Banker's Audit for Card Purchase
-                log_bank_transaction(p_name=p['name'], reason=f"Asset Purchase: {sq['name']} (Card)", amount=-float(price))
+                # 🟢 Cleaned: Removed -float(price)
+                log_bank_transaction(p_name=p['name'], reason=f"Asset Purchase: {sq['name']} (Card)", amount=-price)
                 
-                # Log to stats
                 if "property_stats" in st.session_state:
                     st.session_state.property_stats[str(p['pos'])]["expenses"] += price
                 
@@ -776,7 +756,7 @@ def run_turn(jail_action=None, silent=False):
         
         if jail_action == "Pay $50":
             charge_player(p, 50)
-            log_bank_transaction(p_name=p['name'], reason="Jail Exit Fee", amount=-50.0)
+            log_bank_transaction(p_name=p['name'], reason="Jail Exit Fee", amount=-50)
             p['in_jail'] = False
         elif jail_action == "Use Card":
             card = p['goo_cards'].pop(0)
@@ -788,7 +768,7 @@ def run_turn(jail_action=None, silent=False):
                 p['in_jail'] = False # Escaped! We allow the code to flow to movement below.
             elif p['jail_turns'] >= 2:
                 charge_player(p, 50)
-                log_bank_transaction(p_name=p['name'], reason="Jail Exit Fee", amount=-50.0)
+                log_bank_transaction(p_name=p['name'], reason="Jail Exit Fee", amount=-50)
                 p['in_jail'] = False
             else: # Failed to roll doubles
                 p['jail_turns'] += 1
@@ -853,14 +833,14 @@ def run_turn(jail_action=None, silent=False):
                     log_bank_transaction(
                         p_name=p['name'], 
                         reason=f"Asset Purchase: {sq['name']}", 
-                        amount=-float(price)
+                        amount=-price
                     )
                     msg += f"🏠 Bought {sq['name']} (-${price})."
 
     elif sq['type'] == "Tax":
         tax = sq.get('cost', 100)
         charge_player(p, tax)
-        log_bank_transaction(p_name=p['name'], reason=f"Tax: {sq['name']}", amount=-float(tax))
+        log_bank_transaction(p_name=p['name'], reason=f"Tax: {sq['name']}", amount=-tax)
         msg += f"Paid {sq['name']} (${tax})."
 
     elif sq['type'] == "Action":
@@ -874,11 +854,13 @@ def run_turn(jail_action=None, silent=False):
 
     elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
         if st.session_state.jackpot > 0:
-            p['cash'] += st.session_state.jackpot
-            log_bank_transaction(p_name=p['name'], reason="Economic Stimulus: Free Parking Jackpot", amount=float(st.session_state.jackpot))
-            msg += f"Collected Jackpot of ${st.session_state.jackpot}!"
+            amt = int(st.session_state.jackpot) # Force int
+            p['cash'] += amt
+            # 🟢 Cleaned: Removed float()
+            log_bank_transaction(p_name=p['name'], reason="Economic Stimulus: Free Parking Jackpot", amount=amt)
+            msg += f"Collected Jackpot of ${amt}!"
             st.session_state.jackpot = st.session_state.rules["fp_initial"]
-
+        
     # --- 5. WRAP UP ---
     house_msg = attempt_buy_houses(p) # Also logs its own Banker Audit transactions
     if house_msg: msg += f" {house_msg}"
