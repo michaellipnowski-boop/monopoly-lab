@@ -1685,20 +1685,22 @@ elif st.session_state.phase == "LIVE":
                         else:
                             st.caption("No significant events.")
 
-        # 📖 Generate Narrative Data (The Story/Milestones)
-        narrative_excel = get_full_log_excel(mode="narrative")
+        # --- GENERATE DATA OBJECTS ---
+        # 🏦 For the Technical/Financial Button
+        audit_excel = get_full_log_excel(mode="audit")
         
-        # 🏦 Generate Audit Data (The Financial Ledger)
-        audit_excel = get_full_log_excel(mode="audit") 
+        # 📖 For the Narrative/Story Button
+        narrative_excel = get_full_log_excel(mode="narrative") 
 
-        # 📥 Button 1: Narrative Focus (Milestones & Critical Moments)
-        if narrative_excel:
+        # 📥 Button 1: Financial Audit Focus
+        # (This is the banker's forensic ledger, kept separate from the story)
+        if audit_excel:
             st.download_button(
-                label="📥 Download Player Narrative Highlights (Excel)",
-                data=narrative_excel,
-                file_name=f"monopoly_narrative_T{st.session_state.turn_count}.xlsx",
+                label="📥 Download Detailed Player Financial Ledgers (Excel)",
+                data=audit_excel,
+                file_name=f"monopoly_financial_audit_T{st.session_state.turn_count}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"narrative_xl_btn_{st.session_state.turn_count}"
+                key=f"audit_xl_btn_{st.session_state.turn_count}"
             )
 
         # 📜 Master Log Display
@@ -1712,14 +1714,14 @@ elif st.session_state.phase == "LIVE":
                 st.dataframe(df_master, width="stretch", hide_index=True)
                 st.write("") 
                 
-                # 📥 Button 2: Financial/Audit Focus
-                if audit_excel:
+                # 🟢 THE FIX: Button inside the Log is now the NARRATIVE (The Story)
+                if narrative_excel:
                     st.download_button(
-                        label="📥 Download Full Banker Audit (Excel)",
-                        data=audit_excel,
-                        file_name=f"monopoly_bank_audit_T{st.session_state.turn_count}.xlsx",
+                        label="📥 Download Full Narrative Play-by-Play (Excel)",
+                        data=narrative_excel,
+                        file_name=f"monopoly_game_story_T{st.session_state.turn_count}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"global_audit_xl_{st.session_state.turn_count}"
+                        key=f"narrative_log_xl_{st.session_state.turn_count}"
                     )
             else:
                 st.info("No turns have been recorded in the master log yet. Run some turns to see data!")
