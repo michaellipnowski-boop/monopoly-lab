@@ -138,13 +138,13 @@ if "phase" not in st.session_state:
     st.session_state.bank_audit = []
 
 #--- SPREADSHEET FUNCTIONALITY ---
-def get_full_log_excel():
+def get_full_log_excel(mode="audit"):
     import io
     import pandas as pd
     import streamlit as st
     
-    # 🟢 SAFE MODE: Ensure data exists before proceeding
-    if not st.session_state.get('bank_audit'):
+    # 🟢 SAFE MODE: Ensure data exists
+    if not st.session_state.get('bank_audit') and mode == "audit":
         return None
 
     try:
@@ -152,80 +152,49 @@ def get_full_log_excel():
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             workbook = writer.book
             
-            # --- 🎨 PROFESSIONAL FORMATTING ---
-            money_fmt = workbook.add_format({'num_format': '$#,##0.00', 'align': 'center'})
-            header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
-            moment_header_fmt = workbook.add_format({'bold': True, 'bg_color': '#DEEBF7', 'border': 1})
-            
-            # --- TAB 1: THE GLOBAL BANKER'S AUDIT ---
-            df_audit = pd.DataFrame(st.session_state.bank_audit)
-            df_audit.to_excel(writer, sheet_name="1_Bank_Master_Ledger", index=False)
-            ws_audit = writer.sheets["1_Bank_Master_Ledger"]
-            ws_audit.set_column('D:E', 25, money_fmt)
-            ws_audit.set_column('C:C', 40) 
-            
-            # --- TAB 2 & 3: INJECTIONS & SINKS ---
-            df_injections = df_audit[df_audit['Money In'] > 0].copy()
-            if not df_injections.empty:
-                df_injections['Running Total'] = df_injections['Money In'].cumsum()
-                df_injections.to_excel(writer, sheet_name="2_Injections_GO_Cards", index=False)
-                writer.sheets["2_Injections_GO_Cards"].set_column('D:E', 25, money_fmt)
+            if mode == "audit":
+                # --- 🏦 TYPE 1: THE FORENSIC AUDIT (Financial Focus) ---
+                money_fmt = workbook.add_format({'num_format': '$#,##0.00', 'align': 'center'})
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
+                
+                # Tab 1: Global Ledger
+                df_audit = pd.DataFrame(st.session_state.bank_audit)
+                df_audit.to_excel(writer, sheet_name="1_Bank_Master_Ledger", index=False)
+                ws_audit = writer.sheets["1_Bank_Master_Ledger"]
+                ws_audit.set_column('D:E', 25, money_fmt)
+                
+                # Tab 2+: Player Ledgers
+                for i, p in enumerate(st.session_state.players):
+                    p_audit = [e for e in st.session_state.bank_audit if e['Player'] == p['name']]
+                    if p_audit:
+                        df_p = pd.DataFrame(p_audit)
+                        df_p['Running Total'] = df_p['Money In'].cumsum()
+                        clean_name = "".join(filter(str.isalnum, p['name']))[:20]
+                        df_p.drop(columns=['Player']).to_excel(writer, sheet_name=f"P{i}_{clean_name}_Ledger", index=False)
+                        writer.sheets[f"P{i}_{clean_name}_Ledger"].set_column('C:D', 20, money_fmt)
 
-            df_sinks = df_audit[df_audit['Money In'] < 0].copy()
-            if not df_sinks.empty:
-                df_sinks['Running Total'] = df_sinks['Money In'].cumsum()
-                df_sinks.to_excel(writer, sheet_name="3_Sinks_Assets_Taxes", index=False)
-                writer.sheets["3_Sinks_Assets_Taxes"].set_column('D:E', 25, money_fmt)
-
-            # --- TAB 4+: INDIVIDUAL PLAYER NARRATIVE & FINANCIAL AUDIT ---
-            for i, p in enumerate(st.session_state.players):
-                p_name = p['name']
+            elif mode == "narrative":
+                # --- 📖 TYPE 2: THE NARRATIVE LOG (Story Focus) ---
+                story_header_fmt = workbook.add_format({'bold': True, 'bg_color': '#DEEBF7', 'border': 1})
                 
-                # 1. Financial Ledger Data
-                p_audit = [e for e in st.session_state.bank_audit if e['Player'] == p_name]
-                
-                # 2. Narrative Milestone Data (The "Critical Moments")
-                p_moments = p['stats'].get('critical_moments', [])
-                
-                clean_name = "".join(filter(str.isalnum, p_name))[:20]
-                safe_sheet_name = f"P{i}_{clean_name}_Audit"
-                
-                # Create the sheet
-                df_dummy = pd.DataFrame() 
-                df_dummy.to_excel(writer, sheet_name=safe_sheet_name)
-                ws_p = writer.sheets[safe_sheet_name]
-
-                # --- PART A: WRITE FINANCIAL LEDGER (Left Side) ---
-                if p_audit:
-                    df_p = pd.DataFrame(p_audit)
-                    df_p['Running Total'] = df_p['Money In'].cumsum()
-                    if 'Player' in df_p.columns:
-                        df_p = df_p.drop(columns=['Player'])
-                    
-                    # Write headers manually to apply style
-                    for col_num, value in enumerate(df_p.columns.values):
-                        ws_p.write(0, col_num, value, header_fmt)
-                    
-                    df_p.to_excel(writer, sheet_name=safe_sheet_name, index=False, startrow=1, header=False)
-                
-                # --- PART B: WRITE CRITICAL MOMENTS (Right Side - Column G) ---
-                if p_moments:
-                    df_m = pd.DataFrame(p_moments)
-                    df_m.columns = ["Turn", "Game Milestone / Event Description"]
-                    
-                    # Start at Column G (Index 6)
-                    start_col = 6
-                    for col_num, value in enumerate(df_m.columns.values):
-                        ws_p.write(0, start_col + col_num, value, moment_header_fmt)
-                    
-                    df_m.to_excel(writer, sheet_name=safe_sheet_name, index=False, startrow=1, startcol=start_col, header=False)
-
-                # --- FORMATTING ---
-                ws_p.set_column('B:B', 35)      # Ledger: Event/Reason
-                ws_p.set_column('C:D', 20, money_fmt) # Ledger: Amounts
-                ws_p.set_column('E:F', 5)       # Buffer space
-                ws_p.set_column('G:G', 10)      # Moments: Turn
-                ws_p.set_column('H:H', 65)      # Moments: The Story
+                for i, p in enumerate(st.session_state.players):
+                    p_moments = p['stats'].get('critical_moments', [])
+                    if p_moments:
+                        df_m = pd.DataFrame(p_moments)
+                        df_m.columns = ["Turn", "Game Milestone / Event Description"]
+                        
+                        clean_name = "".join(filter(str.isalnum, p['name']))[:20]
+                        sheet_name = f"P{i}_{clean_name}_Story"
+                        
+                        # Write with formatting
+                        df_m.to_excel(writer, sheet_name=sheet_name, index=False)
+                        ws_m = writer.sheets[sheet_name]
+                        ws_m.set_column('A:A', 10) # Turn
+                        ws_m.set_column('B:B', 80) # Story description
+                        
+                        # Apply header style
+                        for col_num, value in enumerate(df_m.columns.values):
+                            ws_m.write(0, col_num, value, story_header_fmt)
 
         output.seek(0)
         return output.getvalue()
@@ -1592,9 +1561,8 @@ elif st.session_state.phase == "LIVE":
             
             st.divider()
             
-            # 3. Add the ACTUAL Excel Export Button
-            # 🟢 Use the 2026 Audit super-function
-            excel_data = get_full_log_excel() 
+            # 🟢 Use the 2026 Audit super-function (Financial Mode)
+            excel_data = get_full_log_excel(mode="audit") 
             
             if excel_data:
                 st.download_button(
@@ -1682,7 +1650,8 @@ elif st.session_state.phase == "LIVE":
             # 4. 📥 Download Button
             st.divider()
             try:
-                excel_data = get_full_log_excel()
+                # 🟢 Fetch the financial audit only
+                excel_data = get_full_log_excel(mode="audit")
                 if excel_data:
                     st.download_button(
                         label="📥 Download Full Banker's Audit (Excel)",
@@ -1716,18 +1685,20 @@ elif st.session_state.phase == "LIVE":
                         else:
                             st.caption("No significant events.")
 
-        # Generate the Excel data once to be used by both buttons
-        # This function now includes the "Individual Footprint" tabs automatically
-        full_excel_data = get_full_log_excel() 
+        # 📖 Generate Narrative Data (The Story/Milestones)
+        narrative_excel = get_full_log_excel(mode="narrative")
+        
+        # 🏦 Generate Audit Data (The Financial Ledger)
+        audit_excel = get_full_log_excel(mode="audit") 
 
-        # 📥 Button 1: Individual Audit Focus
-        if full_excel_data:
+        # 📥 Button 1: Narrative Focus (Milestones & Critical Moments)
+        if narrative_excel:
             st.download_button(
-                label="📥 Download Detailed Player Spreadsheets (Excel)",
-                data=full_excel_data,
-                file_name=f"monopoly_lab_audit_T{st.session_state.turn_count}.xlsx",
+                label="📥 Download Player Narrative Highlights (Excel)",
+                data=narrative_excel,
+                file_name=f"monopoly_narrative_T{st.session_state.turn_count}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"audit_xl_btn_{st.session_state.turn_count}"
+                key=f"narrative_xl_btn_{st.session_state.turn_count}"
             )
 
         # 📜 Master Log Display
@@ -1741,14 +1712,14 @@ elif st.session_state.phase == "LIVE":
                 st.dataframe(df_master, width="stretch", hide_index=True)
                 st.write("") 
                 
-                # 📥 Button 2: Full Master Audit Focus
-                if full_excel_data:
+                # 📥 Button 2: Financial/Audit Focus
+                if audit_excel:
                     st.download_button(
-                        label="📥 Download Full Log (Multi-Tab Excel)",
-                        data=full_excel_data,
-                        file_name=f"monopoly_master_audit_T{st.session_state.turn_count}.xlsx",
+                        label="📥 Download Full Banker Audit (Excel)",
+                        data=audit_excel,
+                        file_name=f"monopoly_bank_audit_T{st.session_state.turn_count}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"global_log_xl_{st.session_state.turn_count}"
+                        key=f"global_audit_xl_{st.session_state.turn_count}"
                     )
             else:
                 st.info("No turns have been recorded in the master log yet. Run some turns to see data!")
