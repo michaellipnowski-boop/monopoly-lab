@@ -473,7 +473,6 @@ def attempt_buy_houses(p):
     actions = []
     # 1. Identify all color groups
     color_groups = {}
-    # Use .items() because PROPERTIES is a dictionary!
     for idx, sq in PROPERTIES.items(): 
         if isinstance(sq, dict) and sq.get('type') == "Street":
             color = sq.get('color')
@@ -482,20 +481,19 @@ def attempt_buy_houses(p):
             color_groups[color].append(str(idx))
 
     for color, indices in color_groups.items():
-        # 1. Manually count how many properties in this color the player actually owns
+        # 1. Count ownership
         player_owned_count = 0
         for idx in indices:
-            # Wrap idx in str() to match the ownership dictionary keys
             owner_name = get_owner(idx)
             if owner_name and str(owner_name).strip().lower() == str(p['name']).strip().lower():
                 player_owned_count += 1
         
-        # 2. DECISIVE CHECK: Do they own the WHOLE set?
+        # 2. Monopoly Check
         total_in_set = len(indices)
         is_monopoly = (player_owned_count == total_in_set) and (total_in_set > 0)
         
         if is_monopoly:
-            # --- MONOPOLY TROPHY LOGIC (Only fires ONCE per color) ---
+            # Monopoly Trophy (Once per color)
             monopoly_key = f"monopoly_achieved_{color}"
             if not p['stats'].get(monopoly_key):
                 p['stats'][monopoly_key] = True
@@ -505,17 +503,12 @@ def attempt_buy_houses(p):
                     'event': f"🏆 MONOPOLY: {color} set completed!"
                 })
 
-            # --- 3. BUILDING LOGIC ---
-            
+            # Building Policy Check
             if p['policy'].get('build_house') == "Never":
-                # Only log the skip once to avoid cluttering the ticker
-                skip_msg = f"Skipped building on {color} (Policy: Never Build Houses)"
-                if skip_msg not in actions:
-                    actions.append(skip_msg)
                 continue 
 
             while True:
-                # 🟢 NEW: Use helper so manual UI houses are RECOGNIZED
+                # 🟢 SAFE SYNC: Ensure we get the latest counts (AI + Manual UI)
                 counts = [get_house_count(idx) for idx in indices]
                 
                 if all(c >= 5 for c in counts): 
@@ -526,38 +519,32 @@ def attempt_buy_houses(p):
                 sq = PROPERTIES[int(target_idx)]
                 h_price = sq.get('h_cost', 50) 
                 
-                # 🟢 NEW: Use the helper for the decision floor
                 effective_floor = get_effective_reserve(p, 'build_house')
 
-                # 3. DECISION
+                # Decision Logic
                 if (p['cash'] - h_price) >= effective_floor:
-                    # Deduct the cash
                     p['cash'] -= h_price
                     
-                    # 🟢 NEW: Get current count and define labels early for the Audit
                     current_h = get_house_count(target_idx)
                     new_count = current_h + 1
                     label = "Hotel" if new_count == 5 else f"House {new_count}"
 
-                    # 🏦 BANKER'S AUDIT: Capital is sunk into infrastructure
+                    # 🏦 BANKER'S AUDIT
                     log_bank_transaction(p['name'], f"Built {label} on {sq['name']}", -h_price)
                     
-                    # Update house count in state
+                    # Update house count in state (Force String Key)
                     st.session_state.houses[str(target_idx)] = new_count
                     
-                    # Update logs and stats
+                    # Update logs
                     actions.append(f"{label} on {sq['name']}")
-                    if 'critical_moments' not in p['stats']: 
-                        p['stats']['critical_moments'] = []
-                    
+                    if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
                     p['stats']['critical_moments'].append({
                         'turn': st.session_state.turn_count, 
                         'event': f"🏗️ Built {label} on {sq['name']} (-${h_price})"
                     })
                 else:
-                    # Not enough cash or reserve reached
                     break
-    # 🟢 RETURN THE SUMMARY FOR THE TICKER
+
     if actions:
         return "🏗️ Built: " + ", ".join(actions) + "."
     return ""
@@ -634,16 +621,20 @@ def draw_card(p, deck_type):
         targets = [5, 15, 25, 35]
         old_pos = p['pos']
         p['pos'] = int(min([r for r in targets if r > p['pos']] or [5]))
-        if p['pos'] < old_pos: p['cash'] += 200
-        
+        if p['pos'] < old_pos: 
+            p['cash'] += 200
+            # 🏦 ADD THIS:
+            log_bank_transaction(p['name'], "Passed GO (Nearest RR Card)", 200)
         p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "move_nearest_util":
         targets = [12, 28]
         old_pos = p['pos']
         p['pos'] = int(min([u for u in targets if u > p['pos']] or [12]))
-        if p['pos'] < old_pos: p['cash'] += 200
-        
+        if p['pos'] < old_pos: 
+            p['cash'] += 200
+            # 🏦 ADD THIS:
+            log_bank_transaction(p['name'], "Passed GO (Nearest Util Card)", 200)
         p['stats']['visits'][str(p['pos'])] += 1
 
     # --- FINAL DECK MANAGEMENT ---
@@ -690,6 +681,9 @@ def draw_card(p, deck_type):
             if should_buy_card and p['cash'] >= price:
                 st.session_state.ownership[str(p['pos'])] = p['name']
                 p['cash'] -= price
+
+                # 🏦 ADD THIS LINE: Banker's Audit for Card Purchases
+                log_bank_transaction(p['name'], f"Bought {sq['name']} (Card)", -price)
                 
                 # Log to stats
                 if "property_stats" in st.session_state:
@@ -724,15 +718,14 @@ def record_master_turn(p, msg):
 
 
 def run_turn(jail_action=None, silent=False):
-    # 🟢 SYNC FIX: Every time this function is called (Roll, Double, or Debt Skip), 
-    # the counter advances. Turn 0 (Setup) becomes Turn 1.
+    # 🟢 SYNC FIX: Every time this function is called, the turn counter advances.
     st.session_state.turn_count += 1
     
     p = st.session_state.players[st.session_state.current_p]
     
     # --- 1. THE DEBT CHECK (Safe Mode Sync) ---
     if not st.session_state.rules["allow_debt"] and p['cash'] < 0:
-        # Sync history for all so graphs don't break
+        # Record wealth for all players so history lengths stay equal
         for player in st.session_state.players:
             player['stats']['cash_history'].append(player['cash'])
 
@@ -747,57 +740,41 @@ def run_turn(jail_action=None, silent=False):
     roll_sum = d1 + d2
     is_double = (d1 == d2)
     
+    # --- 2. JAIL LOGIC ---
     if p.get('in_jail'):
         if jail_action is None:
-            # Policy-based automation
-            if p['goo_cards']:
-                jail_action = "Use Card"
-            elif p['policy']['jail_exit'] == "Pay Immediately" and p['cash'] >= 50:
-                jail_action = "Pay $50"
-            elif p['jail_turns'] >= 2:
-                jail_action = "Pay $50"
-            else:
-                jail_action = "Try Doubles"
+            if p['goo_cards']: jail_action = "Use Card"
+            elif p['policy']['jail_exit'] == "Pay Immediately" and p['cash'] >= 50: jail_action = "Pay $50"
+            elif p['jail_turns'] >= 2: jail_action = "Pay $50"
+            else: jail_action = "Try Doubles"
         
         if jail_action == "Pay $50":
             charge_player(p, 50)
-            # 🏦 BANKER'S AUDIT: Jail fees exit the economy
             log_bank_transaction(p['name'], "Jail Exit Fee", -50)
             p['in_jail'] = False
-            if not silent: st.session_state.last_move = f"{p['name']} paid $50 to exit Jail."
         elif jail_action == "Use Card":
             card = p['goo_cards'].pop(0)
             if card['deck'] == "chance": st.session_state.c_deck_idx.append(card['index'])
             else: st.session_state.ch_deck_idx.append(card['index'])
             p['in_jail'] = False
-            if not silent: st.session_state.last_move = f"{p['name']} used GOOJF card."
-        else:
+        else: # Try Doubles
             if is_double:
-                p['in_jail'] = False
-                if not silent: st.session_state.last_move = f"{p['name']} rolled doubles and escaped!"
+                p['in_jail'] = False # Escaped! We allow the code to flow to movement below.
             elif p['jail_turns'] >= 2:
                 charge_player(p, 50)
-                # 🏦 BANKER'S AUDIT: Jail fees exit the economy
                 log_bank_transaction(p['name'], "Jail Exit Fee", -50)
                 p['in_jail'] = False
-                if not silent: st.session_state.last_move = f"{p['name']} failed 3rd double attempt, paid $50."
-            else: # Failed doubles in Jail
+            else: # Failed to roll doubles
                 p['jail_turns'] += 1
-                if not silent: st.session_state.last_move = f"{p['name']} failed doubles, stays in Jail."
-                
                 p['stats']['visits'][str(10)] += 1
                 p['stats']['ends'][str(10)] += 1
-                
-                record_master_turn(p, st.session_state.last_move)
-
                 for player in st.session_state.players:
                     player['stats']['cash_history'].append(player['cash'])
-                
-                attempt_buy_houses(p) 
-                
+                record_master_turn(p, f"{p['name']} stays in Jail.")
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                 return
-    
+
+    # --- 3. MOVEMENT LOGIC ---
     if is_double and not p.get('in_jail'):
         st.session_state.double_count += 1
     else:
@@ -805,213 +782,89 @@ def run_turn(jail_action=None, silent=False):
     
     if st.session_state.double_count >= 3:
         send_to_jail(p)
-        p['stats']['times_in_jail'] += 1
         msg = f"{p['name']} rolled 3 doubles! Go to Jail!" 
-        if not silent: st.session_state.last_move = msg
-        
-        # 🟢 SAFE MODE SYNC: Keep the history and turn clock moving
         for player in st.session_state.players:
             player['stats']['cash_history'].append(player['cash'])
-        
         record_master_turn(p, msg)
-        
-        # 🚀 THE FIX: Increment and Switch
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
-        st.session_state.double_count = 0 # Reset for the next player
         return
 
-    else:
-        old_pos = p['pos']
-        p['pos'] = (p['pos'] + roll_sum) % 40
-        
-        # 🟢 RECORD VISIT IMMEDIATELY
-        p['stats']['visits'][str(p['pos'])] += 1
-        
-        # 💰 ROBUST PASS-GO CHECK
-        if p['pos'] < old_pos or (old_pos > 30 and p['pos'] == 0):
-            # Determine the amount to pay out
-            if st.session_state.rules["double_go"] and p['pos'] == 0:
-                salary = 400
-            else:
-                salary = 200
-            
-            # Apply to player
-            p['cash'] += salary
-            
-            # 🏦 BANKER'S AUDIT: Record the new money entering the game
-            log_bank_transaction(p['name'], "Passed GO (Salary)", salary)
-        
-        sq = PROPERTIES.get(p['pos'])
-        msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
-        
-        if sq['type'] in ["Street", "Railroad", "Utility", "Property"]:
-            owner = st.session_state.ownership.get(str(p['pos']), "Bank")
+    old_pos = p['pos']
+    p['pos'] = (p['pos'] + roll_sum) % 40
+    p['stats']['visits'][str(p['pos'])] += 1
+    
+    # Pass Go Check
+    if p['pos'] < old_pos or (old_pos > 30 and p['pos'] == 0):
+        salary = 400 if (st.session_state.rules["double_go"] and p['pos'] == 0) else 200
+        p['cash'] += salary
+        log_bank_transaction(p['name'], "Passed GO (Salary)", salary)
 
-            # CASE A: SOMEONE ELSE OWNS IT (RENT)
-            if owner != "Bank" and str(owner).strip().lower() != str(p['name']).strip().lower():
-                rent = get_rent(p['pos'], roll=roll_sum)
-                p['cash'] -= rent
-                p['stats']['rent_paid'] += rent 
-                
-                for op in st.session_state.players:
-                    if str(op['name']).strip().lower() == str(owner).strip().lower():
-                        op['cash'] += rent
-                        op['stats']['rent_collected'] += rent
-            
-                if "property_stats" in st.session_state:
-                    st.session_state.property_stats[str(p['pos'])]["revenue"] += rent
-            
-                # FIX: Directly use the info in the ticker message 
-                # without looking for an 'event_msg' variable.
-                msg += f"Paid ${rent} rent to {owner}. "
-            
-            # CASE B: BANK OWNS IT (PURCHASE)
-            elif owner == "Bank":
-                price = sq.get('price', 150)
-                pol = p['policy'].get('buy_prop', "Always")
-                effective_floor = get_effective_reserve(p, 'buy_prop')
-                
-                should_buy = False
-                
-                # 🟢 POLICY CHECK
-                if pol == "Never":
-                    should_buy = False
-                    msg += f" 🚫 (Policy: Never Buy Properties - skipped {sq['name']})."
-                elif pol == "Always":
-                    should_buy = True
-                elif pol == "Keep Reserve":
-                    if p['cash'] - price >= effective_floor:
-                        should_buy = True
-                    else:
-                        msg += f" 💰 (Policy: Reserve - insufficient funds for {sq['name']})."
-                
-                # 🟢 TRANSACTION
-                if should_buy and p['cash'] >= price:
+    sq = PROPERTIES.get(p['pos'])
+    msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
+
+    # --- 4. SQUARE INTERACTION ---
+    if sq['type'] in ["Street", "Railroad", "Utility", "Property"]:
+        owner = st.session_state.ownership.get(str(p['pos']), "Bank")
+        if owner != "Bank" and str(owner).lower() != str(p['name']).lower():
+            rent = get_rent(p['pos'], roll=roll_sum)
+            p['cash'] -= rent
+            p['stats']['rent_paid'] += rent
+            # Transfer rent to owner
+            for op in st.session_state.players:
+                if str(op['name']).lower() == str(owner).lower():
+                    op['cash'] += rent
+                    op['stats']['rent_collected'] += rent
+            msg += f"Paid ${rent} rent to {owner}. "
+        elif owner == "Bank":
+            price = sq.get('price', 150)
+            # Standard Dice Purchase
+            if p['policy']['buy_prop'] != "Never" and p['cash'] >= price:
+                # Re-check reserve policy
+                floor = get_effective_reserve(p, 'buy_prop')
+                if p['policy']['buy_prop'] != "Keep Reserve" or (p['cash'] - price >= floor):
                     st.session_state.ownership[str(p['pos'])] = p['name']
                     p['cash'] -= price
-
-                    # 🏦 BANKER'S AUDIT: Capital returns to the vault
                     log_bank_transaction(p['name'], f"Bought {sq['name']}", -price)
-                    
-                    # Track stats
-                    if "property_stats" in st.session_state:
-                        st.session_state.property_stats[str(p['pos'])]["expenses"] += price
+                    msg += f"🏠 Bought {sq['name']} (-${price})."
 
-                    # Log Critical Moment
-                    event_text = f"🏠 Bought {sq['name']} (-${price})"
-                    if 'critical_moments' not in p['stats']: 
-                        p['stats']['critical_moments'] = []
-                    p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
-                    
-                    msg += f" {event_text}."
-        elif sq['type'] == "Tax":
-            tax_amount = sq.get('cost', 100)
-            charge_player(p, tax_amount)
-            # 🏦 BANKER'S AUDIT: Tax is a liquidity sink
-            log_bank_transaction(p['name'], f"Paid {sq['name']}", -tax_amount)
-            msg += f"Paid {sq['name']} (${tax_amount})."
-        elif sq['type'] == "Action":
-            if p['pos'] == 30:
-                # 2. Move the player to 10
-                send_to_jail(p)
-                msg += "Go To Jail!"
-            
-            else:
-                # Store the position BEFORE the card is drawn
-                old_pos = p['pos']
-                card_msg = draw_card(p, sq.get('deck', 'chance'))
-                msg += f" {card_msg}"
-                
-                # --- ADD THIS FIX ---
-                # Update old_pos so the movement check at the end of run_turn 
-                # doesn't think the player moved "past Go" twice.
-                old_pos = p['pos'] 
-                # --------------------
-                
-                # --- NEW: IMMEDIATE JAIL CHECK ---
-                if p.get('in_jail'):
-                    p['stats']['visits'][str(10)] += 1
-                    p['stats']['times_in_jail'] += 1
-                    # We do not return; we let it flow to the bottom 
-                    # so cash and turn counts are recorded once.
-                
-                # --- CLEANED CARD-MOVE PURCHASE LOGIC ---
-                if p['pos'] != old_pos:
-                    new_sq = PROPERTIES[p['pos']]
-                    
-                    if isinstance(new_sq, dict) and new_sq.get('type') in ["Property", "Railroad", "Utility", "Street"]:
-                        owner = st.session_state.ownership.get(str(p['pos']), "Bank")
-                        
-                        if owner == "Bank":
-                            price = new_sq.get('price', 150)
-                            pol = p['policy']['buy_prop']
-                            effective_floor = get_effective_reserve(p, 'buy_prop')
+    elif sq['type'] == "Tax":
+        tax = sq.get('cost', 100)
+        charge_player(p, tax)
+        log_bank_transaction(p['name'], f"Paid {sq['name']}", -tax)
+        msg += f"Paid {sq['name']} (${tax})."
 
-                            card_should_buy = False 
+    elif sq['type'] == "Action":
+        if p['pos'] == 30:
+            send_to_jail(p)
+            msg += "Go To Jail!"
+        else:
+            # Delegate movement and card-purchases to draw_card
+            card_msg = draw_card(p, sq.get('deck', 'chance'))
+            msg += f" {card_msg}"
 
-                            # 🟢 STEP 2: Strict Policy Mapping
-                            if pol == "Never":
-                                card_should_buy = False
-                                msg += f" (Policy: Never Buy Properties - skipped {new_sq['name']} via card)."
-                            elif pol == "Always":
-                                card_should_buy = True
-                            elif pol == "Keep Reserve":
-                                if p['cash'] - price >= effective_floor:
-                                    card_should_buy = True
-                                else:
-                                    msg += f" (Policy: Keep Reserve - insufficient funds for {new_sq['name']} via card)."
+    elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
+        if st.session_state.jackpot > 0:
+            p['cash'] += st.session_state.jackpot
+            log_bank_transaction(p['name'], "Collected Jackpot", st.session_state.jackpot)
+            msg += f"Collected Jackpot of ${st.session_state.jackpot}!"
+            st.session_state.jackpot = st.session_state.rules["fp_initial"]
 
-                            # 🟢 STEP 3: Transaction
-                            if card_should_buy and p['cash'] >= price:
-                                p['cash'] -= price
-                                st.session_state.ownership[str(p['pos'])] = p['name']
+    # --- 5. WRAP UP ---
+    house_msg = attempt_buy_houses(p) # Also logs its own Banker Audit transactions
+    if house_msg: msg += f" {house_msg}"
+    
+    if not silent: st.session_state.last_move = msg
+    
+    # 🟢 CRITICAL SYNC: All player history lists must grow together
+    for player in st.session_state.players:
+        player['stats']['cash_history'].append(player['cash'])
+    
+    p['stats']['ends'][str(p['pos'])] += 1
+    record_master_turn(p, msg)
 
-                                # 🏦 BANKER'S AUDIT: Capital returns to the vault via card
-                                log_bank_transaction(p['name'], f"Bought {new_sq['name']} (Card)", -price)
-                                
-                                if "property_stats" in st.session_state:
-                                    st.session_state.property_stats[str(p['pos'])]["expenses"] += price
-                                
-                                event_text = f"🏠 Bought {new_sq['name']} (-${price}) [via Card]"
-                                if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
-                                p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
-                                
-                                msg += f" Then bought {new_sq['name']}."
-        
-        elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
-            if st.session_state.jackpot > 0:
-                amount = st.session_state.jackpot
-                p['cash'] += amount
-                # 🏦 BANKER'S AUDIT: Jackpot injection
-                log_bank_transaction(p['name'], "Collected Free Parking Jackpot", amount)
-                msg += f"Collected Jackpot of ${amount}!"
-                st.session_state.jackpot = st.session_state.rules["fp_initial"]
-        
-        # --- PHASE 2: END OF TURN TRACKER ---
-        
-        # 1. Handle house building (This handles the logic AND the Critical Moments logging)
-        house_msg = attempt_buy_houses(p) 
-        if house_msg:
-            msg += f" {house_msg}"
-
-        # 2. Finalize the UI message for the 'Last Move' ticker
-        if not silent: 
-            st.session_state.last_move = msg
-            
-        # 3. Record wealth snapshot for the graph
-        for player in st.session_state.players:
-            player['stats']['cash_history'].append(player['cash'])
-
-        # 4. Record position stats
-        # (Visits are now recorded at the moment of landing in the movement Phase)
-        p['stats']['ends'][str(p['pos'])] += 1
-
-        record_master_turn(p, msg)
-        
-        # 5. Switch turn and increment turn count
-        # FIX: If they are in jail, they don't get to roll again even if they rolled doubles to get there
-        if not is_double or p.get('in_jail'):
-            st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
+    # Move to next player if not doubles (or if in jail)
+    if not is_double or p.get('in_jail'):
+        st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
             
 
 # --- UI FLOW ---
@@ -1601,16 +1454,27 @@ elif st.session_state.phase == "LIVE":
             st.bar_chart(data=df_fin, x="Player", y="Amount", color="Type", stack=False)
 
     with t_wealth:
+        # 1. Gather history
         history_dict = {p['name']: p['stats']['cash_history'] for p in st.session_state.players}
-        if history_dict:
-            # 1. Show the Visual Chart
+        
+        # 🟢 THE FIX: Check if there is actually any DATA inside those history lists
+        has_data = any(len(v) > 0 for v in history_dict.values())
+        
+        if not has_data:
+            st.info("📈 Wealth Curve will appear here after the first turn.")
+            st.warning("Note: At Turn 0, only 'Parachute' setup is recorded. Roll the dice to begin the trend!")
+        else:
+            # 2. Show the Visual Chart
+            # Safe conversion: dict of series handles mismatched lengths perfectly
             df_history = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in history_dict.items()]))
+            
+            st.subheader("Player Net Liquidity Over Time")
             st.line_chart(df_history)
             
-            st.markdown("---")
+            st.divider()
             
-            # 2. Add the ACTUAL Excel Export Button
-            # 🟢 UPDATED: Use the new super-function to ensure 2026 Audit standards
+            # 3. Add the ACTUAL Excel Export Button
+            # 🟢 Use the 2026 Audit super-function
             excel_data = get_full_log_excel() 
             
             if excel_data:
@@ -1619,72 +1483,73 @@ elif st.session_state.phase == "LIVE":
                     data=excel_data,
                     file_name=f"monopoly_audit_turn_{st.session_state.turn_count}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True, # Modern Streamlit syntax (was width="stretch")
+                    use_container_width=True,
                     key=f"wealth_tab_excel_btn_{st.session_state.turn_count}" 
                 )
 
     with t_bank:
         st.header("🏦 Central Bank Audit")
         st.info("This ledger tracks the 'Money Supply'. Inflows (GO/Cards) increase liquidity; Outflows (Deeds/Houses/Taxes) sink capital into the bank.")
-    
-        if not st.session_state.get('bank_audit'):
+
+        # 🟢 THE FIX: Guard against empty lists or missing columns
+        audit_list = st.session_state.get('bank_audit', [])
+        
+        if not audit_list:
             st.warning("No bank transactions recorded. Run a turn to see the audit!")
         else:
             # 1. Prepare Data
-            df_bank = pd.DataFrame(st.session_state.bank_audit)
+            df_bank = pd.DataFrame(audit_list)
             
-            # Calculate Metrics
-            total_injected = df_bank[df_bank['Amount'] > 0]['Amount'].sum()
-            total_sunk = abs(df_bank[df_bank['Amount'] < 0]['Amount'].sum())
-            net_liquidity = total_injected - total_sunk
-            
-            # 2. Key Performance Indicators
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Total Injected (GO/Cards)", f"${total_injected}")
-            m2.metric("Total Sunk (Assets/Taxes)", f"${total_sunk}")
-            # Color delta: Green if money is entering the game, Red if the bank is winning
-            m3.metric("Net Game Liquidity", f"${net_liquidity}", 
-                      delta="Inflationary" if net_liquidity > 0 else "Contractionary")
-    
-            st.divider()
-    
-            # 3. 📈 The Liquidity Curve
-            st.subheader("Out of the Bank Over Time")
-            
-            # Calculate the running total for the graph
-            df_bank['Running_Total'] = df_bank['Amount'].cumsum()
-            df_bank['Breakeven'] = 0 
-            
-            # Plot
-            st.line_chart(
-                df_bank, 
-                x="Turn", 
-                y=["Running_Total", "Breakeven"], 
-                color=["#FF4B4B", "#808080"]
-            )
-            
-            st.caption("🔴 Red Line: Net Liquidity (Money in Game) | ⚪ Grey Line: Breakeven ($0 Horizon)")
-            
-            st.divider()
+            # 🟢 THE CRITICAL CHECK: Does 'Amount' actually exist in the data?
+            if 'Amount' in df_bank.columns:
+                # Calculate Metrics
+                total_injected = df_bank[df_bank['Amount'] > 0]['Amount'].sum()
+                total_sunk = abs(df_bank[df_bank['Amount'] < 0]['Amount'].sum())
+                net_liquidity = total_injected - total_sunk
+                
+                # 2. Key Performance Indicators
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Total Injected (GO/Cards)", f"${total_injected}")
+                m2.metric("Total Sunk (Assets/Taxes)", f"${total_sunk}")
+                m3.metric("Net Game Liquidity", f"${net_liquidity}", 
+                          delta="Inflationary" if net_liquidity > 0 else "Contractionary")
 
-            # 4. 📋 The Raw Audit Table
-            st.subheader("Transaction History")
-            
-            # Clean up the display table
-            # Ensuring columns match our log_bank_transaction function ('Reason' vs 'Action')
-            display_df = df_bank[['Turn', 'Player', 'Reason', 'Amount']].copy()
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-    
-            # 5. 📥 The Download Button (Now Multi-Tab Excel)
-            excel_data = get_full_log_excel()
-            if excel_data:
-                st.download_button(
-                    label="📥 Download Full Banker's Audit (Excel)",
-                    data=excel_data,
-                    file_name=f"bank_audit_turn_{st.session_state.turn_count}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                st.divider()
+
+                # 3. 📈 The Liquidity Curve
+                st.subheader("Out of the Bank Over Time")
+                df_bank['Running_Total'] = df_bank['Amount'].cumsum()
+                df_bank['Breakeven'] = 0 
+                
+                st.line_chart(
+                    df_bank, 
+                    x="Turn", 
+                    y=["Running_Total", "Breakeven"], 
+                    color=["#FF4B4B", "#808080"]
                 )
+                st.caption("🔴 Red Line: Net Liquidity (Money in Game) | ⚪ Grey Line: Breakeven ($0 Horizon)")
+                
+                st.divider()
+
+                # 4. 📋 The Raw Audit Table
+                st.subheader("Transaction History")
+                # Filter columns safely to avoid KeyError
+                cols_to_show = [c for c in ['Turn', 'Player', 'Reason', 'Amount'] if c in df_bank.columns]
+                st.dataframe(df_bank[cols_to_show], use_container_width=True, hide_index=True)
+                
+                # 5. 📥 The Download Button
+                excel_data = get_full_log_excel()
+                if excel_data:
+                    st.download_button(
+                        label="📥 Download Full Banker's Audit (Excel)",
+                        data=excel_data,
+                        file_name=f"bank_audit_turn_{st.session_state.turn_count}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+            else:
+                # If we have a list but it's malformed/empty DataFrame
+                st.error("Audit data detected, but the 'Amount' column is missing. Run a turn to refresh.")
     
 
     # --- 📂 DATA WAREHOUSE & GAME HIGHLIGHTS ---
