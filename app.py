@@ -283,15 +283,16 @@ def restart_game():
     st.session_state.ownership = copy.deepcopy(st.session_state.get('starting_ownership', {}))
     st.session_state.houses = copy.deepcopy(st.session_state.get('starting_houses', {}))
 
-    # 🏦 BANKER'S AUDIT: Full wipe to ensure no carryover from the previous game
+    # 🏦 BANKER'S AUDIT: Full wipe
     st.session_state.bank_audit = []
+    st.session_state.master_log = [] 
     
-    st.session_state.last_move = "Game Restarted - Rules and custom setup restored."
+    # 🟢 SYNC FIX: Set turn_count to 0 so the Sidebar and Log start at the same "Baseline"
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
     st.session_state.double_count = 0
     st.session_state.jackpot = st.session_state.rules.get("fp_initial", 0)
-    st.session_state.master_log = [] 
+    st.session_state.last_move = "Game Restarted - Rules and custom setup restored."
     
     st.session_state.property_stats = {
         str(idx): {"revenue": 0, "expenses": 0} for idx in range(40)
@@ -305,9 +306,6 @@ def restart_game():
 
     # 3. Smart Player Reset
     if "players" in st.session_state and "starting_players" in st.session_state:
-        
-        # --- LOOP A: RESET PLAYER WALLETS & LOG INITIAL CASH ---
-        # This treats starting cash as "Money Entering the Game" (Positive)
         for i, p in enumerate(st.session_state.players):
             start_snap = st.session_state.starting_players[i]
             
@@ -317,22 +315,21 @@ def restart_game():
             p['jail_turns'] = start_snap.get('jail_turns', 0)
             p['goo_cards'] = copy.deepcopy(start_snap.get('goo_cards', []))
 
-            # 🏦 AUDIT: Initial Cash entering the economy
+            # 🏦 AUDIT: Initial Cash Injection
             log_bank_transaction(p['name'], "Initial Cash (Restart)", p['cash'])
 
-            # --- STATS WIPE ---
+            # STATS WIPE
             p['stats'] = {
                 "visits": {str(idx): 0 for idx in range(40)},
                 "ends": {str(idx): 0 for idx in range(40)},
-                "rent_paid": 0,
-                "rent_collected": 0,
-                "times_in_jail": 0,
+                "rent_paid": 0, "rent_collected": 0, "times_in_jail": 0,
                 "cash_history": [p['cash']], 
                 "critical_moments": []
             }
 
+            # 📜 LOG: Changed to Turn 0 for Sidebar Sync
             st.session_state.master_log.append({
-                "Turn": -1,
+                "Turn": 0,
                 "Player": p['name'],
                 "Position": p['pos'],
                 "Square": PROPERTIES[p['pos']]['name'],
@@ -340,32 +337,32 @@ def restart_game():
                 "Action": f"RESTART: Started with ${p['cash']}"
             })
 
-        # --- LOOP B: ACCOUNT FOR PROPERTY SINKS (OUTSIDE PLAYER LOOP) ---
-        # This treats Parachuted Assets as "Money already spent/returned to Bank" (Negative)
+        # --- LOOP B: ACCOUNT FOR PROPERTY SINKS ---
         for prop_id, owner_name in st.session_state.ownership.items():
             if owner_name and owner_name != "Bank":
                 p_info = PROPERTIES[int(prop_id)]
                 p_name = p_info['name']
                 
-                # 🏦 AUDIT: Property value considered "Sunk" into the Bank
+                # 🏦 AUDIT: Property/House values subtracted from Bank liquidity
                 price = p_info.get('price', 150)
                 log_bank_transaction(owner_name, f"Parachute Asset: {p_name}", -price)
                 
-                # 🏦 AUDIT: Houses/Hotels considered "Sunk" into the Bank
                 h_count = st.session_state.houses.get(str(prop_id), 0)
                 if h_count > 0:
                     h_cost = p_info.get('h_cost', 50)
                     total_h_val = h_count * h_cost
                     log_bank_transaction(owner_name, f"Parachute Houses: {p_name}", -total_h_val)
                 
-                # Add to Master Log for clarity
+                # 📜 LOG: Record the asset restoration as Turn 0
                 st.session_state.master_log.append({
-                    "Turn": -1,
+                    "Turn": 0,
                     "Player": owner_name,
-                    "Action": f"SETUP RESTORED: {p_name} assigned (Value deducted from Game Liquidity)"
+                    "Position": p_info.get('pos', int(prop_id)),
+                    "Square": p_name,
+                    "Cash": "N/A", # Asset value is already deducted from cash above
+                    "Action": f"SETUP RESTORED: {p_name} assigned"
                 })
 
-    # 4. FIX: Explicitly stay on the game board screen
     st.session_state.phase = "LIVE"
     st.rerun()
 
@@ -773,7 +770,10 @@ def record_master_turn(p, msg):
 
 
 def run_turn(jail_action=None, silent=False):
-    # 🏁 TURN COUNT REMOVED FROM HERE
+    # 🟢 SYNC FIX: Every time this function is called (Roll, Double, or Debt Skip), 
+    # the counter advances. Turn 0 (Setup) becomes Turn 1.
+    st.session_state.turn_count += 1
+    
     p = st.session_state.players[st.session_state.current_p]
     
     # --- 1. THE DEBT CHECK (Safe Mode Sync) ---
@@ -785,8 +785,6 @@ def run_turn(jail_action=None, silent=False):
         msg = f"Turn skipped: {p['name']} is bankrupt/in debt."
         record_master_turn(p, msg)
         
-        # 🚀 SYNC FIX: We must increment BEFORE returning for a skipped turn
-        st.session_state.turn_count += 1
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         return
     
@@ -838,9 +836,6 @@ def run_turn(jail_action=None, silent=False):
                     player['stats']['cash_history'].append(player['cash'])
                 
                 attempt_buy_houses(p) 
-
-                # 🚀 ADD THIS LINE HERE:
-                st.session_state.turn_count += 1
                 
                 st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
                 return
@@ -863,7 +858,6 @@ def run_turn(jail_action=None, silent=False):
         record_master_turn(p, msg)
         
         # 🚀 THE FIX: Increment and Switch
-        st.session_state.turn_count += 1
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
         st.session_state.double_count = 0 # Reset for the next player
         return
@@ -1049,10 +1043,6 @@ def run_turn(jail_action=None, silent=False):
         p['stats']['ends'][str(p['pos'])] += 1
 
         record_master_turn(p, msg)
-
-        # 🚀 THE SYNC FIX: Increment count AFTER the move is recorded 
-        # but BEFORE the player switches.
-        st.session_state.turn_count += 1
         
         # 5. Switch turn and increment turn count
         # FIX: If they are in jail, they don't get to roll again even if they rolled doubles to get there
@@ -1315,7 +1305,7 @@ elif st.session_state.phase == "SETUP":
 
     if st.button("Start Live Simulation"):
         import copy 
-
+    
         # --- 📸 0. THE BOARD BLUEPRINT & SANITIZER ---
         current_houses = {str(k): v for k, v in st.session_state.houses.items()}
         st.session_state.starting_houses = copy.deepcopy(current_houses)
@@ -1323,19 +1313,18 @@ elif st.session_state.phase == "SETUP":
         
         # 1. Initialize/Reset the Audit Logs
         st.session_state.master_log = []
-        
-        # 🏦 RENAME THIS LINE:
-        st.session_state.bank_audit = [] # Changed from bank_ledger to bank_audit
+        st.session_state.bank_audit = [] 
+        st.session_state.turn_count = 0  # 🟢 Ensuring we are at ground zero
     
         # 🟢 STEP 1: Sync Mode & Audit Setup
         for i, p in enumerate(st.session_state.players):
-            # --- THE MISSING LINK ---
-            # Record the initial cash injection so Net Liquidity is correct from Turn 0
+            # 🏦 BANKER'S AUDIT: Injection
             log_bank_transaction(p['name'], "SETUP: Starting Cash Injection", p['cash'])
-
+    
             # Record basic start state in Master Log
             st.session_state.master_log.append({
-                "Turn": -1, "Player": p['name'], "Position": p['pos'],
+                "Turn": 0,  # 🟢 Changed from -1
+                "Player": p['name'], "Position": p['pos'],
                 "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
                 "Action": f"SETUP: Started with ${p['cash']}"
             })
@@ -1343,34 +1332,36 @@ elif st.session_state.phase == "SETUP":
             # Record Parachuted Assets (The "Sinks")
             for prop_id, owner_name in st.session_state.ownership.items():
                 if owner_name == p['name']:
-                    # ... (rest of your property/house logging logic remains the same)
-                    p_name = PROPERTIES[int(prop_id)]['name']
-                    prop_price = PROPERTIES[int(prop_id)].get('price', 0)
+                    p_info = PROPERTIES[int(prop_id)]
+                    p_name = p_info['name']
+                    prop_price = p_info.get('price', 0)
                     
                     # A. Master Log Entry
                     st.session_state.master_log.append({
-                        "Turn": -1, "Player": p['name'], "Position": p['pos'],
+                        "Turn": 0,  # 🟢 Changed from -1
+                        "Player": p['name'], "Position": p['pos'],
                         "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
                         "Action": f"PARACHUTE ASSET: Began game owning {p_name}"
                     })
-
+    
                     # B. 🏦 BANKER'S AUDIT: Record property cost
                     log_bank_transaction(p['name'], f"SETUP: Asset Deed ({p_name})", -prop_price)
-
+    
                     # 🏠 C. Houses/Hotels
                     h_count = current_houses.get(str(prop_id), 0)
                     if h_count > 0:
-                        h_price = PROPERTIES[int(prop_id)].get('h_cost', 50)
+                        h_price = p_info.get('h_cost', 50)
                         total_h_cost = h_count * h_price
                         label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
                         
                         # Master Log Entry
                         st.session_state.master_log.append({
-                            "Turn": -1, "Player": p['name'], "Position": p['pos'],
+                            "Turn": 0,  # 🟢 Changed from -1
+                            "Player": p['name'], "Position": p['pos'],
                             "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
                             "Action": f"PARACHUTE SETUP: {p_name} starts with {label}"
                         })
-
+    
                         # 🏦 BANKER'S AUDIT: Record building costs
                         log_bank_transaction(p['name'], f"SETUP: {label} on {p_name}", -total_h_cost)
         
@@ -1390,8 +1381,14 @@ elif st.session_state.phase == "CHOICE":
     if c1.button("Standard Simulation"):
         import copy
         
-        # 🟢 STEP 1: Loop through the EXISTING players we configured on the Policies page.
-        # We do NOT clear the list; we simply reset their starting values.
+        # 🏦 STEP 0: INITIALIZE AUDITS & BOARD (The Clean Slate)
+        st.session_state.master_log = []
+        st.session_state.bank_audit = [] 
+        st.session_state.turn_count = 0 
+        st.session_state.ownership = {}
+        st.session_state.houses = {str(i): 0 for i in range(40)}
+    
+        # 🟢 STEP 1: Loop through EXISTING players to reset values
         for p in st.session_state.players:
             p['cash'] = 1500
             p['pos'] = 0
@@ -1399,10 +1396,19 @@ elif st.session_state.phase == "CHOICE":
             p['jail_turns'] = 0
             p['goo_cards'] = []
             
-            # 🛡️ THE POLICY IS PRESERVED:
-            # Because we don't overwrite p['policy'], Student B stays on "Never".
-
-            # STEP 2: Clear stats for the fresh 1,000 turn run
+            # 🛡️ NOTE: p['policy'] is PRESERVED here (Safe Mode)
+    
+            # 🏦 STEP 2: BANKER'S AUDIT (Record the $1500 Injection)
+            log_bank_transaction(p['name'], "STANDARD SETUP: Starting Cash", 1500)
+    
+            # 📜 STEP 3: MASTER LOG (Record the Turn 0 Baseline)
+            st.session_state.master_log.append({
+                "Turn": 0, "Player": p['name'], "Position": 0,
+                "Square": "GO", "Cash": 1500,
+                "Action": "STANDARD SETUP: Game Start"
+            })
+    
+            # STEP 4: Reset Stats for the fresh run
             p['stats'] = {
                 "visits": {str(idx): 0 for idx in range(40)},
                 "ends": {str(idx): 0 for idx in range(40)},
@@ -1413,10 +1419,8 @@ elif st.session_state.phase == "CHOICE":
                 "critical_moments": []
             }
         
-        # STEP 3: Create the snapshot for the Restart button
+        # STEP 5: Create snapshot and launch
         st.session_state.starting_players = copy.deepcopy(st.session_state.players)
-        
-        # STEP 4: Launch
         st.session_state.phase = "LIVE"
         st.rerun()
     if c2.button("Customization Setup"): st.session_state.phase = "SETUP"; st.rerun()
