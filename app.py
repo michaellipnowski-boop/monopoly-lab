@@ -138,57 +138,6 @@ if "phase" not in st.session_state:
     st.session_state.bank_audit = []
 
 #--- SPREADSHEET FUNCTIONALITY ---
-def get_player_excel_data():
-    import io
-    from collections import defaultdict
-    import pandas as pd
-    
-    output = io.BytesIO()
-    # Explicitly using xlsxwriter for multi-tab support
-    writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    
-    # Check the terminal to see if this says "2"
-    print(f"DEBUG: Exporting {len(st.session_state.players)} players.")
-
-    for p in st.session_state.players:
-        p_name = p['name']
-        print(f"DEBUG: Processing {p_name}...")
-        
-        # Group events by turn
-        grouped_events = defaultdict(list)
-        for e in p['stats'].get('critical_moments', []):
-            grouped_events[e['turn']].append(str(e['event']))
-        
-        event_map = {t: " ; ".join(msgs) for t, msgs in grouped_events.items()}
-        
-        # --- FIXED: 'player_export_data' is now defined INSIDE the player loop ---
-        player_export_data = [] 
-        history = p['stats'].get('cash_history', [])
-        
-        for t, c in enumerate(history):
-            player_export_data.append({
-                "Turn": t,
-                "Cash Balance": c,
-                "Action/Acquisition": event_map.get(t, "")
-            })
-        
-        df = pd.DataFrame(player_export_data)
-        
-        # Clean sheet name (Excel limit 31 chars)
-        safe_name = "".join(filter(str.isalnum, p_name))[:31]
-        if not safe_name:
-            safe_name = f"Player_{st.session_state.players.index(p)}"
-            
-        df.to_excel(writer, sheet_name=safe_name, index=False)
-        
-        # Formatting
-        worksheet = writer.sheets[safe_name]
-        worksheet.set_column('C:C', 60)
-
-    writer.close()
-    output.seek(0)
-    return output.getvalue()
-
 def get_full_log_excel():
     import io
     import pandas as pd
@@ -198,75 +147,85 @@ def get_full_log_excel():
 
     try:
         output = io.BytesIO()
-        df_master = pd.DataFrame(st.session_state.master_log)
-        
-        if "Turn" in df_master.columns:
-            df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors='coerce')
-            df_master = df_master.sort_values(by=["Turn", "Player"], ascending=[True, True])
-
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            workbook = writer.book
+            # Standard formats
+            money_fmt = workbook.add_format({'num_format': '$#,##0', 'align': 'center'})
+            header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
+            
             # --- TAB 1: THE MASTER PLAY-BY-PLAY ---
+            df_master = pd.DataFrame(st.session_state.master_log)
             df_master.to_excel(writer, sheet_name="0_Full_Play_by_Play", index=False)
             ws_master = writer.sheets["0_Full_Play_by_Play"]
-            ws_master.set_column('F:F', 70)
-            ws_master.freeze_panes(1, 0)
+            ws_master.set_column('F:F', 70) # Wide Action column
+            ws_master.set_column('E:E', 15, money_fmt) # Cash column
 
             # --- TAB 2: THE GLOBAL BANKER'S AUDIT ---
             if 'bank_audit' in st.session_state and st.session_state.bank_audit:
                 df_audit = pd.DataFrame(st.session_state.bank_audit)
-                df_audit['Net_Liquidity'] = df_audit['Amount'].cumsum()
                 df_audit.to_excel(writer, sheet_name="1_Bank_Master_Ledger", index=False)
+                ws_audit = writer.sheets["1_Bank_Master_Ledger"]
+                ws_audit.set_column('D:E', 25, money_fmt)
                 
-                # --- NEW: CATEGORICAL SUB-TABS (The "Old Experience") ---
-                # 1. Injections (Positive Money: GO, Cards, etc.)
-                df_injections = df_audit[df_audit['Amount'] > 0]
+                # Filtered Injections/Sinks Sub-Tabs
+                df_injections = df_audit[df_audit['Contribution to Net Liquidity'] > 0]
                 if not df_injections.empty:
                     df_injections.to_excel(writer, sheet_name="2_Injections_GO_Cards", index=False)
 
-                # 2. Sinks (Negative Money: Deeds, Houses, Hotels)
-                df_sinks = df_audit[df_audit['Amount'] < 0]
+                df_sinks = df_audit[df_audit['Contribution to Net Liquidity'] < 0]
                 if not df_sinks.empty:
                     df_sinks.to_excel(writer, sheet_name="3_Sinks_Assets_Taxes", index=False)
 
-                # Formatting for Audit Tabs
-                for s_name in ["1_Bank_Master_Ledger", "2_Injections_GO_Cards", "3_Sinks_Assets_Taxes"]:
-                    if s_name in writer.sheets:
-                        writer.sheets[s_name].set_column('C:C', 50)
-                        writer.sheets[s_name].freeze_panes(1, 0)
-
-            # --- TAB 3: INDIVIDUAL PLAYER TABS ---
+            # --- TAB 3: INDIVIDUAL PLAYER TABS (THE ECONOMIC FOOTPRINT) ---
             for i, p in enumerate(st.session_state.players):
-                p_name = str(p['name']).strip()
-                df_player = df_master[df_master['Player'].astype(str).str.strip() == p_name]
-                if not df_player.empty:
-                    clean_name = "".join(filter(str.isalnum, p_name))[:25]
-                    safe_sheet_name = f"P{i}_{clean_name}"
-                    df_player.to_excel(writer, sheet_name=safe_sheet_name, index=False)
-                    writer.sheets[safe_sheet_name].set_column('F:F', 70)
+                p_audit = [e for e in st.session_state.bank_audit if e['Player'] == p['name']]
+                
+                if p_audit:
+                    df_p = pd.DataFrame(p_audit)
+                    
+                    # 🟢 Running Total unique to the student's tab
+                    df_p['Running Liquidity (Tab Only)'] = df_p['Contribution to Net Liquidity'].cumsum()
+                    
+                    if 'Player' in df_p.columns:
+                        df_p = df_p.drop(columns=['Player'])
+                    
+                    clean_name = "".join(filter(str.isalnum, p['name']))[:20]
+                    safe_sheet_name = f"P{i}_{clean_name}_Audit"
+                    df_p.to_excel(writer, sheet_name=safe_sheet_name, index=False)
+                    
+                    # Format the student's tab
+                    ws_p = writer.sheets[safe_sheet_name]
+                    ws_p.set_column('B:B', 45) # Reason
+                    ws_p.set_column('C:D', 25, money_fmt) # Money columns
+                    # Add an auto-filter so students can sort by Turn or Amount
+                    ws_p.autofilter(0, 0, len(df_p), len(df_p.columns) - 1)
 
         output.seek(0)
         return output.getvalue()
-        
     except Exception as e:
         st.error(f"Excel Export Error: {e}")
         return None
 
 def log_bank_transaction(p_name, reason, amount):
     """
-    Standardizes how we record money entering/exiting the bank.
-    Matches the Dashboard and Excel Export variables.
+    Records interaction with the central bank. 
+    Amounts entering the system (Go, Income) are positive.
+    Amounts exiting the system (Property, Tax, Houses) are negative.
     """
-    # Ensure the list exists (Safety Check)
     if 'bank_audit' not in st.session_state:
         st.session_state.bank_audit = []
     
-    # Log to 'bank_audit' using 'Reason' (not Action)
+    prev_total = st.session_state.bank_audit[-1]['Running Liquidity (Global)'] if st.session_state.bank_audit else 0
+    new_global_total = prev_total + amount
+
     st.session_state.bank_audit.append({
         "Turn": st.session_state.get('turn_count', 0),
         "Player": p_name,
         "Reason": reason, 
-        "Amount": amount
+        "Contribution to Net Liquidity": amount,
+        "Running Liquidity (Global)": new_global_total
     })
+    
 
 #--- GAME RESET ---
 def reset_lab():
@@ -425,27 +384,22 @@ def verify_sim_integrity():
 
 # --- HELPER LOGIC ---
 def charge_player(p, amt):
-    # 1. Deduct the cash from the player's wallet
+    # 1. Deduct the cash
     p['cash'] -= amt
     
-    # 🏦 BANKER'S AUDIT & JACKPOT LOGIC
-    # ---------------------------------------------------------
-    if st.session_state.rules["fp_jackpot"] and amt > 0:
-        # Rule Active: Money stays on the board in the 'Jackpot' pile.
+    # 🏦 JACKPOT LOGIC
+    # If the Jackpot rule is on, money goes to the center of the board, 
+    # not the Bank's vault.
+    if st.session_state.rules.get("fp_jackpot", False) and amt > 0:
         st.session_state.jackpot += amt
-        # 💡 We do NOT log_bank_transaction because the money 
-        # is still 'Out of the Bank' (circulating).
-    else:
-        # Standard: Money is paid directly back to the Bank.
-        # Check if the function exists before calling to be safe
-        if "log_bank_transaction" in globals() or "log_bank_transaction" in locals():
-            log_bank_transaction(p['name'], "Bank Payment (Tax/Fine)", -amt)
-    # ---------------------------------------------------------
+        # We do NOT log_bank_transaction here because the money 
+        # is still "in the game" (on the Free Parking square).
     
-    # 🟢 3. Debt Alert (Internal logging)
+    # 🟢 2. Debt Alert (Internal logging)
     if p['cash'] < 0:
         event_text = f"🚨 Went into DEBT (-${abs(p['cash'])}) after paying ${amt}"
         if 'critical_moments' in p['stats']:
+            # Prevent spamming debt messages if they are already in debt
             if not any("DEBT" in m['event'] for m in p['stats']['critical_moments'][-1:]):
                 p['stats']['critical_moments'].append({
                     'turn': st.session_state.turn_count, 
@@ -807,6 +761,8 @@ def run_turn(jail_action=None, silent=False):
         
         if jail_action == "Pay $50":
             charge_player(p, 50)
+            # 🏦 BANKER'S AUDIT: Jail fees exit the economy
+            log_bank_transaction(p['name'], "Jail Exit Fee", -50)
             p['in_jail'] = False
             if not silent: st.session_state.last_move = f"{p['name']} paid $50 to exit Jail."
         elif jail_action == "Use Card":
@@ -821,6 +777,8 @@ def run_turn(jail_action=None, silent=False):
                 if not silent: st.session_state.last_move = f"{p['name']} rolled doubles and escaped!"
             elif p['jail_turns'] >= 2:
                 charge_player(p, 50)
+                # 🏦 BANKER'S AUDIT: Jail fees exit the economy
+                log_bank_transaction(p['name'], "Jail Exit Fee", -50)
                 p['in_jail'] = False
                 if not silent: st.session_state.last_move = f"{p['name']} failed 3rd double attempt, paid $50."
             else: # Failed doubles in Jail
@@ -947,8 +905,11 @@ def run_turn(jail_action=None, silent=False):
                     
                     msg += f" {event_text}."
         elif sq['type'] == "Tax":
-            charge_player(p, sq.get('cost', 100))
-            msg += f"Paid tax."
+            tax_amount = sq.get('cost', 100)
+            charge_player(p, tax_amount)
+            # 🏦 BANKER'S AUDIT: Tax is a liquidity sink
+            log_bank_transaction(p['name'], f"Paid {sq['name']}", -tax_amount)
+            msg += f"Paid {sq['name']} (${tax_amount})."
         elif sq['type'] == "Action":
             if p['pos'] == 30:
                 # 2. Move the player to 10
@@ -1019,8 +980,11 @@ def run_turn(jail_action=None, silent=False):
         
         elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
             if st.session_state.jackpot > 0:
-                p['cash'] += st.session_state.jackpot
-                msg += f"Collected Jackpot of ${st.session_state.jackpot}!"
+                amount = st.session_state.jackpot
+                p['cash'] += amount
+                # 🏦 BANKER'S AUDIT: Jackpot injection
+                log_bank_transaction(p['name'], "Collected Free Parking Jackpot", amount)
+                msg += f"Collected Jackpot of ${amount}!"
                 st.session_state.jackpot = st.session_state.rules["fp_initial"]
         
         # --- PHASE 2: END OF TURN TRACKER ---
@@ -1303,69 +1267,70 @@ elif st.session_state.phase == "SETUP":
                 slider_pos = st.select_slider(f"Board Position", options=valid_indices, format_func=get_square_label, value=p['pos'] if not jail_val else 10, disabled=jail_val, key=f"set_p_{i}")
                 p['pos'] = 10 if jail_val else slider_pos
 
-    if st.button("Start Live Simulation"):
+    if st.button("Start Live Simulation", type="primary", use_container_width=True):
         import copy 
     
-        # --- 📸 0. THE BOARD BLUEPRINT & SANITIZER ---
+        # --- 📸 0. THE BOARD BLUEPRINT ---
+        # Normalize house keys to strings for reliable lookup
         current_houses = {str(k): v for k, v in st.session_state.houses.items()}
         st.session_state.starting_houses = copy.deepcopy(current_houses)
         st.session_state.starting_ownership = copy.deepcopy(st.session_state.ownership)
         
-        # 1. Initialize/Reset the Audit Logs
+        # Initialize Audit & Logs
         st.session_state.master_log = []
         st.session_state.bank_audit = [] 
-        st.session_state.turn_count = 0  # 🟢 Ensuring we are at ground zero
+        st.session_state.turn_count = 0 
     
-        # 🟢 STEP 1: Sync Mode & Audit Setup
-        for i, p in enumerate(st.session_state.players):
-            # 🏦 BANKER'S AUDIT: Injection
+        # 🟢 STEP 1: Loop through players to set their Economic Footprint
+        for p in st.session_state.players:
+            # 🛡️ WEALTH CURVE PROTECTION: Graph starts at the set Cash value
+            p['stats']['cash_history'] = [p['cash']]
+            p['stats']['critical_moments'] = []
+
+            # 🏦 BANKER'S AUDIT: Injection (M1 Money Supply starts here)
             log_bank_transaction(p['name'], "SETUP: Starting Cash Injection", p['cash'])
     
-            # Record basic start state in Master Log
+            # Baseline Master Log Entry (Turn 0)
             st.session_state.master_log.append({
-                "Turn": 0,  # 🟢 Changed from -1
-                "Player": p['name'], "Position": p['pos'],
+                "Turn": 0, "Player": p['name'], "Position": p['pos'],
                 "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
                 "Action": f"SETUP: Started with ${p['cash']}"
             })
     
-            # Record Parachuted Assets (The "Sinks")
-            for prop_id, owner_name in st.session_state.ownership.items():
+            # 🏗️ Record Assets (Land vs. Houses)
+            for prop_id_str, owner_name in st.session_state.ownership.items():
                 if owner_name == p['name']:
-                    p_info = PROPERTIES[int(prop_id)]
+                    pid = int(prop_id_str)
+                    p_info = PROPERTIES[pid]
                     p_name = p_info['name']
                     prop_price = p_info.get('price', 0)
                     
-                    # A. Master Log Entry
+                    # 📜 1. Master Log: The Deed Assignment
                     st.session_state.master_log.append({
-                        "Turn": 0,  # 🟢 Changed from -1
-                        "Player": p['name'], "Position": p['pos'],
+                        "Turn": 0, "Player": p['name'], "Position": p['pos'],
                         "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
                         "Action": f"PARACHUTE ASSET: Began game owning {p_name}"
                     })
-    
-                    # B. 🏦 BANKER'S AUDIT: Record property cost
+                    # 🏦 2. Banker's Audit: The Deed Sink
                     log_bank_transaction(p['name'], f"SETUP: Asset Deed ({p_name})", -prop_price)
     
-                    # 🏠 C. Houses/Hotels
-                    h_count = current_houses.get(str(prop_id), 0)
+                    # 🏠 3. Houses/Hotels (Consolidated per Property)
+                    h_count = current_houses.get(str(pid), 0)
                     if h_count > 0:
-                        h_price = p_info.get('h_cost', 50)
+                        h_price = p_info.get('house_price', p_info.get('h_cost', 50))
                         total_h_cost = h_count * h_price
                         label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
                         
-                        # Master Log Entry
+                        # 📜 Master Log: The Development Summary
                         st.session_state.master_log.append({
-                            "Turn": 0,  # 🟢 Changed from -1
-                            "Player": p['name'], "Position": p['pos'],
+                            "Turn": 0, "Player": p['name'], "Position": p['pos'],
                             "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
-                            "Action": f"PARACHUTE SETUP: {p_name} starts with {label}"
+                            "Action": f"PARACHUTE SETUP: Started with {label} on {p_name}"
                         })
-    
-                        # 🏦 BANKER'S AUDIT: Record building costs
+                        # 🏦 Banker's Audit: The Development Sink
                         log_bank_transaction(p['name'], f"SETUP: {label} on {p_name}", -total_h_cost)
         
-        # Finalize Snapshot
+        # 🏁 STEP 2: Finalize Snapshot and Launch the LIVE phase
         st.session_state.starting_players = copy.deepcopy(st.session_state.players)
         st.session_state.phase = "LIVE"
         st.rerun()
@@ -1638,24 +1603,25 @@ elif st.session_state.phase == "LIVE":
     with t_wealth:
         history_dict = {p['name']: p['stats']['cash_history'] for p in st.session_state.players}
         if history_dict:
-            # 1. Show the Visual Chart (The one you've been hovering over)
+            # 1. Show the Visual Chart
             df_history = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in history_dict.items()]))
             st.line_chart(df_history)
             
             st.markdown("---")
             
             # 2. Add the ACTUAL Excel Export Button
-            # This is what triggers the multi-tab logic!
-            excel_data = get_player_excel_data() 
+            # 🟢 UPDATED: Use the new super-function to ensure 2026 Audit standards
+            excel_data = get_full_log_excel() 
             
-            st.download_button(
-                label="📥 Download Detailed Player Audit (Multi-Tab Excel)",
-                data=excel_data,
-                file_name=f"monopoly_audit_turn_{st.session_state.turn_count}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch", # Modern 2026 syntax
-                key=f"wealth_tab_excel_btn_{st.session_state.turn_count}" 
-            )
+            if excel_data:
+                st.download_button(
+                    label="📥 Download Detailed Player Audit (Multi-Tab Excel)",
+                    data=excel_data,
+                    file_name=f"monopoly_audit_turn_{st.session_state.turn_count}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True, # Modern Streamlit syntax (was width="stretch")
+                    key=f"wealth_tab_excel_btn_{st.session_state.turn_count}" 
+                )
 
     with t_bank:
         st.header("🏦 Central Bank Audit")
@@ -1721,7 +1687,7 @@ elif st.session_state.phase == "LIVE":
                 )
     
 
-    # --- 📂 DATA WAREHOUSE ---
+    # --- 📂 DATA WAREHOUSE & GAME HIGHLIGHTS ---
     st.markdown("---")
     st.header("📂 Data Warehouse & Game Highlights")
 
@@ -1741,50 +1707,41 @@ elif st.session_state.phase == "LIVE":
                         else:
                             st.caption("No significant events.")
 
-        # 🟢 NEW PLACEMENT: Detailed Spreadsheet (Excel)
-        # Using a dynamic key to prevent caching of old "flat" file versions
-        import time
-        current_ts = int(time.time()) 
-        
-        excel_data = get_player_excel_data()
-        st.download_button(
-            label="📥 Download Detailed Player Spreadsheets (Excel)",
-            data=excel_data,
-            file_name=f"monopoly_lab_audit_{st.session_state.turn_count}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            width="stretch", 
-            key=f"audit_xl_btn_{st.session_state.turn_count}"
-        )
+        # Generate the Excel data once to be used by both buttons
+        # This function now includes the "Individual Footprint" tabs automatically
+        full_excel_data = get_full_log_excel() 
 
+        # 📥 Button 1: Individual Audit Focus
+        if full_excel_data:
+            st.download_button(
+                label="📥 Download Detailed Player Spreadsheets (Excel)",
+                data=full_excel_data,
+                file_name=f"monopoly_lab_audit_T{st.session_state.turn_count}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"audit_xl_btn_{st.session_state.turn_count}"
+            )
+
+        # 📜 Master Log Display
         with st.expander("📜 Full Play-by-Play Master Log", expanded=False):
             if st.session_state.get('master_log') and len(st.session_state.master_log) > 0:
-                # Create the DataFrame from our global log
                 df_master = pd.DataFrame(st.session_state.master_log)
-                
-                # Sort by turn so it reads chronologically
-                df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors = 'coerce')
-                df_master = df_master.sort_values(by = ["Turn", "Player"], ascending = [True, True])
+                # Ensure chronological order
+                df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors='coerce')
+                df_master = df_master.sort_values(by=["Turn", "Player"], ascending=[True, True])
         
-                # Display the interactive table
-                # Using the width='stretch' as requested by your terminal logs
                 st.dataframe(df_master, width="stretch", hide_index=True)
+                st.write("") 
                 
-                st.write("") # Small spacer
-                
-                # --- NEW EXCEL LOGIC REPLACES CSV LOGIC ---
-                excel_log_data = get_full_log_excel()
-                
-                if excel_log_data:
+                # 📥 Button 2: Full Master Audit Focus
+                if full_excel_data:
                     st.download_button(
                         label="📥 Download Full Log (Multi-Tab Excel)",
-                        data=excel_log_data,
+                        data=full_excel_data,
                         file_name=f"monopoly_master_audit_T{st.session_state.turn_count}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        width="stretch",
                         key=f"global_log_xl_{st.session_state.turn_count}"
                     )
             else:
-                # This MUST be aligned with the 'if' above
                 st.info("No turns have been recorded in the master log yet. Run some turns to see data!")
         
         
