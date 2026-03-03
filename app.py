@@ -541,7 +541,8 @@ def attempt_buy_houses(p):
 
     # 🏦 BANKER'S AUDIT: Fire one log per property built upon
     for t_idx, data in session_builds.items():
-        unit_type = "Improvement(s)" if data['units'] > 1 else "House/Hotel"
+        # Changed "Improvement(s)" to "House(s)"
+        unit_type = "Houses" if data['units'] > 1 else "House/Hotel"
         log_bank_transaction(
             p_name=p['name'], 
             reason=f"Built {data['units']} {unit_type} on {data['name']}", 
