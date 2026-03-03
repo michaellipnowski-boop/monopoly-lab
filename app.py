@@ -142,72 +142,61 @@ def get_full_log_excel():
     import io
     import pandas as pd
     
-    if not st.session_state.get('master_log'):
+    # 🟢 SAFE MODE: Changed check to bank_audit since that is our primary data source now
+    if not st.session_state.get('bank_audit'):
         return None
 
     try:
         output = io.BytesIO()
-        # Using xlsxwriter to allow for professional cell formatting
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             workbook = writer.book
             
             # --- 🎨 PROFESSIONAL FORMATTING ---
             money_fmt = workbook.add_format({'num_format': '$#,##0.00', 'align': 'center'})
+            # header_fmt is available if you want to apply it to headers later
             header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
             
-            # --- TAB 1: THE MASTER PLAY-BY-PLAY ---
-            df_master = pd.DataFrame(st.session_state.master_log)
-            df_master.to_excel(writer, sheet_name="0_Full_Play_by_Play", index=False)
-            ws_master = writer.sheets["0_Full_Play_by_Play"]
-            ws_master.set_column('F:F', 70) # Wide Action column
-            ws_master.set_column('E:E', 15, money_fmt) # Cash column
+            # --- TAB 1: THE GLOBAL BANKER'S AUDIT ---
+            # (Promoted to the first tab, and the Play-by-Play block is removed)
+            df_audit = pd.DataFrame(st.session_state.bank_audit)
+            df_audit.to_excel(writer, sheet_name="1_Bank_Master_Ledger", index=False)
+            ws_audit = writer.sheets["1_Bank_Master_Ledger"]
+            
+            # Column width/format for Money In and Running Total
+            ws_audit.set_column('D:E', 25, money_fmt)
+            ws_audit.set_column('C:C', 40) # Wider Event/Reason column
+            
+            # --- TAB 2 & 3: INJECTIONS & SINKS ---
+            df_injections = df_audit[df_audit['Money In'] > 0].copy()
+            if not df_injections.empty:
+                df_injections['Running Total Money In'] = df_injections['Money In'].cumsum()
+                df_injections.to_excel(writer, sheet_name="2_Injections_GO_Cards", index=False)
+                writer.sheets["2_Injections_GO_Cards"].set_column('D:E', 25, money_fmt)
 
-            # --- TAB 2: THE GLOBAL BANKER'S AUDIT ---
-            if 'bank_audit' in st.session_state and st.session_state.bank_audit:
-                df_audit = pd.DataFrame(st.session_state.bank_audit)
-                df_audit.to_excel(writer, sheet_name="1_Bank_Master_Ledger", index=False)
-                ws_audit = writer.sheets["1_Bank_Master_Ledger"]
-                
-                # Column width/format for Money In and Running Total
-                ws_audit.set_column('D:E', 25, money_fmt)
-                
-                # --- SUB-TABS: INJECTIONS & SINKS ---
-                # Fixed keys: now looking for 'Money In'
-                df_injections = df_audit[df_audit['Money In'] > 0].copy()
-                if not df_injections.empty:
-                    df_injections['Running Total Money In'] = df_injections['Money In'].cumsum()
-                    df_injections.to_excel(writer, sheet_name="2_Injections_GO_Cards", index=False)
+            df_sinks = df_audit[df_audit['Money In'] < 0].copy()
+            if not df_sinks.empty:
+                df_sinks['Running Total Money In'] = df_sinks['Money In'].cumsum()
+                df_sinks.to_excel(writer, sheet_name="3_Sinks_Assets_Taxes", index=False)
+                writer.sheets["3_Sinks_Assets_Taxes"].set_column('D:E', 25, money_fmt)
 
-                df_sinks = df_audit[df_audit['Money In'] < 0].copy()
-                if not df_sinks.empty:
-                    df_sinks['Running Total Money In'] = df_sinks['Money In'].cumsum()
-                    df_sinks.to_excel(writer, sheet_name="3_Sinks_Assets_Taxes", index=False)
-
-            # --- TAB 3: INDIVIDUAL PLAYER TABS ---
+            # --- TAB 4+: INDIVIDUAL PLAYER TABS ---
             for i, p in enumerate(st.session_state.players):
                 p_audit = [e for e in st.session_state.bank_audit if e['Player'] == p['name']]
                 
                 if p_audit:
                     df_p = pd.DataFrame(p_audit)
-                    
-                    # 🟢 Student-specific cumulative sum
                     df_p['Running Total Money In'] = df_p['Money In'].cumsum()
                     
-                    # Drop 'Player' column for the specific player's tab
                     if 'Player' in df_p.columns:
                         df_p = df_p.drop(columns=['Player'])
                     
-                    # Clean the sheet name for Excel compatibility
                     clean_name = "".join(filter(str.isalnum, p['name']))[:20]
                     safe_sheet_name = f"P{i}_{clean_name}_Audit"
                     df_p.to_excel(writer, sheet_name=safe_sheet_name, index=False)
                     
-                    # Formatting the student's personal tab
                     ws_p = writer.sheets[safe_sheet_name]
                     ws_p.set_column('B:B', 45) # Event column
                     ws_p.set_column('C:D', 25, money_fmt) # Money In & Running Total columns
-                    
-                    # Add filter so students can analyze their own data
                     ws_p.autofilter(0, 0, len(df_p), len(df_p.columns) - 1)
 
         output.seek(0)
@@ -1301,25 +1290,30 @@ elif st.session_state.phase == "LIVE":
     # --- TURN COUNTER ---
     st.sidebar.metric("Total Turns Played", st.session_state.turn_count)
     st.sidebar.markdown("---")
+    
     if st.session_state.rules["fp_jackpot"]:
-        st.sidebar.metric("Free Parking Jackpot", f"${st.session_state.jackpot}")
+        # 🟢 Clean Jackpot (Whole number with commas)
+        st.sidebar.metric("Free Parking Jackpot", f"${int(st.session_state.jackpot):,}")
+        
     for p in st.session_state.players:
-        with st.sidebar.expander(f"👤 {p['name']} - ${p['cash']}", expanded=True):
+        # 🟢 Clean Expander Title
+        cash_pretty = f"${p['cash']:,.0f}"
+        with st.sidebar.expander(f"👤 {p['name']} - {cash_pretty}", expanded=True):
             # --- 🛡️ STRATEGY & RESERVES (SYNCED WITH ENGINE) ---
             
-            # 1. Get Effective Reserves from your function
+            # 1. Get Effective Reserves
             buy_floor = get_effective_reserve(p, 'buy_prop')
             build_floor = get_effective_reserve(p, 'build_house')
             
-            # 2. Helper to turn those numbers into your specific phrasing
+            # 2. Helper updated to strip decimals from policy text
             def get_policy_text(floor):
                 if floor == float('inf'):
                     return "Blocked (Never)"
                 if floor == -float('inf'):
                     return "Unlimited Debt" if st.session_state.rules.get("allow_debt") else "Zero-Cash Floor"
                 if floor < 0:
-                    return f"${abs(floor)} Debt Limit"
-                return f"${floor} Cash Cushion"
+                    return f"${int(abs(floor)):,} Debt Limit"
+                return f"${int(floor):,} Cash Cushion"
 
             # 3. Color Coding
             buy_pol = p['policy'].get('buy_prop', 'Always')
@@ -1331,10 +1325,10 @@ elif st.session_state.phase == "LIVE":
             st.markdown(f"**Prop Buying:** :{b_color}[{buy_pol}]")
             st.caption(f"🛡️ {get_policy_text(buy_floor)}")
             
-            # Show "Spendable" only if there is a finite floor to calculate against
+            # 🟢 Clean Spendable display
             if buy_floor not in [float('inf'), -float('inf')]:
                 safe_cash = max(0, p['cash'] - buy_floor)
-                st.caption(f"💰 Spendable: ${safe_cash}")
+                st.caption(f"💰 Spendable: ${safe_cash:,.0f}")
 
             st.markdown(f"**Building:** :{h_color}[{build_pol}]")
             st.caption(f"🏠 {get_policy_text(build_floor)}")
@@ -1342,8 +1336,9 @@ elif st.session_state.phase == "LIVE":
             st.markdown("---")
             
             if build_pol == "Keep Reserve":
-                build_floor = max(global_limit, p['policy'].get('build_res', 0))
-                st.caption(f"🏠 Build Floor: **${build_floor}**")
+                # Ensure floor is clean for the caption
+                b_floor_val = int(get_effective_reserve(p, 'build_house'))
+                st.caption(f"🏠 Build Floor: **${b_floor_val:,}**")
             
             st.markdown("---")
 
@@ -1354,7 +1349,7 @@ elif st.session_state.phase == "LIVE":
             for c in p['goo_cards']: 
                 st.success(f"GOOJF: {c['deck'].capitalize()}")
             
-            # --- 1. Display Streets (Using your successful Railroad logic style) ---
+            # --- 1. Display Streets ---
             for color_name, pids in COLOR_GROUPS.items():
                 owned_ids = [pid for pid in pids if get_owner(pid) == p['name']]
                 
