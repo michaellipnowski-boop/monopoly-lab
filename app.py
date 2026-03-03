@@ -147,10 +147,12 @@ def get_full_log_excel():
 
     try:
         output = io.BytesIO()
+        # Using xlsxwriter to allow for professional cell formatting
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             workbook = writer.book
-            # Standard formats
-            money_fmt = workbook.add_format({'num_format': '$#,##0', 'align': 'center'})
+            
+            # --- 🎨 PROFESSIONAL FORMATTING ---
+            money_fmt = workbook.add_format({'num_format': '$#,##0.00', 'align': 'center'})
             header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
             
             # --- TAB 1: THE MASTER PLAY-BY-PLAY ---
@@ -165,39 +167,47 @@ def get_full_log_excel():
                 df_audit = pd.DataFrame(st.session_state.bank_audit)
                 df_audit.to_excel(writer, sheet_name="1_Bank_Master_Ledger", index=False)
                 ws_audit = writer.sheets["1_Bank_Master_Ledger"]
+                
+                # Column width/format for Money In and Running Total
                 ws_audit.set_column('D:E', 25, money_fmt)
                 
-                # Filtered Injections/Sinks Sub-Tabs
-                df_injections = df_audit[df_audit['Contribution to Net Liquidity'] > 0]
+                # --- SUB-TABS: INJECTIONS & SINKS ---
+                # Fixed keys: now looking for 'Money In'
+                df_injections = df_audit[df_audit['Money In'] > 0].copy()
                 if not df_injections.empty:
+                    df_injections['Running Total Money In'] = df_injections['Money In'].cumsum()
                     df_injections.to_excel(writer, sheet_name="2_Injections_GO_Cards", index=False)
 
-                df_sinks = df_audit[df_audit['Contribution to Net Liquidity'] < 0]
+                df_sinks = df_audit[df_audit['Money In'] < 0].copy()
                 if not df_sinks.empty:
+                    df_sinks['Running Total Money In'] = df_sinks['Money In'].cumsum()
                     df_sinks.to_excel(writer, sheet_name="3_Sinks_Assets_Taxes", index=False)
 
-            # --- TAB 3: INDIVIDUAL PLAYER TABS (THE ECONOMIC FOOTPRINT) ---
+            # --- TAB 3: INDIVIDUAL PLAYER TABS ---
             for i, p in enumerate(st.session_state.players):
                 p_audit = [e for e in st.session_state.bank_audit if e['Player'] == p['name']]
                 
                 if p_audit:
                     df_p = pd.DataFrame(p_audit)
                     
-                    # 🟢 Running Total unique to the student's tab
-                    df_p['Running Liquidity (Tab Only)'] = df_p['Contribution to Net Liquidity'].cumsum()
+                    # 🟢 Student-specific cumulative sum
+                    df_p['Running Total Money In'] = df_p['Money In'].cumsum()
                     
+                    # Drop 'Player' column for the specific player's tab
                     if 'Player' in df_p.columns:
                         df_p = df_p.drop(columns=['Player'])
                     
+                    # Clean the sheet name for Excel compatibility
                     clean_name = "".join(filter(str.isalnum, p['name']))[:20]
                     safe_sheet_name = f"P{i}_{clean_name}_Audit"
                     df_p.to_excel(writer, sheet_name=safe_sheet_name, index=False)
                     
-                    # Format the student's tab
+                    # Formatting the student's personal tab
                     ws_p = writer.sheets[safe_sheet_name]
-                    ws_p.set_column('B:B', 45) # Reason
-                    ws_p.set_column('C:D', 25, money_fmt) # Money columns
-                    # Add an auto-filter so students can sort by Turn or Amount
+                    ws_p.set_column('B:B', 45) # Event column
+                    ws_p.set_column('C:D', 25, money_fmt) # Money In & Running Total columns
+                    
+                    # Add filter so students can analyze their own data
                     ws_p.autofilter(0, 0, len(df_p), len(df_p.columns) - 1)
 
         output.seek(0)
@@ -206,26 +216,21 @@ def get_full_log_excel():
         st.error(f"Excel Export Error: {e}")
         return None
 
+
 def log_bank_transaction(p_name, reason, amount):
-    """
-    Records interaction with the central bank. 
-    Amounts entering the system (Go, Income) are positive.
-    Amounts exiting the system (Property, Tax, Houses) are negative.
-    """
     if 'bank_audit' not in st.session_state:
         st.session_state.bank_audit = []
     
-    prev_total = st.session_state.bank_audit[-1]['Running Liquidity (Global)'] if st.session_state.bank_audit else 0
-    new_global_total = prev_total + amount
+    # Calculate global liquidity once so it's stored in the data itself
+    prev_total = st.session_state.bank_audit[-1]['Running Total Money In'] if st.session_state.bank_audit else 0
+    new_total = prev_total + float(amount)
 
     st.session_state.bank_audit.append({
         "Turn": st.session_state.get('turn_count', 0),
         "Player": p_name,
-        "Event": reason,        # 🟢 UI Compatible Key
-        "Reason": reason,       # Keep your original key
-        "Amount": amount,       # 🟢 UI Compatible Key
-        "Contribution to Net Liquidity": amount, # Keep your original key
-        "Running Liquidity (Global)": new_global_total
+        "Event": reason,
+        "Money In": float(amount),
+        "Running Total Money In": new_total  # Stores the global state
     })
     
 
@@ -277,7 +282,11 @@ def restart_game():
             p['goo_cards'] = copy.deepcopy(start_snap.get('goo_cards', []))
 
             # 🏦 AUDIT: Initial Cash Injection
-            log_bank_transaction(p['name'], "Initial Cash (Restart)", p['cash'])
+            log_bank_transaction(
+                p_name=p['name'], 
+                reason="Initial Cash Injection", 
+                amount=float(p['cash'])
+            )
 
             # STATS WIPE
             p['stats'] = {
@@ -303,16 +312,25 @@ def restart_game():
             if owner_name and owner_name != "Bank":
                 p_info = PROPERTIES[int(prop_id)]
                 p_name = p_info['name']
-                
-                # 🏦 AUDIT: Property/House values subtracted from Bank liquidity
                 price = p_info.get('price', 150)
-                log_bank_transaction(owner_name, f"Parachute Asset: {p_name}", -price)
+                
+                # 🏦 AUDIT: Property values subtracted from Bank liquidity
+                log_bank_transaction(
+                    p_name=owner_name, 
+                    reason=f"Setup: {p_name} Value", 
+                    amount=-float(price)
+                )
                 
                 h_count = st.session_state.houses.get(str(prop_id), 0)
                 if h_count > 0:
                     h_cost = p_info.get('h_cost', 50)
                     total_h_val = h_count * h_cost
-                    log_bank_transaction(owner_name, f"Parachute Houses: {p_name}", -total_h_val)
+                    # 🏦 AUDIT: House values subtracted from Bank liquidity
+                    log_bank_transaction(
+                        p_name=owner_name, 
+                        reason=f"Setup: {p_name} Improvements", 
+                        amount=-float(total_h_val)
+                    )
                 
                 # 📜 LOG: Record the asset restoration as Turn 0
                 st.session_state.master_log.append({
@@ -551,6 +569,7 @@ def attempt_buy_houses(p):
         return "🏗️ Built: " + ", ".join(actions) + "."
     return ""
 
+
 def draw_card(p, deck_type):
     if deck_type == "chance":
         idx = st.session_state.c_deck_idx.pop(0)
@@ -575,7 +594,7 @@ def draw_card(p, deck_type):
         if p['pos'] < old_pos: 
             p['cash'] += 200
             # 🏦 BANKER'S AUDIT: Record the salary from a card move
-            log_bank_transaction(p['name'], "Passed GO (via Card)", 200)
+            log_bank_transaction(p_name=p['name'], reason="Passed GO (Card Move)", amount=200.0)
             
         p['stats']['visits'][str(p['pos'])] += 1
             
@@ -588,10 +607,23 @@ def draw_card(p, deck_type):
         p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "cash":
-        if card['amt'] < 0: 
-            charge_player(p, abs(card['amt']))
+        amount = float(card['amt'])
+        if amount < 0: 
+            # 💸 THE SINK: Money leaving the player to the Bank
+            charge_player(p, abs(amount))
+            log_bank_transaction(
+                p_name=p['name'], 
+                reason=f"Card: {card['text'][:30]}...", 
+                amount=amount # amount is already negative here
+            )
         else: 
-            p['cash'] += card['amt']
+            # 💰 THE INJECTION: Money coming from the Bank to the player
+            p['cash'] += amount
+            log_bank_transaction(
+                p_name=p['name'], 
+                reason=f"Card: {card['text'][:30]}...", 
+                amount=amount
+            )
             
     elif card['effect'] == "birthday":
         for op in st.session_state.players:
@@ -603,21 +635,26 @@ def draw_card(p, deck_type):
     elif card['effect'] == "repairs":
         cost = 0
         for pid, h_count in st.session_state.houses.items():
-            # pid is already a string from our houses dict, 
-            # so we use it directly to look up the owner
             owner = st.session_state.ownership.get(str(pid))
-            # Use normalization to match the owner to the current player
             if owner and str(owner).strip().lower() == str(p['name']).strip().lower():
                 if h_count == 5: # Hotel
                     cost += card['H']
                 else: # Houses
                     cost += (h_count * card['h'])
+        
+        # 💸 THE SINK: Charge the player and log it for the Bank
         charge_player(p, cost)
+        
+        if cost > 0:
+            log_bank_transaction(
+                p_name=p['name'], 
+                reason="Maintenance: Property Repairs (Card)", 
+                amount=-float(cost)
+            )
+            
+        # Log to stats (Safe Mode: preserving existing ROI logic)
         if "property_stats" in st.session_state and cost > 0:
-            # Since we don't know which specific house needed repair in the card text,
-            # most Monopoly sims distribute the cost or log it as a general 'Loss' 
-            # for the player's overall ROI.
-            p['stats']['rent_paid'] += cost # Or a dedicated 'maintenance_paid' stat
+            p['stats']['rent_paid'] += cost
         
     elif card['effect'] == "move_nearest_rr":
         targets = [5, 15, 25, 35]
@@ -625,8 +662,7 @@ def draw_card(p, deck_type):
         p['pos'] = int(min([r for r in targets if r > p['pos']] or [5]))
         if p['pos'] < old_pos: 
             p['cash'] += 200
-            # 🏦 ADD THIS:
-            log_bank_transaction(p['name'], "Passed GO (Nearest RR Card)", 200)
+            log_bank_transaction(p_name=p['name'], reason="Passed GO (Nearest RR Card)", amount=200.0)
         p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "move_nearest_util":
@@ -635,8 +671,7 @@ def draw_card(p, deck_type):
         p['pos'] = int(min([u for u in targets if u > p['pos']] or [12]))
         if p['pos'] < old_pos: 
             p['cash'] += 200
-            # 🏦 ADD THIS:
-            log_bank_transaction(p['name'], "Passed GO (Nearest Util Card)", 200)
+            log_bank_transaction(p_name=p['name'], reason="Passed GO (Nearest Util Card)", amount=200.0)
         p['stats']['visits'][str(p['pos'])] += 1
 
     # --- FINAL DECK MANAGEMENT ---
@@ -684,8 +719,8 @@ def draw_card(p, deck_type):
                 st.session_state.ownership[str(p['pos'])] = p['name']
                 p['cash'] -= price
 
-                # 🏦 ADD THIS LINE: Banker's Audit for Card Purchases
-                log_bank_transaction(p['name'], f"Bought {sq['name']} (Card)", -price)
+                # 🏦 ADD THIS LINE: Banker's Audit for Card Purchase
+                log_bank_transaction(p_name=p['name'], reason=f"Asset Purchase: {sq['name']} (Card)", amount=-float(price))
                 
                 # Log to stats
                 if "property_stats" in st.session_state:
@@ -752,7 +787,7 @@ def run_turn(jail_action=None, silent=False):
         
         if jail_action == "Pay $50":
             charge_player(p, 50)
-            log_bank_transaction(p['name'], "Jail Exit Fee", -50)
+            log_bank_transaction(p_name=p['name'], reason="Jail Exit Fee", amount=-50.0)
             p['in_jail'] = False
         elif jail_action == "Use Card":
             card = p['goo_cards'].pop(0)
@@ -764,7 +799,7 @@ def run_turn(jail_action=None, silent=False):
                 p['in_jail'] = False # Escaped! We allow the code to flow to movement below.
             elif p['jail_turns'] >= 2:
                 charge_player(p, 50)
-                log_bank_transaction(p['name'], "Jail Exit Fee", -50)
+                log_bank_transaction(p_name=p['name'], reason="Jail Exit Fee", amount=-50.0)
                 p['in_jail'] = False
             else: # Failed to roll doubles
                 p['jail_turns'] += 1
@@ -826,13 +861,17 @@ def run_turn(jail_action=None, silent=False):
                 if p['policy']['buy_prop'] != "Keep Reserve" or (p['cash'] - price >= floor):
                     st.session_state.ownership[str(p['pos'])] = p['name']
                     p['cash'] -= price
-                    log_bank_transaction(p['name'], f"Bought {sq['name']}", -price)
+                    log_bank_transaction(
+                        p_name=p['name'], 
+                        reason=f"Asset Purchase: {sq['name']}", 
+                        amount=-float(price)
+                    )
                     msg += f"🏠 Bought {sq['name']} (-${price})."
 
     elif sq['type'] == "Tax":
         tax = sq.get('cost', 100)
         charge_player(p, tax)
-        log_bank_transaction(p['name'], f"Paid {sq['name']}", -tax)
+        log_bank_transaction(p_name=p['name'], reason=f"Tax: {sq['name']}", amount=-float(tax))
         msg += f"Paid {sq['name']} (${tax})."
 
     elif sq['type'] == "Action":
@@ -847,7 +886,7 @@ def run_turn(jail_action=None, silent=False):
     elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
         if st.session_state.jackpot > 0:
             p['cash'] += st.session_state.jackpot
-            log_bank_transaction(p['name'], "Collected Jackpot", st.session_state.jackpot)
+            log_bank_transaction(p_name=p['name'], reason="Economic Stimulus: Free Parking Jackpot", amount=float(st.session_state.jackpot))
             msg += f"Collected Jackpot of ${st.session_state.jackpot}!"
             st.session_state.jackpot = st.session_state.rules["fp_initial"]
 
@@ -1136,54 +1175,62 @@ elif st.session_state.phase == "SETUP":
         st.session_state.bank_audit = [] 
         st.session_state.turn_count = 0 
     
-        # 🟢 STEP 1: Loop through players to set their Economic Footprint
+        # 🟢 STEP 1: Loop through players (CASH ONLY)
         for p in st.session_state.players:
-            # 🛡️ WEALTH CURVE PROTECTION: Graph starts at the set Cash value
+            # Wealth Curve Protection
             p['stats']['cash_history'] = [p['cash']]
             p['stats']['critical_moments'] = []
 
-            # 🏦 BANKER'S AUDIT: Injection (M1 Money Supply starts here)
+            # 🏦 BANKER'S AUDIT: Starting Cash Injection
             log_bank_transaction(p['name'], "SETUP: Starting Cash Injection", p['cash'])
-    
+            
             # Baseline Master Log Entry (Turn 0)
             st.session_state.master_log.append({
                 "Turn": 0, "Player": p['name'], "Position": p['pos'],
                 "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
                 "Action": f"SETUP: Started with ${p['cash']}"
             })
-    
-            # 🏗️ Record Assets (Land vs. Houses)
-            for prop_id_str, owner_name in st.session_state.ownership.items():
-                if owner_name == p['name']:
-                    pid = int(prop_id_str)
-                    p_info = PROPERTIES[pid]
-                    p_name = p_info['name']
-                    prop_price = p_info.get('price', 0)
+
+        # 🏗️ STEP 1.5: Record Assets (Loop through properties only ONCE)
+        for prop_id_str, owner_name in st.session_state.ownership.items():
+            # If it's not owned by the Bank, it's a Parachuted Asset
+            if owner_name != "Bank":
+                pid = int(prop_id_str)
+                p_info = PROPERTIES[pid]
+                p_name = p_info['name']
+                
+                # Find the owner's current stats for the Master Log
+                owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
+                p_pos = owner_obj['pos'] if owner_obj else 0
+                p_cash = owner_obj['cash'] if owner_obj else 0
+
+                # 🏦 1. Banker's Audit: The Deed Sink
+                prop_price = p_info.get('price', 0)
+                log_bank_transaction(owner_name, f"SETUP: Asset Deed ({p_name})", -prop_price)
+
+                # 📜 2. Master Log: The Deed Assignment
+                st.session_state.master_log.append({
+                    "Turn": 0, "Player": owner_name, "Position": p_pos,
+                    "Square": PROPERTIES[p_pos]['name'], "Cash": p_cash,
+                    "Action": f"PARACHUTE ASSET: Began game owning {p_name}"
+                })
+
+                # 🏠 3. Houses/Hotels (Consolidated per Property)
+                h_count = current_houses.get(str(pid), 0)
+                if h_count > 0:
+                    h_price = p_info.get('house_price', p_info.get('h_cost', 50))
+                    total_h_cost = h_count * h_price
+                    label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
                     
-                    # 📜 1. Master Log: The Deed Assignment
+                    # 🏦 Banker's Audit: Consolidated Entry
+                    log_bank_transaction(owner_name, f"SETUP: {label} on {p_name}", -total_h_cost)
+
+                    # 📜 Master Log: The Development Summary
                     st.session_state.master_log.append({
-                        "Turn": 0, "Player": p['name'], "Position": p['pos'],
-                        "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
-                        "Action": f"PARACHUTE ASSET: Began game owning {p_name}"
+                        "Turn": 0, "Player": owner_name, "Position": p_pos,
+                        "Square": PROPERTIES[p_pos]['name'], "Cash": p_cash,
+                        "Action": f"PARACHUTE SETUP: Started with {label} on {p_name}"
                     })
-                    # 🏦 2. Banker's Audit: The Deed Sink
-                    log_bank_transaction(p['name'], f"SETUP: Asset Deed ({p_name})", -prop_price)
-    
-                    # 🏠 3. Houses/Hotels (Consolidated per Property)
-                    h_count = current_houses.get(str(pid), 0)
-                    if h_count > 0:
-                        h_price = p_info.get('house_price', p_info.get('h_cost', 50))
-                        total_h_cost = h_count * h_price
-                        label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
-                        
-                        # 📜 Master Log: The Development Summary
-                        st.session_state.master_log.append({
-                            "Turn": 0, "Player": p['name'], "Position": p['pos'],
-                            "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
-                            "Action": f"PARACHUTE SETUP: Started with {label} on {p_name}"
-                        })
-                        # 🏦 Banker's Audit: The Development Sink
-                        log_bank_transaction(p['name'], f"SETUP: {label} on {p_name}", -total_h_cost)
         
         # 🏁 STEP 2: Finalize Snapshot and Launch the LIVE phase
         st.session_state.starting_players = copy.deepcopy(st.session_state.players)
@@ -1218,8 +1265,12 @@ elif st.session_state.phase == "CHOICE":
             
             # 🛡️ NOTE: p['policy'] is PRESERVED here (Safe Mode)
     
-            # 🏦 STEP 2: BANKER'S AUDIT (Record the $1500 Injection)
-            log_bank_transaction(p['name'], "STANDARD SETUP: Starting Cash", 1500)
+            # 🏦 STEP 2: BANKER'S AUDIT (Record the $1500 Initial Capital)
+            log_bank_transaction(
+                p_name=p['name'], 
+                reason="System: Initial Capital Endowment", 
+                amount=1500.0
+            )
     
             # 📜 STEP 3: MASTER LOG (Record the Turn 0 Baseline)
             st.session_state.master_log.append({
@@ -1490,56 +1541,81 @@ elif st.session_state.phase == "LIVE":
                 )
 
     with t_bank:
-        st.header("🏦 Central Bank Audit")
-        st.info("This ledger tracks the 'Money Supply'. Inflows (GO/Cards) increase liquidity; Outflows (Deeds/Houses/Taxes) sink capital into the bank.")
-
-        # 🟢 THE FIX: Guard against empty lists or missing columns
+        st.header("🏦 Central Bank Audit Warehouse")
+        st.info("This ledger tracks the 'Money Supply' across specialized accounting tabs.")
+    
+        # 1. Guard against empty lists
         audit_list = st.session_state.get('bank_audit', [])
         
         if not audit_list:
-            st.warning("No bank transactions recorded. Run a turn to see the audit!")
+            st.warning("No bank transactions recorded. Run a turn or start a simulation to see the audit!")
         else:
-            # 1. Prepare Data
-            df_bank = pd.DataFrame(audit_list)
+            df_base = pd.DataFrame(audit_list)
+    
+            # 2. 📊 High-Level Metrics
+            total_injected = df_base[df_base['Money In'] > 0]['Money In'].sum()
+            total_sunk = abs(df_base[df_base['Money In'] < 0]['Money In'].sum())
+            net_liquidity = total_injected - total_sunk
             
-            # 🟢 THE CRITICAL CHECK: Does 'Amount' actually exist in the data?
-            if 'Amount' in df_bank.columns:
-                # Calculate Metrics
-                total_injected = df_bank[df_bank['Amount'] > 0]['Amount'].sum()
-                total_sunk = abs(df_bank[df_bank['Amount'] < 0]['Amount'].sum())
-                net_liquidity = total_injected - total_sunk
-                
-                # 2. Key Performance Indicators
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Total Injected (GO/Cards)", f"${total_injected}")
-                m2.metric("Total Sunk (Assets/Taxes)", f"${total_sunk}")
-                m3.metric("Net Game Liquidity", f"${net_liquidity}", 
-                          delta="Inflationary" if net_liquidity > 0 else "Contractionary")
-
-                st.divider()
-
-                # 3. 📈 The Liquidity Curve
-                st.subheader("Out of the Bank Over Time")
-                df_bank['Running_Total'] = df_bank['Amount'].cumsum()
-                df_bank['Breakeven'] = 0 
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total Injected", f"${total_injected:,.2f}")
+            m2.metric("Total Sunk", f"${total_sunk:,.2f}")
+            m3.metric("Net Game Liquidity", f"${net_liquidity:,.2f}", 
+                      delta="Inflationary" if net_liquidity > 0 else "Contractionary")
+    
+            st.divider()
+    
+            # 3. 📑 The 5+ Tab Spreadsheet Overhaul
+            tab_names = ["Master Ledger", "Injections & Go", "Sinks & Taxes"] + [f"Player: {p['name']}" for p in st.session_state.players]
+            tabs = st.tabs(tab_names)
+    
+            # --- TAB 1: MASTER LEDGER & ECONOMY CHART ---
+            with tabs[0]:
+                st.subheader("📈 Game Economy")
+                # Create a dedicated chart dataframe with a zero-baseline
+                df_chart = df_base.copy()
+                df_chart['Breakeven'] = 0
                 
                 st.line_chart(
-                    df_bank, 
+                    df_chart, 
                     x="Turn", 
-                    y=["Running_Total", "Breakeven"], 
+                    y=["Running Total Money In", "Breakeven"], 
                     color=["#FF4B4B", "#808080"]
                 )
-                st.caption("🔴 Red Line: Net Liquidity (Money in Game) | ⚪ Grey Line: Breakeven ($0 Horizon)")
+                st.caption("🔴 Red Line: Net Game Liquidity | ⚪ Grey Line: $0 Breakeven")
                 
-                st.divider()
-
-                # 4. 📋 The Raw Audit Table
+                # 🟢 THE SAFE CHANGE: Replaced st.spacer with st.write
+                st.write("") 
+                
                 st.subheader("Transaction History")
-                # Filter columns safely to avoid KeyError
-                cols_to_show = [c for c in ['Turn', 'Player', 'Reason', 'Amount'] if c in df_bank.columns]
-                st.dataframe(df_bank[cols_to_show], use_container_width=True, hide_index=True)
-                
-                # 5. 📥 The Download Button
+                cols_master = ["Turn", "Player", "Event", "Money In", "Running Total Money In"]
+                st.dataframe(df_base[cols_master], use_container_width=True, hide_index=True)
+        
+            # --- TAB 2: INJECTIONS & GO CARDS ---
+            with tabs[1]:
+                df_injections = df_base[df_base["Money In"] > 0].copy()
+                df_injections["Running Total Money In"] = df_injections["Money In"].cumsum()
+                st.dataframe(df_injections[["Turn", "Player", "Event", "Money In", "Running Total Money In"]], 
+                             use_container_width=True, hide_index=True)
+    
+            # --- TAB 3: SINKS, ASSETS & TAXES ---
+            with tabs[2]:
+                df_sinks = df_base[df_base["Money In"] < 0].copy()
+                df_sinks["Running Total Money In"] = df_sinks["Money In"].cumsum()
+                st.dataframe(df_sinks[["Turn", "Player", "Event", "Money In", "Running Total Money In"]], 
+                             use_container_width=True, hide_index=True)
+    
+            # --- TABS 4+: PLAYER SPECIFIC LEDGERS ---
+            for i, p in enumerate(st.session_state.players):
+                with tabs[i + 3]:
+                    df_p = df_base[df_base["Player"] == p['name']].copy()
+                    df_p["Running Total Money In"] = df_p["Money In"].cumsum()
+                    st.dataframe(df_p[["Turn", "Event", "Money In", "Running Total Money In"]], 
+                                 use_container_width=True, hide_index=True)
+    
+            # 4. 📥 Download Button
+            st.divider()
+            try:
                 excel_data = get_full_log_excel()
                 if excel_data:
                     st.download_button(
@@ -1549,9 +1625,8 @@ elif st.session_state.phase == "LIVE":
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
-            else:
-                # If we have a list but it's malformed/empty DataFrame
-                st.error("Audit data detected, but the 'Amount' column is missing. Run a turn to refresh.")
+            except:
+                pass
     
 
     # --- 📂 DATA WAREHOUSE & GAME HIGHLIGHTS ---
