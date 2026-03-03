@@ -1666,45 +1666,17 @@ elif st.session_state.phase == "LIVE":
         
         
         
-        st.markdown("---")
-        st.subheader("📊 Player Game Highlights")
         
-        if "players" in st.session_state:
-            # 1. Individual Player Expanders (Visual UI remains for highlights)
-            cols = st.columns(len(st.session_state.players))
-        
-            for i, p in enumerate(st.session_state.players):
-                with cols[i]:
-                    with st.expander(f"📜 {p['name']} Log", expanded=False):
-                        st.write(f"**Times in Jail:** {p['stats'].get('times_in_jail', 0)}")
-                        st.divider()
-                        
-                        moments = p['stats'].get('critical_moments', [])
-                        if moments:
-                            for e in moments:
-                                st.markdown(f"**Turn {e['turn']}:** {e['event']}")
-                        else:
-                            st.caption("No significant events recorded.")
-    
-            else:
-                st.info("No turns recorded in the master log yet.")
-        else:
-            st.info("Game not initialized.")
-        # --- 8 SPACES END HERE ---
-
-    # --- 4 SPACES START HERE (Back 4 spaces) ---
-    # These are now outside the tab, but still inside the LIVE phase
     st.sidebar.markdown("---")
-    
+
+    # 1. RESTART GAME (Keep Policies and Customizations) button
     if st.sidebar.button("🔄 RESTART GAME (Keep Policies and Customizations)", use_container_width=True):
         if "starting_players" in st.session_state:
             restart_game()
         else:
             st.sidebar.warning("No active simulation to restart!")
 
-    st.sidebar.markdown("---")
-
-    # 2. Your existing Reset button
+    # 2. RESET SIMULATION (Full Wipe)
     if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
         reset_lab()
 
