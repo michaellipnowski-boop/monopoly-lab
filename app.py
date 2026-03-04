@@ -464,28 +464,31 @@ def verify_sim_integrity():
 
 
 # --- HELPER LOGIC ---
-def charge_player(p, amt):
-    # 1. Deduct the cash
+def charge_player(p, amt, destination="bank"):
+    # 1. Physical wallet deduction
     p['cash'] -= amt
     
-    # 🏦 JACKPOT LOGIC
-    # If the Jackpot rule is on, money goes to the center of the board, 
-    # not the Bank's vault.
-    if st.session_state.rules.get("fp_jackpot", False) and amt > 0:
+    # 🏦 MACRO ECONOMY LOGIC
+    if destination == "jackpot" and st.session_state.rules.get("fp_jackpot", False):
+        # INTERNAL MOVE: Money stays in the "M1" supply (Jackpot)
         st.session_state.jackpot += amt
-        # We do NOT log_bank_transaction here because the money 
-        # is still "in the game" (on the Free Parking square).
+        # No Banker's Audit log here—the game's total cash is unchanged.
+    else:
+        # OUTFLOW: Money leaves the game ecosystem to the Bank
+        log_bank_transaction(
+            p_name=p['name'], 
+            reason="Bank Outflow (Fee/Tax/Asset)", 
+            amount=-amt
+        )
     
-    # 🟢 2. Debt Alert (Internal logging)
+    # 🚨 CRITICAL MOMENT: Debt is a major narrative inflection
     if p['cash'] < 0:
-        event_text = f"🚨 Went into DEBT (-${abs(p['cash'])}) after paying ${amt}"
-        if 'critical_moments' in p['stats']:
-            # Prevent spamming debt messages if they are already in debt
-            if not any("DEBT" in m['event'] for m in p['stats']['critical_moments'][-1:]):
-                p['stats']['critical_moments'].append({
-                    'turn': st.session_state.turn_count, 
-                    'event': event_text
-                })
+        event_text = f"🚨 Went into DEBT (-${abs(p['cash'])})"
+        if not any("DEBT" in m['event'] for m in p['stats']['critical_moments'][-1:]):
+            p['stats']['critical_moments'].append({
+                'turn': st.session_state.turn_count, 
+                'event': event_text
+            })
 
 def get_rent(pid, roll=0):
     info = PROPERTIES[pid]
@@ -588,35 +591,39 @@ def attempt_buy_houses(p):
                 effective_floor = get_effective_reserve(p, 'build_house')
 
                 if (p['cash'] - h_price) >= effective_floor:
-                    p['cash'] -= h_price
+                    # 🏦 Audit: Deducts cash & logs to Bank outflow
+                    charge_player(p, h_price, destination="bank") 
+                    
+                    # 🏗️ State Update: Calculate new count locally
                     current_h = get_house_count(target_idx)
                     new_count = current_h + 1
                     
-                    # Update internal state immediately
+                    # Write to state using string key (standardizing for your getter)
                     st.session_state.houses[str(target_idx)] = new_count
                     
-                    # --- 🏗️ GROUPING LOGIC ---
+                    # 📝 Grouping Logic for Storybook
                     if target_idx not in session_builds:
                         session_builds[target_idx] = {'units': 0, 'total_cost': 0, 'name': sq['name']}
-                    
                     session_builds[target_idx]['units'] += 1
                     session_builds[target_idx]['total_cost'] += h_price
-                    # -------------------------
 
+                    # 🏷️ Narrative Labeling
                     label = "Hotel" if new_count == 5 else f"House {new_count}"
                     actions.append(f"{label} on {sq['name']}")
                 else:
                     break
 
-    # 🏦 BANKER'S AUDIT: Fire one log per property built upon
-    for t_idx, data in session_builds.items():
-        # Changed "Improvement(s)" to "House(s)"
-        unit_type = "Houses" if data['units'] > 1 else "House/Hotel"
-        log_bank_transaction(
-            p_name=p['name'], 
-            reason=f"Built {data['units']} {unit_type} on {data['name']}", 
-            amount=-int(data['total_cost'])
-        )
+    # 🚩 REMOVED the redundant log_bank_transaction loop here to avoid double-logging!
+
+    # 🚩 RESTORED: Log Capital Improvements to Critical Moments (The Forensic Narrative)
+    if session_builds:
+        summary_parts = [f"{d['units']}x on {d['name']}" for d in session_builds.values()]
+        total_spent = sum(d['total_cost'] for d in session_builds.values())
+        
+        p['stats']['critical_moments'].append({
+            "turn": st.session_state.turn_count,
+            "event": f"🏗️ Capital Expansion: Built {', '.join(summary_parts)} (Total: ${total_spent})"
+        })
 
     if actions:
         return "🏗️ Built: " + ", ".join(actions) + "."
@@ -893,24 +900,29 @@ def run_turn(jail_action=None, silent=False):
             msg += f"Paid ${rent} rent to {owner}. "
         elif owner == "Bank":
             price = sq.get('price', 150)
-            # Standard Dice Purchase
             if p['policy']['buy_prop'] != "Never" and p['cash'] >= price:
-                # Re-check reserve policy
                 floor = get_effective_reserve(p, 'buy_prop')
                 if p['policy']['buy_prop'] != "Keep Reserve" or (p['cash'] - price >= floor):
                     st.session_state.ownership[str(p['pos'])] = p['name']
-                    p['cash'] -= price
-                    log_bank_transaction(
-                        p_name=p['name'], 
-                        reason=f"Asset Purchase: {sq['name']}", 
-                        amount=-price
-                    )
+                    
+                    # ✅ CHANGE 1: Use the new charge_player. 
+                    # It handles BOTH the cash deduction AND the Banker's Audit log.
+                    charge_player(p, price, destination="bank")
+                    
+                    p['stats']['critical_moments'].append({
+                        "turn": st.session_state.turn_count,
+                        "event": f"🏠 Acquired {sq['name']} for ${price}"
+                    })
                     msg += f"🏠 Bought {sq['name']} (-${price})."
 
     elif sq['type'] == "Tax":
         tax = sq.get('cost', 100)
-        charge_player(p, tax)
-        log_bank_transaction(p_name=p['name'], reason=f"Tax: {sq['name']}", amount=-tax)
+        
+        # ✅ CHANGE 2: Use charge_player with "jackpot" destination.
+        # This fixes the logic: if Jackpot rule is ON, it stays in-game. 
+        # If OFF, it logs an outflow. We remove the manual log_bank_transaction here.
+        charge_player(p, tax, destination="jackpot")
+        
         msg += f"Paid {sq['name']} (${tax})."
 
     elif sq['type'] == "Action":
