@@ -1585,25 +1585,26 @@ elif st.session_state.phase == "LIVE":
             st.warning("Note: At Turn 0, only 'Parachute' setup is recorded. Roll the dice to begin the trend!")
         else:
             # 2. Show the Visual Chart
-            # Safe conversion: dict of series handles mismatched lengths perfectly
             df_history = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in history_dict.items()]))
             
-            st.subheader("Player Net Liquidity Over Time")
+            # CHANGE: Renamed from "Net Liquidity" to "Cash Balances"
+            st.subheader("Player Cash Balances Over Time")
             st.line_chart(df_history)
             
             st.divider()
             
-            # 🟢 Use the 2026 Audit super-function (Financial Mode)
-            excel_data = get_full_log_excel(mode="audit") 
+            # CHANGE: Swapped mode from "audit" to "narrative" 
+            # to download the Play-by-Play spreadsheet instead of the banker audit.
+            narrative_excel = get_full_log_excel(mode="narrative") 
             
-            if excel_data:
+            if narrative_excel:
                 st.download_button(
-                    label="📥 Download Detailed Player Audit (Multi-Tab Excel)",
-                    data=excel_data,
-                    file_name=f"monopoly_audit_turn_{st.session_state.turn_count}.xlsx",
+                    label="📥 Download Full Play-by-Play Spreadsheet (Excel)", # Updated label
+                    data=narrative_excel,
+                    file_name=f"monopoly_play_by_play_T{st.session_state.turn_count}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
-                    key=f"wealth_tab_excel_btn_{st.session_state.turn_count}" 
+                    key=f"wealth_tab_narrative_btn_{st.session_state.turn_count}" # Unique key
                 )
 
     with t_bank:
@@ -1707,7 +1708,6 @@ elif st.session_state.phase == "LIVE":
             cols = st.columns(len(st.session_state.players))
             for i, p in enumerate(st.session_state.players):
                 with cols[i]:
-                    # RESTORED TITLE: (Player Name) Critical Moments
                     with st.expander(f"👤 {p['name']} Critical Moments", expanded=False):
                         st.write(f"**Jail Stays:** {p['stats'].get('times_in_jail', 0)}")
                         st.divider()
@@ -1720,34 +1720,17 @@ elif st.session_state.phase == "LIVE":
             
             st.divider()
             
-            # --- 📥 DUAL DOWNLOAD BUTTONS (Both features preserved!) ---
-            btn_col1, btn_col2 = st.columns(2)
-            
-            with btn_col1:
-                # 🚩 THE STORYBOOK (Milestones mode)
-                milestone_excel = get_full_log_excel(mode="milestones")
-                if milestone_excel:
-                    st.download_button(
-                        label="📥 Download Player Milestone Storybook (Excel)",
-                        data=milestone_excel,
-                        file_name=f"monopoly_milestones_T{st.session_state.turn_count}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"milestone_xl_warehouse_{st.session_state.turn_count}",
-                        use_container_width=True
-                    )
-            
-            with btn_col2:
-                # 🏦 THE BANKER'S AUDIT (Audit mode - kept right where you like it)
-                audit_excel = get_full_log_excel(mode="audit")
-                if audit_excel:
-                    st.download_button(
-                        label="📥 Download Detailed Banker Financial Audit (Excel)",
-                        data=audit_excel,
-                        file_name=f"monopoly_financial_audit_T{st.session_state.turn_count}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"audit_xl_warehouse_{st.session_state.turn_count}",
-                        use_container_width=True
-                    )
+            # Only the Storybook remains here
+            milestone_excel = get_full_log_excel(mode="milestones")
+            if milestone_excel:
+                st.download_button(
+                    label="📥 Download Player Milestone Storybook (Excel)",
+                    data=milestone_excel,
+                    file_name=f"monopoly_milestones_T{st.session_state.turn_count}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"milestone_xl_btn_{st.session_state.turn_count}",
+                    use_container_width=True
+                )
 
         # 📜 2. Full Play-by-Play Master Log
         with st.expander("📜 Full Play-by-Play Master Log", expanded=False):
