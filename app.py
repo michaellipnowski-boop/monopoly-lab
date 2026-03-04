@@ -282,49 +282,50 @@ def generate_true_audit_excel():
     import io
     output = io.BytesIO()
     
-    # --- 1. Filter Bank Audit exactly as UI subheadings do ---
-    # CHANGED from bank_ledger to bank_audit to match your log function
+    # 1. Pull the financial audit (This is df_base in your UI)
     bank_data = st.session_state.get('bank_audit', [])
     
-    # Tab: Injections and Go (Money coming FROM bank)
-    # Using 'Money In' key which matches your log_bank_transaction dict
-    df_injections = pd.DataFrame([
-        log for log in bank_data if log['Money In'] > 0
-    ])
-    
-    # Tab: Sinks and Taxes (Money going TO bank)
-    df_sinks = pd.DataFrame([
-        log for log in bank_data if log['Money In'] < 0
-    ])
+    if not bank_data:
+        return None
 
-    # Tab: Master Ledger
-    df_master = pd.DataFrame(st.session_state.get('master_log', []))
+    # 2. Replicate UI Filtering Logic for Specialized Tabs
+    df_base = pd.DataFrame(bank_data)
+    df_injections = df_base[df_base["Money In"] > 0].copy()
+    df_sinks = df_base[df_base["Money In"] < 0].copy()
 
-    # --- 2. Build the Multi-Tab File ---
+    # 3. Create the Workbook
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Standard Audit Tabs
-        if not df_master.empty:
-            df_master.to_excel(writer, sheet_name='Master Ledger', index=False)
+        # --- TAB 1: MASTER LEDGER ---
+        # Consistent with your UI: cols_master = ["Turn", "Player", "Event", "Money In", "Running Total Money In"]
+        cols_master = ["Turn", "Player", "Event", "Money In", "Running Total Money In"]
+        df_base[cols_master].to_excel(writer, sheet_name='Master Ledger', index=False)
         
+        # --- TAB 2: INJECTIONS AND GO ---
         if not df_injections.empty:
-            df_injections.to_excel(writer, sheet_name='Injections and Go', index=False)
+            df_injections["Running Total Money In"] = df_injections["Money In"].cumsum()
+            df_injections[cols_master].to_excel(writer, sheet_name='Injections and Go', index=False)
             
+        # --- TAB 3: SINKS AND TAXES ---
         if not df_sinks.empty:
-            df_sinks.to_excel(writer, sheet_name='Sinks and Taxes', index=False)
+            df_sinks["Running Total Money In"] = df_sinks["Money In"].cumsum()
+            df_sinks[cols_master].to_excel(writer, sheet_name='Sinks and Taxes', index=False)
 
-        # Tab: Player Statistics / History
+        # --- TABS 4 to N: PLAYER SPECIFIC LEDGERS ---
         for p in st.session_state.players:
-            # 🛡️ SAFE MODE: Use .get() to avoid crashing if a player has 0 moments
-            moments = p['stats'].get('critical_moments', [])
-            df_p_history = pd.DataFrame(moments)
+            df_p = df_base[df_base["Player"] == p['name']].copy()
             
-            safe_name = "".join([c for c in p['name'] if c.isalnum()])[:25]
-            sheet_label = f"Player {safe_name}"
+            # Clean tab name
+            safe_name = "".join(filter(str.isalnum, p['name']))[:25]
+            sheet_label = f"Player_{safe_name}"
             
-            if not df_p_history.empty:
-                df_p_history.to_excel(writer, sheet_name=sheet_label, index=False)
+            if not df_p.empty:
+                # Recalculate personal running total to match UI logic
+                df_p["Running Total Money In"] = df_p["Money In"].cumsum()
+                # Use columns consistent with player tabs: ["Turn", "Event", "Money In", "Running Total Money In"]
+                cols_p = ["Turn", "Event", "Money In", "Running Total Money In"]
+                df_p[cols_p].to_excel(writer, sheet_name=sheet_label, index=False)
             else:
-                pd.DataFrame(columns=['turn', 'event']).to_excel(writer, sheet_name=sheet_label, index=False)
+                pd.DataFrame(columns=["Turn", "Event", "Money In", "Running Total Money In"]).to_excel(writer, sheet_name=sheet_label, index=False)
 
     return output.getvalue()
 
@@ -1742,11 +1743,15 @@ elif st.session_state.phase == "LIVE":
                     st.dataframe(df_p[["Turn", "Event", "Money In", "Running Total Money In"]], 
                                  use_container_width=True, hide_index=True)
     
-            # 4. 📥 Download Button
+            # --- 4. 📥 Download Button ---
             st.divider()
             try:
-                # 🟢 Fetch the financial audit only
-                excel_data = get_full_log_excel(mode="audit")
+                # 🔴 OLD INCORRECT LINE:
+                # excel_data = get_full_log_excel(mode="audit") 
+                
+                # 🟢 NEW CORRECT LINE:
+                excel_data = generate_true_audit_excel() 
+            
                 if excel_data:
                     st.download_button(
                         label="📥 Download Full Banker's Audit (Excel)",
@@ -1755,8 +1760,8 @@ elif st.session_state.phase == "LIVE":
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
-            except:
-                pass
+            except Exception as e:
+                st.error(f"Excel Error: {e}")
     
 
     # --- 📂 DATA WAREHOUSE & GAME HIGHLIGHTS ---
