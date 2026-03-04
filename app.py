@@ -1675,13 +1675,23 @@ elif st.session_state.phase == "LIVE":
     st.header("📂 Data Warehouse & Game Highlights")
 
     if "players" in st.session_state and len(st.session_state.players) > 0:
-        # 1. Financial/Audit Focus (The Technical Data)
+        # 1. Financial/Audit Focus (Restored with Milestones!)
         with st.expander("👤 Player Stats & Forensic Financial Ledgers", expanded=True):
+            # --- RESTORED SECTION START ---
             cols = st.columns(len(st.session_state.players))
             for i, p in enumerate(st.session_state.players):
                 with cols[i]:
-                    st.write(f"**{p['name']}**")
-                    st.write(f"Jail Stays: {p['stats'].get('times_in_jail', 0)}")
+                    with st.expander(f"👤 {p['name']} Details", expanded=False):
+                        st.write(f"**Jail Stays:** {p['stats'].get('times_in_jail', 0)}")
+                        st.divider()
+                        moments = p['stats'].get('critical_moments', [])
+                        if moments:
+                            for e in moments:
+                                # Restoring the "badge" look for turn numbers
+                                st.markdown(f"**` T{e['turn']} `** {e['event']}")
+                        else:
+                            st.caption("No significant events.")
+            # --- RESTORED SECTION END ---
             
             st.divider()
             
