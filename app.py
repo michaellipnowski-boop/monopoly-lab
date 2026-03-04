@@ -1411,7 +1411,11 @@ elif st.session_state.phase == "CHOICE":
                 "rent_collected": 0,
                 "times_in_jail": 0,
                 "cash_history": [1500],
-                "critical_moments": []
+                # 🟢 THE FIX: Add the narrative event here!
+                "critical_moments": [{
+                    "turn": 0, 
+                    "event": "🚀 Game Start: Initial Capital Endowment of $1,500 received."
+                }]
             }
         
         # STEP 5: Create snapshot and launch
