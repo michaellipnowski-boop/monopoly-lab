@@ -278,7 +278,57 @@ def log_parachuted_asset(p_name, property_name):
         amount=0  
     )
 
+def generate_true_audit_excel():
+    import io
+    output = io.BytesIO()
     
+    # --- 1. Filter Bank Audit exactly as UI subheadings do ---
+    # CHANGED from bank_ledger to bank_audit to match your log function
+    bank_data = st.session_state.get('bank_audit', [])
+    
+    # Tab: Injections and Go (Money coming FROM bank)
+    # Using 'Money In' key which matches your log_bank_transaction dict
+    df_injections = pd.DataFrame([
+        log for log in bank_data if log['Money In'] > 0
+    ])
+    
+    # Tab: Sinks and Taxes (Money going TO bank)
+    df_sinks = pd.DataFrame([
+        log for log in bank_data if log['Money In'] < 0
+    ])
+
+    # Tab: Master Ledger
+    df_master = pd.DataFrame(st.session_state.get('master_log', []))
+
+    # --- 2. Build the Multi-Tab File ---
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        # Standard Audit Tabs
+        if not df_master.empty:
+            df_master.to_excel(writer, sheet_name='Master Ledger', index=False)
+        
+        if not df_injections.empty:
+            df_injections.to_excel(writer, sheet_name='Injections and Go', index=False)
+            
+        if not df_sinks.empty:
+            df_sinks.to_excel(writer, sheet_name='Sinks and Taxes', index=False)
+
+        # Tab: Player Statistics / History
+        for p in st.session_state.players:
+            # 🛡️ SAFE MODE: Use .get() to avoid crashing if a player has 0 moments
+            moments = p['stats'].get('critical_moments', [])
+            df_p_history = pd.DataFrame(moments)
+            
+            safe_name = "".join([c for c in p['name'] if c.isalnum()])[:25]
+            sheet_label = f"Player {safe_name}"
+            
+            if not df_p_history.empty:
+                df_p_history.to_excel(writer, sheet_name=sheet_label, index=False)
+            else:
+                pd.DataFrame(columns=['turn', 'event']).to_excel(writer, sheet_name=sheet_label, index=False)
+
+    return output.getvalue()
+
+
 
 #--- GAME RESET ---
 def reset_lab():
