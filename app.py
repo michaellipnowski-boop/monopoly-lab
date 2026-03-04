@@ -177,30 +177,56 @@ def get_full_log_excel(mode="audit"):
                 # --- 📖 TYPE 2: THE PLAY-BY-PLAY LOG (Full Game History) ---
                 header_fmt = workbook.add_format({'bold': True, 'bg_color': '#DEEBF7', 'border': 1})
                 
-                # Tab 1: Full chronological history (The mirror of your UI table)
                 if st.session_state.get('master_log'):
                     df_master = pd.DataFrame(st.session_state.master_log)
-                    
-                    # Ensure numeric turn sorting to match the UI logic
                     df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors='coerce')
                     df_master = df_master.sort_values(by=["Turn", "Player"], ascending=[True, True])
                     
                     df_master.to_excel(writer, sheet_name="Full_Play_by_Play", index=False)
                     ws_master = writer.sheets["Full_Play_by_Play"]
-                    ws_master.set_column('C:C', 65) # Make the "Event" column wide
+                    ws_master.set_column('C:C', 65)
                     
-                    # Tab 2+: Individual Player Histories (Separated out)
                     for i, p in enumerate(st.session_state.players):
                         p_history = df_master[df_master['Player'] == p['name']].copy()
-                        
                         if not p_history.empty:
                             clean_name = "".join(filter(str.isalnum, p['name']))[:20]
                             sheet_name = f"P{i}_{clean_name}_History"
-                            
-                            # Write to tab, dropping 'Player' column for cleanliness
                             p_history.drop(columns=['Player']).to_excel(writer, sheet_name=sheet_name, index=False)
-                            ws_p = writer.sheets[sheet_name]
-                            ws_p.set_column('B:B', 65) # Formatting the "Event" column
+                            writer.sheets[sheet_name].set_column('B:B', 65)
+
+            elif mode == "milestones":
+                # --- 🚩 TYPE 3: THE STORYBOOK (Critical Moments Focus) ---
+                # Using a distinct color (Yellow) to distinguish it from Narrative (Blue)
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#FFEB9C', 'border': 1})
+                
+                # Tab 1: All Critical Moments (Global Story)
+                all_moments = []
+                for p in st.session_state.players:
+                    for m in p['stats'].get('critical_moments', []):
+                        all_moments.append({"Player": p['name'], "Turn": m['turn'], "Event": m['event']})
+                
+                if all_moments:
+                    df_global = pd.DataFrame(all_moments).sort_values(by="Turn")
+                    df_global.to_excel(writer, sheet_name="All_Critical_Moments", index=False)
+                    ws_global = writer.sheets["All_Critical_Moments"]
+                    ws_global.set_column('C:C', 70)
+                    # Apply header style
+                    for col_num, value in enumerate(df_global.columns.values):
+                        ws_global.write(0, col_num, value, header_fmt)
+
+                # Tab 2+: Individual Player Milestones
+                for i, p in enumerate(st.session_state.players):
+                    p_moments = p['stats'].get('critical_moments', [])
+                    if p_moments:
+                        df_p = pd.DataFrame(p_moments)
+                        clean_name = "".join(filter(str.isalnum, p['name']))[:20]
+                        sheet_name = f"P{i}_{clean_name}_Milestones"
+                        df_p.to_excel(writer, sheet_name=sheet_name, index=False)
+                        ws_p = writer.sheets[sheet_name]
+                        ws_p.set_column('B:B', 70)
+                        # Apply header style
+                        for col_num, value in enumerate(df_p.columns.values):
+                            ws_p.write(0, col_num, value, header_fmt)
 
         output.seek(0)
         return output.getvalue()
@@ -1675,50 +1701,62 @@ elif st.session_state.phase == "LIVE":
     st.header("📂 Data Warehouse & Game Highlights")
 
     if "players" in st.session_state and len(st.session_state.players) > 0:
-        # 1. Financial/Audit Focus (Restored with Milestones!)
-        with st.expander("👤 Player Stats & Forensic Financial Ledgers", expanded=True):
-            # --- RESTORED SECTION START ---
+        
+        # 🚩 1. Player Milestones & Critical Moments (The main container you like)
+        with st.expander("🚩 Player Milestones & Critical Moments", expanded=True):
             cols = st.columns(len(st.session_state.players))
             for i, p in enumerate(st.session_state.players):
                 with cols[i]:
-                    with st.expander(f"👤 {p['name']} Details", expanded=False):
+                    # RESTORED TITLE: (Player Name) Critical Moments
+                    with st.expander(f"👤 {p['name']} Critical Moments", expanded=False):
                         st.write(f"**Jail Stays:** {p['stats'].get('times_in_jail', 0)}")
                         st.divider()
                         moments = p['stats'].get('critical_moments', [])
                         if moments:
                             for e in moments:
-                                # Restoring the "badge" look for turn numbers
                                 st.markdown(f"**` T{e['turn']} `** {e['event']}")
                         else:
                             st.caption("No significant events.")
-            # --- RESTORED SECTION END ---
             
             st.divider()
             
-            # 🏦 Generate Audit Data (The $ Ledger)
-            audit_excel = get_full_log_excel(mode="audit")
-            if audit_excel:
-                st.download_button(
-                    label="📥 Download Detailed Player Financial Ledgers (Excel)",
-                    data=audit_excel,
-                    file_name=f"monopoly_financial_audit_T{st.session_state.turn_count}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"audit_xl_warehouse_{st.session_state.turn_count}",
-                    use_container_width=True
-                )
+            # --- 📥 DUAL DOWNLOAD BUTTONS (Both features preserved!) ---
+            btn_col1, btn_col2 = st.columns(2)
+            
+            with btn_col1:
+                # 🚩 THE STORYBOOK (Milestones mode)
+                milestone_excel = get_full_log_excel(mode="milestones")
+                if milestone_excel:
+                    st.download_button(
+                        label="📥 Download Player Milestone Storybook (Excel)",
+                        data=milestone_excel,
+                        file_name=f"monopoly_milestones_T{st.session_state.turn_count}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"milestone_xl_warehouse_{st.session_state.turn_count}",
+                        use_container_width=True
+                    )
+            
+            with btn_col2:
+                # 🏦 THE BANKER'S AUDIT (Audit mode - kept right where you like it)
+                audit_excel = get_full_log_excel(mode="audit")
+                if audit_excel:
+                    st.download_button(
+                        label="📥 Download Detailed Banker Financial Audit (Excel)",
+                        data=audit_excel,
+                        file_name=f"monopoly_financial_audit_T{st.session_state.turn_count}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"audit_xl_warehouse_{st.session_state.turn_count}",
+                        use_container_width=True
+                    )
 
-        # 2. Narrative/Story Focus (The Play-by-Play)
+        # 📜 2. Full Play-by-Play Master Log
         with st.expander("📜 Full Play-by-Play Master Log", expanded=False):
             if st.session_state.get('master_log') and len(st.session_state.master_log) > 0:
                 df_master = pd.DataFrame(st.session_state.master_log)
                 df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors='coerce')
                 df_master = df_master.sort_values(by=["Turn", "Player"], ascending=[True, True])
-        
-                # Display the visual table
-                st.dataframe(df_master, width="stretch", hide_index=True)
-                st.write("") 
+                st.dataframe(df_master, use_container_width=True, hide_index=True)
                 
-                # 📖 Generate Narrative Data (The Multi-Tab Story)
                 narrative_excel = get_full_log_excel(mode="narrative")
                 if narrative_excel:
                     st.download_button(
@@ -1729,8 +1767,8 @@ elif st.session_state.phase == "LIVE":
                         key=f"narrative_log_warehouse_{st.session_state.turn_count}",
                         use_container_width=True
                     )
-            else:
-                st.info("No turns have been recorded in the master log yet.")
+    else:
+        st.info("Start the game to populate the Data Warehouse.")
         
         
         
