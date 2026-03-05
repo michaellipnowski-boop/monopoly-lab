@@ -134,9 +134,20 @@ if "phase" not in st.session_state:
         "fp_initial": 0,
         "shuffle_mode": "Cyclic"
     }
-    # 🏦 FIXED: Standardize the name to match Dashboard and Excel functions
-    st.session_state.bank_audit = []
+    # 🟢 2. Set Jackpot based on the rule
+    st.session_state.jackpot = st.session_state.rules["fp_initial"] if st.session_state.rules["fp_jackpot"] else 0
 
+    # 🟢 3. Initialize Audit with the "Seed" entry if applicable
+    st.session_state.bank_audit = []
+    
+    if st.session_state.rules["fp_jackpot"] and st.session_state.jackpot > 0:
+        st.session_state.bank_audit.append({
+            "turn": 0,
+            "player": "Bank",
+            "reason": "🏦 Initial Jackpot Seed (Game Start)",
+            "amount": float(st.session_state.jackpot)
+        })
+        
 #--- SPREADSHEET FUNCTIONALITY ---
 def get_full_log_excel(mode="audit"):
     import io
@@ -350,11 +361,24 @@ def restart_game():
     st.session_state.bank_audit = []
     st.session_state.master_log = [] 
     
-    # 🟢 SYNC FIX: Set turn_count to 0 so the Sidebar and Log start at the same "Baseline"
+    # 🟢 FORENSIC SYNC: Re-seed the Jackpot and Log the Injection
+    if st.session_state.rules.get("fp_jackpot"):
+        seed = st.session_state.rules.get("fp_initial", 0)
+        st.session_state.jackpot = seed
+        if seed > 0:
+            st.session_state.bank_audit.append({
+                "turn": 0,
+                "player": "Bank",
+                "reason": "🏦 Initial Jackpot Seed (RESTART)",
+                "amount": float(seed)
+            })
+    else:
+        st.session_state.jackpot = 0
+    
+    # 🟢 SYNC FIX: Baseline counters
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
     st.session_state.double_count = 0
-    st.session_state.jackpot = st.session_state.rules.get("fp_initial", 0)
     st.session_state.last_move = "Game Restarted - Rules and custom setup restored."
     
     st.session_state.property_stats = {
@@ -927,14 +951,16 @@ def run_turn(jail_action=None, silent=False):
     p['pos'] = (p['pos'] + roll_sum) % 40
     p['stats']['visits'][str(p['pos'])] += 1
     
-    # Pass Go Check
+    # 🟢 1. Identify Square & Start Message
+    sq = PROPERTIES.get(p['pos'])
+    msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
+
+    # 🟢 2. Pass Go Check (Appends to msg instead of being overwritten)
     if p['pos'] < old_pos or (old_pos > 30 and p['pos'] == 0):
         salary = 400 if (st.session_state.rules["double_go"] and p['pos'] == 0) else 200
         p['cash'] += salary
         log_bank_transaction(p['name'], "Passed GO (Salary)", salary)
-
-    sq = PROPERTIES.get(p['pos'])
-    msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
+        msg += f"💸 Collected ${salary} for passing GO. "
 
     # --- 4. SQUARE INTERACTION ---
     if sq['type'] in ["Street", "Railroad", "Utility", "Property"]:
@@ -949,17 +975,14 @@ def run_turn(jail_action=None, silent=False):
                     op['cash'] += rent
                     op['stats']['rent_collected'] += rent
             msg += f"Paid ${rent} rent to {owner}. "
+            
         elif owner == "Bank":
             price = sq.get('price', 150)
             if p['policy']['buy_prop'] != "Never" and p['cash'] >= price:
                 floor = get_effective_reserve(p, 'buy_prop')
                 if p['policy']['buy_prop'] != "Keep Reserve" or (p['cash'] - price >= floor):
                     st.session_state.ownership[str(p['pos'])] = p['name']
-                    
-                    # ✅ CHANGE 1: Use the new charge_player. 
-                    # It handles BOTH the cash deduction AND the Banker's Audit log.
                     charge_player(p, price, destination="bank")
-                    
                     p['stats']['critical_moments'].append({
                         "turn": st.session_state.turn_count,
                         "event": f"🏠 Acquired {sq['name']} for ${price}"
@@ -967,14 +990,10 @@ def run_turn(jail_action=None, silent=False):
                     msg += f"🏠 Bought {sq['name']} (-${price})."
 
     elif sq['type'] == "Tax":
-        tax = sq.get('cost', 100)
-        
-        # ✅ CHANGE 2: Use charge_player with "jackpot" destination.
-        # This fixes the logic: if Jackpot rule is ON, it stays in-game. 
-        # If OFF, it logs an outflow. We remove the manual log_bank_transaction here.
+        # Using 200 as default to match Income Tax dictionary 
+        tax = sq.get('cost', 200)
         charge_player(p, tax, destination="jackpot")
-        
-        msg += f"Paid {sq['name']} (${tax})."
+        msg += f"⚠️ Paid {sq['name']} (${tax})."
 
     elif sq['type'] == "Action":
         if p['pos'] == 30:
@@ -987,12 +1006,28 @@ def run_turn(jail_action=None, silent=False):
 
     elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
         if st.session_state.jackpot > 0:
-            amt = int(st.session_state.jackpot) # Force int
+            amt = int(st.session_state.jackpot)
             p['cash'] += amt
-            # 🟢 Cleaned: Removed float()
-            log_bank_transaction(p_name=p['name'], reason="Economic Stimulus: Free Parking Jackpot", amount=amt)
-            msg += f"Collected Jackpot of ${amt}!"
-            st.session_state.jackpot = st.session_state.rules["fp_initial"]
+            
+            # 🟢 1. Log the Player's Stimulus
+            log_bank_transaction(
+                p_name=p['name'], 
+                reason="🎁 Economic Stimulus: Free Parking Jackpot", 
+                amount=float(amt)
+            )
+            msg += f"Collected Jackpot of ${amt}! "
+            
+            # 🟢 2. Log the Bank's Re-Injection (The Replacement Seed)
+            seed_amt = st.session_state.rules["fp_initial"]
+            if seed_amt > 0:
+                log_bank_transaction(
+                    p_name="Bank", 
+                    reason="🏦 Jackpot Re-Seed (System Injection)", 
+                    amount=float(seed_amt)
+                )
+            
+            # 🟢 3. Reset the State
+            st.session_state.jackpot = seed_amt
         
     # --- 5. WRAP UP ---
     house_msg = attempt_buy_houses(p) # Also logs its own Banker Audit transactions
