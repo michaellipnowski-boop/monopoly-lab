@@ -955,12 +955,13 @@ def run_turn(jail_action=None, silent=False):
     sq = PROPERTIES.get(p['pos'])
     msg = f"{p['name']} rolled {d1}+{d2}={roll_sum} -> {sq['name']}. "
 
-    # 🟢 2. Pass Go Check (Appends to msg instead of being overwritten)
+    # 🟢 2. Pass Go Check
     if p['pos'] < old_pos or (old_pos > 30 and p['pos'] == 0):
         salary = 400 if (st.session_state.rules["double_go"] and p['pos'] == 0) else 200
         p['cash'] += salary
         log_bank_transaction(p['name'], "Passed GO (Salary)", salary)
-        msg += f"💸 Collected ${salary} for passing GO. "
+        # Added leading space and a pipe | for visual clarity
+        msg += f" | 💸 Collected ${salary} for passing GO. "
 
     # --- 4. SQUARE INTERACTION ---
     if sq['type'] in ["Street", "Railroad", "Utility", "Property"]:
@@ -987,13 +988,12 @@ def run_turn(jail_action=None, silent=False):
                         "turn": st.session_state.turn_count,
                         "event": f"🏠 Acquired {sq['name']} for ${price}"
                     })
-                    msg += f"🏠 Bought {sq['name']} (-${price})."
+                    msg += f" | 🏠 Bought {sq['name']} (-${price})."
 
     elif sq['type'] == "Tax":
-        # Using 200 as default to match Income Tax dictionary 
         tax = sq.get('cost', 200)
         charge_player(p, tax, destination="jackpot")
-        msg += f"⚠️ Paid {sq['name']} (${tax})."
+        msg += f" | ⚠️ Paid {sq['name']} (${tax})."
 
     elif sq['type'] == "Action":
         if p['pos'] == 30:
@@ -1030,20 +1030,28 @@ def run_turn(jail_action=None, silent=False):
             st.session_state.jackpot = seed_amt
         
     # --- 5. WRAP UP ---
-    house_msg = attempt_buy_houses(p) # Also logs its own Banker Audit transactions
-    if house_msg: msg += f" {house_msg}"
+    house_msg = attempt_buy_houses(p)
+    if house_msg: 
+        msg += f" | 🏗️ {house_msg}"
     
-    if not silent: st.session_state.last_move = msg
+    # 🟢 NEW: Clean up the final string (prevents collisions and double spaces)
+    msg = msg.strip().replace("  ", " ")
+    
+    if not silent: 
+        st.session_state.last_move = msg
     
     # 🟢 CRITICAL SYNC: All player history lists must grow together
     for player in st.session_state.players:
         player['stats']['cash_history'].append(player['cash'])
     
     p['stats']['ends'][str(p['pos'])] += 1
+    
+    # Permanent record entry
     record_master_turn(p, msg)
 
     # Move to next player if not doubles (or if in jail)
     if not is_double or p.get('in_jail'):
+        st.session_state.double_count = 0 
         st.session_state.current_p = (st.session_state.current_p + 1) % len(st.session_state.players)
             
 
@@ -1740,7 +1748,7 @@ elif st.session_state.phase == "LIVE":
     
             # --- TAB 1: MASTER LEDGER & ECONOMY CHART ---
             with tabs[0]:
-                st.subheader("📈 Game Economy")
+                st.subheader("📈 Money Supply")
                 # Create a dedicated chart dataframe with a zero-baseline
                 df_chart = df_base.copy()
                 df_chart['Breakeven'] = 0
