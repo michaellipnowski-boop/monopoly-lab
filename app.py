@@ -729,11 +729,14 @@ def draw_card(p, deck_type):
             p['cash'] += 200
             # 🟢 Cleaned: Removed 200.0
             log_bank_transaction(p_name=p['name'], reason="Passed GO (Card Move)", amount=200)
+            # 🟢 TICKER FIX: Added visibility
+            msg += " | 💸 Collected $200 for passing GO."
             
         p['stats']['visits'][str(p['pos'])] += 1
             
     elif card['effect'] == "jail":
         send_to_jail(p)
+        msg += " | 👮 Go To Jail!"
         
     elif card['effect'] == "move_relative":
         p['pos'] = (p['pos'] + card['amt']) % 40
@@ -783,6 +786,8 @@ def draw_card(p, deck_type):
                 reason="Maintenance: Property Repairs (Card)", 
                 amount=-cost
             )
+            # 🟢 TICKER FIX: Added visibility
+            msg += f" | 🔧 Paid ${cost} in repairs."
             
         if "property_stats" in st.session_state and cost > 0:
             p['stats']['rent_paid'] += cost
@@ -794,6 +799,8 @@ def draw_card(p, deck_type):
         if p['pos'] < old_pos: 
             p['cash'] += 200
             log_bank_transaction(p_name=p['name'], reason="Passed GO (Nearest RR Card)", amount=200)
+            # 🟢 TICKER FIX: Added visibility
+            msg += " | 💸 Collected $200 for passing GO."
         p['stats']['visits'][str(p['pos'])] += 1
         
     elif card['effect'] == "move_nearest_util":
@@ -803,6 +810,8 @@ def draw_card(p, deck_type):
         if p['pos'] < old_pos: 
             p['cash'] += 200
             log_bank_transaction(p_name=p['name'], reason="Passed GO (Nearest Util Card)", amount=200)
+            # 🟢 TICKER FIX: Added visibility
+            msg += " | 💸 Collected $200 for passing GO."
         p['stats']['visits'][str(p['pos'])] += 1
 
     # --- FINAL DECK MANAGEMENT ---
@@ -840,9 +849,7 @@ def draw_card(p, deck_type):
             
             if should_buy_card and p['cash'] >= price:
                 st.session_state.ownership[str(p['pos'])] = p['name']
-                p['cash'] -= price
-                # 🟢 Cleaned: Removed -float(price)
-                log_bank_transaction(p_name=p['name'], reason=f"Asset Purchase: {sq['name']} (Card)", amount=-price)
+                charge_player(p, price, destination="bank")
                 
                 if "property_stats" in st.session_state:
                     st.session_state.property_stats[str(p['pos'])]["expenses"] += price
@@ -850,7 +857,8 @@ def draw_card(p, deck_type):
                 event_text = f"🏠 Bought {sq['name']} (-${price}) via card"
                 if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
                 p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
-                msg += f" {event_text}."
+                # 🟢 TICKER FIX: Added separator
+                msg += f" | {event_text}."
         
     return msg
 
