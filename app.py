@@ -829,36 +829,70 @@ def draw_card(p, deck_type):
             else: 
                 st.session_state.ch_deck_idx.append(idx)
                 
-    # --- POST-MOVE EVALUATION ---
+    # --- POST-MOVE EVALUATION (Refined for Square Interactions) ---
     move_effects = ["move", "move_relative", "move_nearest_rr", "move_nearest_util"]
     if card['effect'] in move_effects:
         sq = PROPERTIES[p['pos']]
         owner = st.session_state.ownership.get(str(p['pos']), "Bank")
         
-        if owner == "Bank" and sq['type'] in ["Street", "Railroad", "Utility"]:
-            price = int(sq.get('price', 150)) # Force int
-            pol = p['policy'].get('buy_prop', "Always")
+        # 1. Handle Property/Rent Interactions
+        if sq['type'] in ["Street", "Railroad", "Utility"]:
+            if owner != "Bank" and str(owner).lower() != str(p['name']).lower():
+                # 💸 NEW: Pay Rent if the card lands you on someone else's property
+                rent = int(get_rent(p['pos'])) # Explicit cast for safety
+                p['cash'] -= rent
+                p['stats']['rent_paid'] += rent
+                for op in st.session_state.players:
+                    if str(op['name']).lower() == str(owner).lower():
+                        op['cash'] += rent
+                        op['stats']['rent_collected'] += rent
+                msg += f" | Paid ${rent} rent to {owner}."
             
-            should_buy_card = False
-            if pol == "Always":
-                should_buy_card = True
-            elif pol == "Keep Reserve":
-                floor = get_effective_reserve(p, 'buy_prop')
-                if p['cash'] - price >= floor:
+            elif owner == "Bank":
+                price = int(sq.get('price', 150))
+                pol = p['policy'].get('buy_prop', "Always")
+                
+                should_buy_card = False
+                if pol == "Always":
                     should_buy_card = True
-            
-            if should_buy_card and p['cash'] >= price:
-                st.session_state.ownership[str(p['pos'])] = p['name']
-                charge_player(p, price, destination="bank")
+                elif pol == "Keep Reserve":
+                    floor = get_effective_reserve(p, 'buy_prop')
+                    if p['cash'] - price >= floor:
+                        should_buy_card = True
                 
-                if "property_stats" in st.session_state:
-                    st.session_state.property_stats[str(p['pos'])]["expenses"] += price
-                
-                event_text = f"🏠 Bought {sq['name']} (-${price}) via card"
-                if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
-                p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
-                # 🟢 TICKER FIX: Added separator
-                msg += f" | {event_text}."
+                if should_buy_card and p['cash'] >= price:
+                    st.session_state.ownership[str(p['pos'])] = p['name']
+                    charge_player(p, price, destination="bank")
+                    if "property_stats" in st.session_state:
+                        st.session_state.property_stats[str(p['pos'])]["expenses"] += price
+                    
+                    event_text = f"🏠 Bought {sq['name']} (-${price}) via card"
+                    if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
+                    p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                    msg += f" | {event_text}."
+
+        # 2. Handle Tax Interactions (Fixes the Income Tax bug!)
+        elif sq['type'] == "Tax":
+            tax = sq.get('cost', 200)
+            charge_player(p, tax, destination="jackpot")
+            msg += f" | ⚠️ Paid {sq['name']} (${tax}) via card."
+
+        # 3. Handle Go To Jail (Fixes landing on square 30 via card)
+        elif sq['type'] == "Action" and p['pos'] == 30:
+            send_to_jail(p)
+            msg += " | 👮 Go To Jail (Landed via card)!"
+
+        # 4. Handle Free Parking / Jackpot Collection
+        elif sq['name'] == "Free Parking":
+            if st.session_state.rules.get("fp_jackpot") and st.session_state.jackpot > 0:
+                amount = st.session_state.jackpot
+                p['cash'] += amount
+                # Log it since money is moving from the "Pool" to a "Player"
+                log_bank_transaction(p_name=p['name'], reason="Jackpot Collection (Card Move)", amount=amount)
+                st.session_state.jackpot = 0
+                msg += f" | 💰 Collected Jackpot (${amount}) via card!"
+            else:
+                msg += " | 🅿️ Resting on Free Parking."
         
     return msg
 
