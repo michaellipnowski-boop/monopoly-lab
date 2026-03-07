@@ -539,6 +539,30 @@ def verify_sim_integrity():
 
 
 # --- HELPER LOGIC ---
+def check_monopoly(pos):
+    sq = PROPERTIES[pos]
+    if sq['type'] != "Street":
+        return False
+    
+    color = sq.get('color')
+    owner = st.session_state.ownership.get(str(pos))
+    
+    if not owner or owner == "Bank":
+        return False
+
+    # Find all properties of the same color
+    same_color_indices = [
+        i for i, p in enumerate(PROPERTIES) 
+        if p.get('color') == color
+    ]
+    
+    # Check if the same owner owns all of them
+    return all(
+        st.session_state.ownership.get(str(idx)) == owner 
+        for idx in same_color_indices
+    )
+
+
 def charge_player(p, amt, destination="bank"):
     # 1. Physical wallet deduction
     p['cash'] -= amt
@@ -567,8 +591,6 @@ def charge_player(p, amt, destination="bank"):
 
 def get_rent(pid, roll=0):
     info = PROPERTIES[pid]
-    
-    # 🟢 SURGERY: Use helpers to resolve ownership and house counts immediately
     owner = get_owner(pid)
     
     if not owner or owner == "Bank":
@@ -578,22 +600,13 @@ def get_rent(pid, roll=0):
 
     # 1. STREETS (Houses & Monopolies)
     if info['type'] == "Street":
-        # 🟢 SURGERY: Use helper here too
         h = get_house_count(pid)
-        
         rent_list = info.get('rent', [0])
         base = rent_list[min(h, len(rent_list)-1)]
         
-        # Monopoly check (Double rent for 0 houses)
-        if h == 0:
-            group = COLOR_GROUPS.get(info['color'], [])
-            owned_in_group = 0
-            for g_id in group:
-                curr = get_owner(g_id)
-                if curr and str(curr).strip().lower() == owner_norm:
-                    owned_in_group += 1
-            if owned_in_group == len(group) and len(group) > 0:
-                return base * 2
+        # 🟢 CLEANED: Using your new helper function
+        if h == 0 and check_monopoly(pid):
+            return base * 2
         return base
 
     # 2. RAILROADS
@@ -838,15 +851,45 @@ def draw_card(p, deck_type):
         # 1. Handle Property/Rent Interactions
         if sq['type'] in ["Street", "Railroad", "Utility"]:
             if owner != "Bank" and str(owner).lower() != str(p['name']).lower():
-                # 💸 NEW: Pay Rent if the card lands you on someone else's property
-                rent = int(get_rent(p['pos'])) # Explicit cast for safety
+                # --- CUMULATIVE MULTIPLIER LOGIC ---
+                multiplier = 1
+                reasons = []
+
+                # A. Handle Special Card Effects
+                if card['effect'] == "move_nearest_rr":
+                    multiplier *= 2
+                    reasons.append("2x Card Bonus")
+                
+                # B. Handle Utility Special Case (10x NEW Roll)
+                if card['effect'] == "move_nearest_util":
+                    # 🎲 NEW: Official rules require a fresh throw for this card
+                    new_d1 = random.randint(1, 6)
+                    new_d2 = random.randint(1, 6)
+                    new_roll = new_d1 + new_d2
+                    
+                    rent = 10 * new_roll
+                    reasons.append(f"10x NEW Roll [{new_d1}+{new_d2}={new_roll}]")
+                else:
+                    # Standard Rent Calculation (with Monopoly check)
+                    base_rent = int(get_rent(p['pos']))
+                    if sq['type'] == "Street" and check_monopoly(p['pos']):
+                        if st.session_state.houses.get(str(p['pos']), 0) == 0:
+                            # We don't multiply here because get_rent already did it!
+                            reasons.append("2x Monopoly Bonus")
+                    
+                    rent = int(base_rent * multiplier)
+
+                # --- EXECUTE TRANSFER ---
                 p['cash'] -= rent
                 p['stats']['rent_paid'] += rent
                 for op in st.session_state.players:
                     if str(op['name']).lower() == str(owner).lower():
                         op['cash'] += rent
                         op['stats']['rent_collected'] += rent
-                msg += f" | Paid ${rent} rent to {owner}."
+                
+                # Build the "Forensic Receipt"
+                receipt = f" ({' + '.join(reasons)})" if reasons else ""
+                msg += f" | Paid ${rent} rent to {owner}{receipt}."
             
             elif owner == "Bank":
                 price = int(sq.get('price', 150))
