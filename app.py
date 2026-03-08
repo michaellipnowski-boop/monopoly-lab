@@ -1927,12 +1927,13 @@ elif st.session_state.phase == "LIVE":
             
             if narrative_excel:
                 st.download_button(
-                    label="📥 Download Full Play-by-Play Spreadsheet (Excel)", # Updated label
+                    label="📥 Download Full Play-by-Play Spreadsheet (Excel)",
                     data=narrative_excel,
                     file_name=f"monopoly_play_by_play_T{st.session_state.turn_count}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
-                    key=f"wealth_tab_narrative_btn_{st.session_state.turn_count}" # Unique key
+                    # 🟢 ADDED 'wealth_tab_' prefix to make it unique
+                    key=f"wealth_tab_dl_{st.session_state.turn_count}" 
                 )
 
     # 🟢 NEW TAB: PROPERTY FORENSIC AUDIT
@@ -1940,13 +1941,12 @@ elif st.session_state.phase == "LIVE":
         st.subheader("Property-Level Investment & ROI")
         
         # 1. Selection logic
-        # Filter to properties that actually have a recorded history
         active_prop_ids = list(st.session_state.get('property_ledgers', {}).keys())
         
         if not active_prop_ids:
             st.info("No property transactions recorded yet. Once properties are bought or rent is paid, the audit trails will appear here.")
         else:
-            # Map IDs to Names for the selectbox
+            # Map IDs to Names
             prop_options = {pid: PROPERTIES[int(pid)]['name'] for pid in active_prop_ids}
             selected_pid = st.selectbox(
                 "Select a Property to Audit:", 
@@ -1957,7 +1957,7 @@ elif st.session_state.phase == "LIVE":
             # 2. Process Ledger Data
             ledger_data = st.session_state.property_ledgers[selected_pid]
             df_ledger = pd.DataFrame(ledger_data)
-    
+            
             # 🟢 MASTER DEFINITION
             capex_cols = ['deed', 'h1', 'h2', 'h3', 'h4', 'hotel']
             opex_cols = ['rent_inc', 'rent_exp', 'maintenance']
@@ -1968,75 +1968,79 @@ elif st.session_state.phase == "LIVE":
                     df_ledger[col] = 0.0
             
             df_ledger = df_ledger.fillna(0)
-
-            # 🟢 CALCULATE ONCE: This replaces 'Balance_1' and 'Running_Balance' later
             df_ledger['Running_Balance'] = df_ledger[df_ledger.columns.intersection(money_cols)].sum(axis=1).cumsum()
             
             # 3. Calculate Key Metrics
-            total_capex = df_ledger[capex_cols].sum().sum()
-            total_rev = df_ledger['rent_inc'].sum()
-            total_opex = df_ledger[opex_cols].sum().sum()
-            
-            net_roi = total_rev + total_capex + total_opex         
-            
-            # 4. Display Metrics
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Total Investment", f"${abs(total_capex):,.0f}")
-            m2.metric("Gross Rent Income", f"${total_rev:,.0f}")
-            m3.metric("Net Property Profit", f"${net_roi:,.0f}", 
-                      delta=f"{net_roi:,.0f}", 
-                      delta_color="normal" if net_roi >= 0 else "inverse")
-            
-            st.markdown("---")
-
-            # 🟢 NEW: TOGGLE FOR COMPARISON
-            compare_on = st.toggle("🚀 Enable Comparison Mode (Select a 2nd Asset)")
-            
-            if compare_on:
-                other_pid = st.selectbox(
-                    "Select Second Property to Compare:",
-                    options=[pid for pid in active_prop_ids if pid != selected_pid],
-                    format_func=lambda x: prop_options[x]
-                )
+            if not df_ledger.empty:
+                total_capex = df_ledger[capex_cols].sum().sum()
+                total_rev = df_ledger['rent_inc'].sum()
+                total_opex = df_ledger[opex_cols].sum().sum()
+                net_roi = total_rev + total_capex + total_opex         
                 
-                # 2nd Property Data Processing
-                df_ledger2 = pd.DataFrame(st.session_state.property_ledgers[other_pid])
-                for col in money_cols:
-                    if col not in df_ledger2.columns: df_ledger2[col] = 0.0
+                # 4. Display Metrics
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Total Investment", f"${abs(total_capex):,.0f}")
+                m2.metric("Gross Rent Income", f"${total_rev:,.0f}")
+                m3.metric("Net Property Profit", f"${net_roi:,.0f}", 
+                          delta=f"{net_roi:,.0f}", 
+                          delta_color="normal" if net_roi >= 0 else "inverse")
                 
-                # Calculate Running Balance for the SECOND property only
-                # (The first property is already handled by Step 2)
-                df_ledger2['Balance_2'] = df_ledger2[df_ledger2.columns.intersection(money_cols)].sum(axis=1).cumsum()
+                st.markdown("---")
                 
-                # Combine for Comparison Line Chart
-                comparison_df = pd.DataFrame({
-                    prop_options[selected_pid]: df_ledger['Running_Balance'], 
-                    prop_options[other_pid]: df_ledger2['Balance_2']
-                }).ffill().fillna(0)
+                # 🟢 TOGGLE FOR COMPARISON
+                compare_on = st.toggle("🚀 Enable Comparison Mode (Select a 2nd Asset)")
                 
-                st.write(f"**ROI Race: {prop_options[selected_pid]} vs {prop_options[other_pid]}**")
-                st.line_chart(comparison_df)
+                if compare_on:
+                    # Create the list first so we can check its length
+                    other_options = [pid for pid in active_prop_ids if pid != selected_pid]
+                    
+                    if not other_options:
+                        st.warning("⚠️ Only one property has been traded so far. You need at least two active properties to use Comparison Mode.")
+                    else:
+                        other_pid = st.selectbox(
+                            "Select Second Property to Compare:",
+                            options=other_options,
+                            format_func=lambda x: prop_options[x]
+                        )
+                    
+                    df_ledger2 = pd.DataFrame(st.session_state.property_ledgers[other_pid])
+                    if not df_ledger2.empty:
+                        for col in money_cols:
+                            if col not in df_ledger2.columns: df_ledger2[col] = 0.0
+                        
+                        df_ledger2['Balance_2'] = df_ledger2[df_ledger2.columns.intersection(money_cols)].sum(axis=1).cumsum()
+                        
+                        comparison_df = pd.DataFrame({
+                            prop_options[selected_pid]: df_ledger['Running_Balance'], 
+                            prop_options[other_pid]: df_ledger2['Balance_2']
+                        }).ffill().fillna(0)
+                        
+                        st.write(f"**ROI Race: {prop_options[selected_pid]} vs {prop_options[other_pid]}**")
+                        st.line_chart(comparison_df)
+                    else:
+                        st.info("The selected second property has no transaction history to compare yet.")
+                
+                else:
+                    # 5. Visual: The J-Curve
+                    st.write("**Cumulative Cash Flow (Break-even Analysis)**")
+                    
+                    profitable_turns = df_ledger[df_ledger['Running_Balance'] >= 0]
+                    if not profitable_turns.empty:
+                        be_turn = profitable_turns.iloc[0]['turn']
+                        st.success(f"✅ **Break-even reached at Turn {be_turn}**")
+                    else:
+                        current_deficit = df_ledger['Running_Balance'].iloc[-1]
+                        st.warning(f"📉 **Property is still ${abs(current_deficit):,.0f} away from break-even.**")
+                    
+                    st.area_chart(df_ledger['Running_Balance'])
+                
+                # 6. Raw Data (Positioned to show regardless of Comparison toggle)
+                with st.expander("View Forensic Transaction Log"):
+                    st.dataframe(df_ledger, use_container_width=True, hide_index=True)
             
             else:
-                # 5. Visual: The J-Curve (Standard Single View)
-                st.write("**Cumulative Cash Flow (Break-even Analysis)**")
-                
-                # --- DUPLICATE LOGIC REMOVED ---
-                # --- MILESTONE CHECK ---
-                profitable_turns = df_ledger[df_ledger['Running_Balance'] >= 0]
-                if not profitable_turns.empty:
-                    be_turn = profitable_turns.iloc[0]['turn']
-                    st.success(f"✅ **Break-even reached at Turn {be_turn}**")
-                else:
-                    current_deficit = df_ledger['Running_Balance'].iloc[-1]
-                    st.warning(f"📉 **Property is still ${abs(current_deficit):,.0f} away from break-even.**")
-
-                st.area_chart(df_ledger['Running_Balance'])
+                st.info("No transaction data recorded for this property yet. Buy the deed or collect rent to see the audit trail.")
             
-            # 6. Raw Data
-            with st.expander("View Forensic Transaction Log"):
-                st.dataframe(df_ledger, use_container_width=True, hide_index=True)
-        
     with t_bank:
         st.header("🏦 Central Bank Audit Warehouse")
         st.info("This ledger tracks the 'Money Supply' across specialized accounting tabs.")
@@ -2057,8 +2061,13 @@ elif st.session_state.phase == "LIVE":
             m1, m2, m3 = st.columns(3)
             m1.metric("Total Injected", f"${total_injected:,.2f}")
             m2.metric("Total Sunk", f"${total_sunk:,.2f}")
-            m3.metric("Net Game Liquidity", f"${net_liquidity:,.2f}", 
-                      delta="Inflationary" if net_liquidity > 0 else "Contractionary")
+            # IMPROVED VERSION:
+            m3.metric(
+                label="Net Game Liquidity", 
+                value=f"${net_liquidity:,.2f}", 
+                delta=f"${net_liquidity:,.2f} (Net)",
+                delta_color="normal" # This automatically turns Green if positive, Red if negative
+            )
     
             st.divider()
     
@@ -2162,7 +2171,7 @@ elif st.session_state.phase == "LIVE":
                     data=milestone_excel,
                     file_name=f"monopoly_milestones_T{st.session_state.turn_count}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"milestone_xl_btn_{st.session_state.turn_count}",
+                    key=f"warehouse_milestones_{st.session_state.turn_count}",
                     use_container_width=True
                 )
 
@@ -2181,7 +2190,8 @@ elif st.session_state.phase == "LIVE":
                         data=narrative_excel,
                         file_name=f"monopoly_play_by_play_T{st.session_state.turn_count}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"narrative_log_warehouse_{st.session_state.turn_count}",
+                        # 🟢 ADDED 'warehouse_' prefix
+                        key=f"warehouse_dl_{st.session_state.turn_count}",
                         use_container_width=True
                     )
     else:
