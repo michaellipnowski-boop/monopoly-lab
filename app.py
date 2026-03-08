@@ -97,6 +97,33 @@ CHEST_DECK = [
 COLOR_GROUPS = {}
 RAILROADS = []
 UTILITIES = []
+
+def stamp_property_ledger(pid, event_type, 
+                          deed=0, monopoly=0, 
+                          h1=0, h2=0, h3=0, h4=0, hotel=0):
+    """
+    The Single Source of Truth for property history.
+    Calculates a 'total' automatically for audit consistency.
+    Negative values = Investments (Costs), Positive = Revenue (Rent).
+    """
+    # Ensure the dictionary exists (failsafe)
+    if "property_ledgers" not in st.session_state:
+         st.session_state.property_ledgers = {str(i): [] for i in range(40)}
+         
+    # Sum the marginal components for the 'Total' column
+    row_total = deed + monopoly + h1 + h2 + h3 + h4 + hotel
+    
+    entry = {
+        "turn": st.session_state.turn_count,
+        "event": event_type,
+        "deed": int(deed),
+        "monopoly": int(monopoly),
+        "h1": int(h1), "h2": int(h2), "h3": int(h3), "h4": int(h4), "hotel": int(hotel),
+        "total": int(row_total)
+    }
+    
+    st.session_state.property_ledgers[str(pid)].append(entry)
+
 for pid, info in PROPERTIES.items():
     if info.get('type') == "Street":
         COLOR_GROUPS.setdefault(info['color'], []).append(pid)
@@ -147,7 +174,13 @@ if "phase" not in st.session_state:
             "reason": "🏦 Initial Jackpot Seed (Game Start)",
             "amount": float(st.session_state.jackpot)
         })
-        
+
+    # 🟢 Initialize Property Cash Flow Ledgers
+    # Stores a list of 'stamps' for every square on the board (0-39)
+    if "property_ledgers" not in st.session_state:
+        st.session_state.property_ledgers = {str(i): [] for i in range(40)}
+
+
 #--- SPREADSHEET FUNCTIONALITY ---
 def get_full_log_excel(mode="audit"):
     import io
@@ -353,6 +386,13 @@ def restart_game():
     import random
     import streamlit as st
 
+    # 0. First, we clear the slate
+    st.session_state.bank_audit = []
+    st.session_state.master_log = [] 
+    
+    # 🟢 This wipes OLD history, NOT the blueprint
+    st.session_state.property_ledgers = {str(i): [] for i in range(40)}
+
     # 1. Restore Board and Game State FROM BLUEPRINT
     st.session_state.ownership = copy.deepcopy(st.session_state.get('starting_ownership', {}))
     st.session_state.houses = copy.deepcopy(st.session_state.get('starting_houses', {}))
@@ -442,8 +482,14 @@ def restart_game():
                 # 🔍 Find the player object to update their specific UI highlights
                 owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
                 
+                # 🟢 [NEW] STAMP: Land investment for Property Ledger
+                stamp_property_ledger(pid_int, "🪂 INITIAL: Parachuted Deed", deed=-price)
+
+                # 🟢 [NEW] STAMP: Monopoly status (if applicable at start)
+                if check_monopoly(pid_int):
+                    stamp_property_ledger(pid_int, "🪂 INITIAL: Monopoly Obtained")
+
                 if owner_obj:
-                    # 🟢 SYNC: Push the property to the UI Highlight table
                     owner_obj['stats']['critical_moments'].append({
                         "turn": 0, 
                         "event": f"🪂 RESTART: Restored ownership of {p_name}"
@@ -458,8 +504,14 @@ def restart_game():
                     total_h_val = h_count * h_cost
                     label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
                     
+                    # 🟢 [NEW] STAMP: Sequential house investments for Property Ledger
+                    if h_count >= 1: stamp_property_ledger(pid_int, "🪂 INITIAL: House 1", h1=-h_cost)
+                    if h_count >= 2: stamp_property_ledger(pid_int, "🪂 INITIAL: House 2", h2=-h_cost)
+                    if h_count >= 3: stamp_property_ledger(pid_int, "🪂 INITIAL: House 3", h3=-h_cost)
+                    if h_count >= 4: stamp_property_ledger(pid_int, "🪂 INITIAL: House 4", h4=-h_cost)
+                    if h_count == 5: stamp_property_ledger(pid_int, "🪂 INITIAL: Hotel", hotel=-h_cost)
+
                     if owner_obj:
-                        # 🟢 SYNC: Push the houses to the UI Highlight table
                         owner_obj['stats']['critical_moments'].append({
                             "turn": 0, 
                             "event": f"🏗️ RESTART: {p_name} restored with {label}"
@@ -477,7 +529,7 @@ def restart_game():
                     "Cash": "N/A", 
                     "Action": f"SETUP RESTORED: {p_name} assigned"
                 })
-
+                
     st.session_state.phase = "LIVE"
     st.rerun()
 
@@ -689,6 +741,17 @@ def attempt_buy_houses(p):
                     # Write to state using string key (standardizing for your getter)
                     st.session_state.houses[str(target_idx)] = new_count
                     
+                    # 🟢 [NEW] FORENSIC STAMP: Record this specific investment layer
+                    label = "Hotel" if new_count == 5 else f"House {new_count}"
+                    column_key = "hotel" if new_count == 5 else f"h{new_count}"
+                    
+                    # This tells the ledger: "Put this cost in the 'h3' column" (or whichever unit it is)
+                    stamp_property_ledger(
+                        int(target_idx), 
+                        f"Built {label}", 
+                        **{column_key: -h_price}
+                    )
+                    
                     # 📝 Grouping Logic for Storybook
                     if target_idx not in session_builds:
                         session_builds[target_idx] = {'units': 0, 'total_cost': 0, 'name': sq['name']}
@@ -696,7 +759,6 @@ def attempt_buy_houses(p):
                     session_builds[target_idx]['total_cost'] += h_price
 
                     # 🏷️ Narrative Labeling
-                    label = "Hotel" if new_count == 5 else f"House {new_count}"
                     actions.append(f"{label} on {sq['name']}")
                 else:
                     break
@@ -785,10 +847,21 @@ def draw_card(p, deck_type):
         for pid, h_count in st.session_state.houses.items():
             owner = st.session_state.ownership.get(str(pid))
             if owner and str(owner).strip().lower() == str(p['name']).strip().lower():
+                this_prop_cost = 0
                 if h_count == 5: # Hotel
-                    cost += int(card['H'])
+                    this_prop_cost = int(card['H'])
                 else: # Houses
-                    cost += (h_count * int(card['h']))
+                    this_prop_cost = (h_count * int(card['h']))
+                
+                cost += this_prop_cost
+                
+                # 🟢 [NEW] FORENSIC STAMP: Log maintenance per property
+                if this_prop_cost > 0:
+                    stamp_property_ledger(
+                        int(pid), 
+                        f"🛠️ Repairs: {card['text'][:20]}...", 
+                        maintenance=-this_prop_cost
+                    )
         
         charge_player(p, cost)
         
@@ -882,10 +955,17 @@ def draw_card(p, deck_type):
                 # --- EXECUTE TRANSFER ---
                 p['cash'] -= rent
                 p['stats']['rent_paid'] += rent
+                
+                # 🟢 [NEW] FORENSIC STAMP: Expense side
+                stamp_property_ledger(p['pos'], f"Rent Paid (via {name} Card)", rent_exp=-rent)
+                
                 for op in st.session_state.players:
                     if str(op['name']).lower() == str(owner).lower():
                         op['cash'] += rent
                         op['stats']['rent_collected'] += rent
+                        
+                        # 🟢 [NEW] FORENSIC STAMP: Income side
+                        stamp_property_ledger(p['pos'], f"Rent Collected (via Card)", rent_inc=rent)
                 
                 # Build the "Forensic Receipt"
                 receipt = f" ({' + '.join(reasons)})" if reasons else ""
@@ -906,6 +986,17 @@ def draw_card(p, deck_type):
                 if should_buy_card and p['cash'] >= price:
                     st.session_state.ownership[str(p['pos'])] = p['name']
                     charge_player(p, price, destination="bank")
+                    
+                    # 🟢 [NEW] FORENSIC STAMP: Record the Investment
+                    stamp_property_ledger(p['pos'], "Property Purchase (via Card)", deed=-price)
+                    
+                    # 🎯 [NEW] MONOPOLY CHECK: Does this buy double the rent?
+                    if check_monopoly(p['pos']):
+                        color = PROPERTIES[p['pos']]['color']
+                        for idx, prop in enumerate(PROPERTIES):
+                            if prop.get('color') == color:
+                                stamp_property_ledger(idx, "🎯 Monopoly Achieved")
+                    
                     if "property_stats" in st.session_state:
                         st.session_state.property_stats[str(p['pos'])]["expenses"] += price
                     
@@ -1055,11 +1146,20 @@ def run_turn(jail_action=None, silent=False):
             rent = get_rent(p['pos'], roll=roll_sum)
             p['cash'] -= rent
             p['stats']['rent_paid'] += rent
+
+            # 🟢 FORENSIC STAMP: Log the Expense (The Payer's side)
+            stamp_property_ledger(p['pos'], f"Rent Paid by {p['name']}", rent_exp=-rent)
+            
             # Transfer rent to owner
             for op in st.session_state.players:
                 if str(op['name']).lower() == str(owner).lower():
                     op['cash'] += rent
                     op['stats']['rent_collected'] += rent
+
+                    # 🟢 FORENSIC STAMP: Log the Income (The Owner's side)
+                    # This now only fires exactly once when the owner is found.
+                    stamp_property_ledger(p['pos'], f"Rent Collected by {op['name']}", rent_inc=rent)
+            
             msg += f"Paid ${rent} rent to {owner}. "
             
         elif owner == "Bank":
@@ -1067,14 +1167,28 @@ def run_turn(jail_action=None, silent=False):
             if p['policy']['buy_prop'] != "Never" and p['cash'] >= price:
                 floor = get_effective_reserve(p, 'buy_prop')
                 if p['policy']['buy_prop'] != "Keep Reserve" or (p['cash'] - price >= floor):
+                    # --- EXISTING: Update State ---
                     st.session_state.ownership[str(p['pos'])] = p['name']
                     charge_player(p, price, destination="bank")
+                    
+                    # 🟢 [NEW] FORENSIC STAMP: Record the Deed Purchase
+                    stamp_property_ledger(p['pos'], "Property Purchase", deed=-price)
+
+                    # 🎯 [NEW] MONOPOLY CHECK: Does this buy double the rent?
+                    if check_monopoly(p['pos']):
+                        color = PROPERTIES[p['pos']]['color']
+                        # Stamp EVERY property in this color set so their history explains the 2x rent
+                        for idx, prop in enumerate(PROPERTIES):
+                            if prop.get('color') == color:
+                                stamp_property_ledger(idx, "🎯 Monopoly Achieved")
+
+                    # --- EXISTING: UI & Logs ---
                     p['stats']['critical_moments'].append({
                         "turn": st.session_state.turn_count,
                         "event": f"🏠 Acquired {sq['name']} for ${price}"
                     })
                     msg += f" | 🏠 Bought {sq['name']} (-${price})."
-
+                    
     elif sq['type'] == "Tax":
         tax = sq.get('cost', 200)
         charge_player(p, tax, destination="jackpot")
