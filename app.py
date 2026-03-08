@@ -1568,6 +1568,24 @@ elif st.session_state.phase == "SETUP":
                 prop_price = p_info.get('price', 0)
                 log_bank_transaction(owner_name, f"SETUP: Asset Deed ({p_name})", -prop_price)
 
+                # 🟢 NEW: Stamp the Property Forensic Ledger for the ROI Tab
+                h_count = current_houses.get(str(pid), 0)
+                h_price = p_info.get('house_price', p_info.get('h_cost', 50))
+                
+                st.session_state.property_ledgers[prop_id_str] = [{
+                    "turn": 0,
+                    "event": "Parachute Setup (Basis)",
+                    "deed": -prop_price,
+                    "h1": -h_price if h_count >= 1 else 0,
+                    "h2": -h_price if h_count >= 2 else 0,
+                    "h3": -h_price if h_count >= 3 else 0,
+                    "h4": -h_price if h_count >= 4 else 0,
+                    "hotel": -h_price if h_count >= 5 else 0,
+                    "rent_inc": 0,
+                    "rent_exp": 0,
+                    "maintenance": 0
+                }]
+
                 # 📜 2. Master Log: The Deed Assignment
                 st.session_state.master_log.append({
                     "Turn": 0, "Player": owner_name, "Position": p_pos,
@@ -1938,17 +1956,28 @@ elif st.session_state.phase == "LIVE":
             
             # 2. Process Ledger Data
             ledger_data = st.session_state.property_ledgers[selected_pid]
-            df_ledger = pd.DataFrame(ledger_data).fillna(0)
+            df_ledger = pd.DataFrame(ledger_data)
+    
+            # 🟢 MASTER DEFINITION
+            capex_cols = ['deed', 'h1', 'h2', 'h3', 'h4', 'hotel']
+            opex_cols = ['rent_inc', 'rent_exp', 'maintenance']
+            money_cols = capex_cols + opex_cols
+            
+            for col in money_cols:
+                if col not in df_ledger.columns:
+                    df_ledger[col] = 0.0
+            
+            df_ledger = df_ledger.fillna(0)
+
+            # 🟢 CALCULATE ONCE: This replaces 'Balance_1' and 'Running_Balance' later
+            df_ledger['Running_Balance'] = df_ledger[df_ledger.columns.intersection(money_cols)].sum(axis=1).cumsum()
             
             # 3. Calculate Key Metrics
-            # CapEx (Deeds + Houses)
-            capex_cols = ['deed', 'h1', 'h2', 'h3', 'h4', 'hotel']
             total_capex = df_ledger[capex_cols].sum().sum()
-            
-            # OpEx & Income
             total_rev = df_ledger['rent_inc'].sum()
-            total_opex = df_ledger['rent_exp'].sum() + df_ledger.get('maintenance', pd.Series([0])).sum()
-            net_roi = total_rev + total_capex + total_opex # Capex/Opex are negative
+            total_opex = df_ledger[opex_cols].sum().sum()
+            
+            net_roi = total_rev + total_capex + total_opex         
             
             # 4. Display Metrics
             m1, m2, m3 = st.columns(3)
@@ -1958,12 +1987,51 @@ elif st.session_state.phase == "LIVE":
                       delta=f"{net_roi:,.0f}", 
                       delta_color="normal" if net_roi >= 0 else "inverse")
             
-            # 5. Visual: The J-Curve (Cumulative Cash Flow)
-            st.write("**Cumulative Cash Flow (Break-even Analysis)**")
-            # Sum all money-moving columns per row to see the running balance
-            money_cols = capex_cols + ['rent_inc', 'rent_exp', 'maintenance']
-            df_ledger['Running_Balance'] = df_ledger[df_ledger.columns.intersection(money_cols)].sum(axis=1).cumsum()
-            st.area_chart(df_ledger['Running_Balance'])
+            st.markdown("---")
+
+            # 🟢 NEW: TOGGLE FOR COMPARISON
+            compare_on = st.toggle("🚀 Enable Comparison Mode (Select a 2nd Asset)")
+            
+            if compare_on:
+                other_pid = st.selectbox(
+                    "Select Second Property to Compare:",
+                    options=[pid for pid in active_prop_ids if pid != selected_pid],
+                    format_func=lambda x: prop_options[x]
+                )
+                
+                # 2nd Property Data Processing
+                df_ledger2 = pd.DataFrame(st.session_state.property_ledgers[other_pid])
+                for col in money_cols:
+                    if col not in df_ledger2.columns: df_ledger2[col] = 0.0
+                
+                # Calculate Running Balance for the SECOND property only
+                # (The first property is already handled by Step 2)
+                df_ledger2['Balance_2'] = df_ledger2[df_ledger2.columns.intersection(money_cols)].sum(axis=1).cumsum()
+                
+                # Combine for Comparison Line Chart
+                comparison_df = pd.DataFrame({
+                    prop_options[selected_pid]: df_ledger['Running_Balance'], 
+                    prop_options[other_pid]: df_ledger2['Balance_2']
+                }).ffill().fillna(0)
+                
+                st.write(f"**ROI Race: {prop_options[selected_pid]} vs {prop_options[other_pid]}**")
+                st.line_chart(comparison_df)
+            
+            else:
+                # 5. Visual: The J-Curve (Standard Single View)
+                st.write("**Cumulative Cash Flow (Break-even Analysis)**")
+                
+                # --- DUPLICATE LOGIC REMOVED ---
+                # --- MILESTONE CHECK ---
+                profitable_turns = df_ledger[df_ledger['Running_Balance'] >= 0]
+                if not profitable_turns.empty:
+                    be_turn = profitable_turns.iloc[0]['turn']
+                    st.success(f"✅ **Break-even reached at Turn {be_turn}**")
+                else:
+                    current_deficit = df_ledger['Running_Balance'].iloc[-1]
+                    st.warning(f"📉 **Property is still ${abs(current_deficit):,.0f} away from break-even.**")
+
+                st.area_chart(df_ledger['Running_Balance'])
             
             # 6. Raw Data
             with st.expander("View Forensic Transaction Log"):
