@@ -1851,12 +1851,13 @@ elif st.session_state.phase == "LIVE":
     if st.session_state.last_move:
         st.info(st.session_state.last_move)
 
-   # --- PHASE 3: ANALYTICS DASHBOARD (Visuals Only) ---
+    # --- PHASE 3: ANALYTICS DASHBOARD (Visuals Only) ---
     st.markdown("---")
     st.header("🔬 Stats Analytics")
     
-    t_visits, t_ends, t_fin, t_wealth, t_bank = st.tabs([
-        "🚶 Visits", "🛑 Ends", "💰 Rent", "📈 Wealth", "🏦 Banker's Audit"
+    # 🟢 ADDED: "🔍 Property Audit" to the tab list
+    t_visits, t_ends, t_fin, t_wealth, t_forensic, t_bank = st.tabs([
+        "🚶 Visits", "🛑 Ends", "💰 Rent", "📈 Wealth", "🔍 Property Audit", "🏦 Banker's Audit"
     ])
     
     with t_visits:
@@ -1916,6 +1917,58 @@ elif st.session_state.phase == "LIVE":
                     key=f"wealth_tab_narrative_btn_{st.session_state.turn_count}" # Unique key
                 )
 
+    # 🟢 NEW TAB: PROPERTY FORENSIC AUDIT
+    with t_forensic:
+        st.subheader("Property-Level Investment & ROI")
+        
+        # 1. Selection logic
+        # Filter to properties that actually have a recorded history
+        active_prop_ids = list(st.session_state.get('property_ledgers', {}).keys())
+        
+        if not active_prop_ids:
+            st.info("No property transactions recorded yet. Once properties are bought or rent is paid, the audit trails will appear here.")
+        else:
+            # Map IDs to Names for the selectbox
+            prop_options = {pid: PROPERTIES[int(pid)]['name'] for pid in active_prop_ids}
+            selected_pid = st.selectbox(
+                "Select a Property to Audit:", 
+                options=active_prop_ids, 
+                format_func=lambda x: prop_options[x]
+            )
+            
+            # 2. Process Ledger Data
+            ledger_data = st.session_state.property_ledgers[selected_pid]
+            df_ledger = pd.DataFrame(ledger_data).fillna(0)
+            
+            # 3. Calculate Key Metrics
+            # CapEx (Deeds + Houses)
+            capex_cols = ['deed', 'h1', 'h2', 'h3', 'h4', 'hotel']
+            total_capex = df_ledger[capex_cols].sum().sum()
+            
+            # OpEx & Income
+            total_rev = df_ledger['rent_inc'].sum()
+            total_opex = df_ledger['rent_exp'].sum() + df_ledger.get('maintenance', pd.Series([0])).sum()
+            net_roi = total_rev + total_capex + total_opex # Capex/Opex are negative
+            
+            # 4. Display Metrics
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total Investment", f"${abs(total_capex):,.0f}")
+            m2.metric("Gross Rent Income", f"${total_rev:,.0f}")
+            m3.metric("Net Property Profit", f"${net_roi:,.0f}", 
+                      delta=f"{net_roi:,.0f}", 
+                      delta_color="normal" if net_roi >= 0 else "inverse")
+            
+            # 5. Visual: The J-Curve (Cumulative Cash Flow)
+            st.write("**Cumulative Cash Flow (Break-even Analysis)**")
+            # Sum all money-moving columns per row to see the running balance
+            money_cols = capex_cols + ['rent_inc', 'rent_exp', 'maintenance']
+            df_ledger['Running_Balance'] = df_ledger[df_ledger.columns.intersection(money_cols)].sum(axis=1).cumsum()
+            st.area_chart(df_ledger['Running_Balance'])
+            
+            # 6. Raw Data
+            with st.expander("View Forensic Transaction Log"):
+                st.dataframe(df_ledger, use_container_width=True, hide_index=True)
+        
     with t_bank:
         st.header("🏦 Central Bank Audit Warehouse")
         st.info("This ledger tracks the 'Money Supply' across specialized accounting tabs.")
