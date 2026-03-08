@@ -98,31 +98,23 @@ COLOR_GROUPS = {}
 RAILROADS = []
 UTILITIES = []
 
-def stamp_property_ledger(pid, event_type, 
-                          deed=0, monopoly=0, 
-                          h1=0, h2=0, h3=0, h4=0, hotel=0):
-    """
-    The Single Source of Truth for property history.
-    Calculates a 'total' automatically for audit consistency.
-    Negative values = Investments (Costs), Positive = Revenue (Rent).
-    """
-    # Ensure the dictionary exists (failsafe)
-    if "property_ledgers" not in st.session_state:
-         st.session_state.property_ledgers = {str(i): [] for i in range(40)}
-         
-    # Sum the marginal components for the 'Total' column
-    row_total = deed + monopoly + h1 + h2 + h3 + h4 + hotel
+def stamp_property_ledger(pid, event, deed=0.0, h1=0.0, h2=0.0, h3=0.0, h4=0.0, hotel=0.0, rent_inc=0.0, rent_exp=0.0, maintenance=0.0):
+    pid_str = str(pid)
+    if pid_str not in st.session_state.property_ledgers:
+        st.session_state.property_ledgers[pid_str] = []
     
     entry = {
         "turn": st.session_state.turn_count,
-        "event": event_type,
-        "deed": int(deed),
-        "monopoly": int(monopoly),
-        "h1": int(h1), "h2": int(h2), "h3": int(h3), "h4": int(h4), "hotel": int(hotel),
-        "total": int(row_total)
+        "event": event,
+        "deed": deed,
+        "h1": h1, "h2": h2, "h3": h3, "h4": h4, "hotel": hotel,
+        "rent_inc": rent_inc,
+        "rent_exp": rent_exp,
+        "maintenance": maintenance  # This maps the value to the column
     }
     
-    st.session_state.property_ledgers[str(pid)].append(entry)
+    st.session_state.property_ledgers[pid_str].append(entry)
+    
 
 for pid, info in PROPERTIES.items():
     if info.get('type') == "Street":
