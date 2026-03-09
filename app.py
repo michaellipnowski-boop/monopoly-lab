@@ -100,28 +100,33 @@ UTILITIES = []
 
 def stamp_property_ledger(pid, event, slices=None):
     pid_str = str(pid)
-    if slices is None: slices = {}
+    # Ensure slices is a dict and convert all values to float immediately
+    raw_slices = slices if slices is not None else {}
+    processed_slices = {k: float(v) for k, v in raw_slices.items()}
 
     if "property_ledgers" not in st.session_state:
         st.session_state.property_ledgers = {str(i): [] for i in range(40)}
     
     ledger = st.session_state.property_ledgers[pid_str]
 
-    # THE CONSOLIDATED COLUMNS (One column for both +/-)
+    # THE CONSOLIDATED COLUMNS
     core_columns = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel"]
     
-    # 🧮 Calculate Net Impact of this event
-    net_impact = sum(float(slices.get(col, 0)) for col in core_columns)
+    # 🧮 Calculate Net Impact using the processed floats
+    net_impact = sum(processed_slices.get(col, 0.0) for col in core_columns)
 
     # 📈 Calculate Running Total
-    prev_total = float(ledger[-1].get("Running_Balance", 0.0)) if ledger else 0.0
+    prev_total = 0.0
+    if ledger:
+        prev_total = float(ledger[-1].get("Running_Balance", 0.0))
+    
     running_total = prev_total + net_impact
 
     entry = {
         "turn": int(st.session_state.get("turn_count", 0)),
         "Event": str(event),
-        # Stamp every core column (0.0 if not affected)
-        **{col: float(slices.get(col, 0)) for col in core_columns},
+        # Map every core column, ensuring 0.0 for those not in slices
+        **{col: processed_slices.get(col, 0.0) for col in core_columns},
         "Net_Impact": net_impact,
         "Running_Balance": running_total
     }
