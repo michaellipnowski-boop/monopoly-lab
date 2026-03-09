@@ -607,25 +607,32 @@ def verify_sim_integrity():
 def check_monopoly(pos):
     # 1. Type Guard: Ensure ownership is a dictionary
     if not isinstance(st.session_state.get('ownership'), dict):
-        # If it's an int/None, reset it to an empty dict so .get() works
         st.session_state.ownership = {} 
         return False
 
-    sq = PROPERTIES[pos]
-    if sq['type'] != "Street":
+    # 🛡️ Safety: Ensure the specific property is a dictionary
+    try:
+        sq = PROPERTIES[int(pos)]
+        if not isinstance(sq, dict):
+            return False
+    except (IndexError, ValueError, TypeError):
+        return False
+
+    if sq.get('type') != "Street":
         return False
     
     color = sq.get('color')
-    # 2. Key Guard: Force string lookup
     owner = st.session_state.ownership.get(str(pos))
     
     if not owner or owner == "Bank":
         return False
 
-    # Find all properties of the same color
+    # 🛡️ THE TURN 52 FIX: 
+    # We add 'isinstance(p, dict)' to the filter. 
+    # This prevents the AttributeError: 'int' object has no attribute 'get'
     same_color_indices = [
         i for i, p in enumerate(PROPERTIES) 
-        if p.get('color') == color
+        if isinstance(p, dict) and p.get('color') == color
     ]
     
     # 3. Consistency Guard: Check if the same owner owns all of them
