@@ -539,8 +539,20 @@ def get_house_count(pid):
     return st.session_state.houses.get(str(pid), st.session_state.houses.get(int(pid), 0))
 
 def get_owner(pid):
-    # Checks for "1" then checks for 1. Returns "Bank" if neither found.
-    return st.session_state.ownership.get(str(pid), st.session_state.ownership.get(int(pid), "Bank"))
+    # 🛡️ THE MASTER GUARD: Ensure ownership is a dictionary
+    obs = st.session_state.get('ownership')
+    if not isinstance(obs, dict):
+        # If the state is 'mucked', we fix it and return Bank
+        st.session_state.ownership = {}
+        return "Bank"
+        
+    # 🛡️ THE KEY SEARCH: Strings are our standard, Ints are legacy
+    # We use .get() on 'obs' because we just verified it's a dict
+    res = obs.get(str(pid))
+    if res is None:
+        res = obs.get(int(pid), "Bank")
+        
+    return res
 
 def get_effective_reserve(p, action_context):
     """
@@ -853,7 +865,7 @@ def draw_card(p, deck_type):
     elif card['effect'] == "repairs":
         cost = 0
         for pid, h_count in st.session_state.houses.items():
-            owner = st.session_state.ownership.get(str(pid))
+            owner = get_owner(pid) # 🛡️ Use the shield instead of .get()
             if owner and str(owner).strip().lower() == str(p['name']).strip().lower():
                 this_prop_cost = 0
                 if h_count == 5: # Hotel
@@ -927,7 +939,7 @@ def draw_card(p, deck_type):
     move_effects = ["move", "move_relative", "move_nearest_rr", "move_nearest_util"]
     if card['effect'] in move_effects:
         sq = PROPERTIES[p['pos']]
-        owner = st.session_state.ownership.get(str(p['pos']), "Bank")
+        owner = get_owner(p['pos']) # 🛡️ Use the shield!
         
         # 1. Handle Property/Rent Interactions
         if sq['type'] in ["Street", "Railroad", "Utility"]:
@@ -1003,7 +1015,7 @@ def draw_card(p, deck_type):
                         color = PROPERTIES[p['pos']]['color']
                         for idx, prop in enumerate(PROPERTIES):
                             if prop.get('color') == color:
-                                stamp_property_ledger(idx, "🎯 Monopoly Achieved")
+                                stamp_property_ledger(str(idx), "🎯 Monopoly Achieved") # 🛡️ Force str(idx)
                     
                     if "property_stats" in st.session_state:
                         st.session_state.property_stats[str(p['pos'])]["expenses"] += price
