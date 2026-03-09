@@ -662,6 +662,11 @@ def charge_player(p, amt, destination="bank"):
             })
 
 def get_rent(pid, roll=0):
+    # 🛡️ THE GLOBAL GUARD: If state is mucked, heal it and return 0
+    if not isinstance(st.session_state.get('ownership'), dict):
+        st.session_state.ownership = {}
+        return 0
+
     info = PROPERTIES[pid]
     owner = get_owner(pid)
     
@@ -670,16 +675,16 @@ def get_rent(pid, roll=0):
 
     owner_norm = str(owner).strip().lower()
 
-    # 1. STREETS (Houses & Monopolies)
+    # 1. STREETS
     if info['type'] == "Street":
         h = get_house_count(pid)
         rent_list = info.get('rent', [0])
         base = rent_list[min(h, len(rent_list)-1)]
         
-        # 🟢 CLEANED: Using your new helper function
+        # Safe Monopoly Check
         if h == 0 and check_monopoly(pid):
-            return base * 2
-        return base
+            return int(base * 2)
+        return int(base)
 
     # 2. RAILROADS
     elif info['type'] == "Railroad":
@@ -689,7 +694,7 @@ def get_rent(pid, roll=0):
             if curr and str(curr).strip().lower() == owner_norm:
                 count += 1
         r_rents = info.get('rent', [25, 50, 100, 200])
-        return r_rents[max(0, min(count-1, len(r_rents)-1))]
+        return int(r_rents[max(0, min(count-1, len(r_rents)-1))])
 
     # 3. UTILITIES
     elif info['type'] == "Utility":
@@ -699,10 +704,16 @@ def get_rent(pid, roll=0):
             if curr and str(curr).strip().lower() == owner_norm:
                 count += 1
         
+        # 🎲 THE ROLL FALLBACK:
+        # If roll is 0 (missing), try to grab the last real dice throw from memory
+        if roll == 0:
+            roll = st.session_state.get('last_roll_total', 7)
+            
         multiplier = 4 if count == 1 else 10
-        return multiplier * roll
+        return int(multiplier * roll)
 
     return 0
+    
 
 def send_to_jail(p):
     p['pos'] = 10
@@ -1858,14 +1869,29 @@ elif st.session_state.phase == "LIVE":
                 status_text = st.empty()
                 
                 for i in range(j_val):
-                    run_turn(silent=True)
+                    try:
+                        # 🛡️ Execute the turn
+                        run_turn(silent=True)
+                        
+                        # 🕵️ SMOKING GUN CHECK: Detect if state turned into an int
+                        if not isinstance(st.session_state.get('ownership'), dict):
+                            st.error(f"🚨 MUCKING DETECTED at Turn {i+1}!")
+                            st.write(f"Ownership is now: {st.session_state.ownership}")
+                            st.stop() # Freeze so we can see the 'poison' value
+
+                    except Exception as e:
+                        # 💥 CRASH CATCHER: Show exactly where the logic broke
+                        st.error(f"💥 Simulation failed at Turn {i+1}")
+                        st.exception(e) 
+                        st.stop()
                     
+                    # Update UI every 100 turns for performance
                     if i % 100 == 0 or i == j_val - 1:
                         percent = (i + 1) / j_val
                         progress_bar.progress(percent)
                         status_text.text(f"Processing turn {i+1} of {j_val}...")
 
-                # --- CORRECTED STEP 3 (Only one cleanup block!) ---
+                # --- SUCCESS CLEANUP ---
                 progress_bar.progress(1.0) 
                 status_text.text(f"✅ Simulation Complete! {j_val} turns processed.")
                 
