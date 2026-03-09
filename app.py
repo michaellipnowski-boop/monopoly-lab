@@ -99,52 +99,33 @@ RAILROADS = []
 UTILITIES = []
 
 def stamp_property_ledger(pid, event, slices=None):
-    """
-    pid: Property ID (int)
-    event: Description of the event (string)
-    slices: Dictionary of impacts, e.g., {"deed": -60} or {"h1": 5, "h2": 20}
-    """
     pid_str = str(pid)
-    if slices is None:
-        slices = {}
+    if slices is None: slices = {}
 
-    # 1. 🛡️ Safety: Ensure the ledger exists in session state
     if "property_ledgers" not in st.session_state:
         st.session_state.property_ledgers = {str(i): [] for i in range(40)}
     
-    # 2. Grab the specific list for this property
-    if pid_str not in st.session_state.property_ledgers:
-        st.session_state.property_ledgers[pid_str] = []
-    
     ledger = st.session_state.property_ledgers[pid_str]
 
-    # 3. 🛡️ UPDATE: Include the new forensic rent columns
-    capex_cols = ["deed", "h1", "h2", "h3", "h4", "hotel"]
-    rev_slices = ["base_rent", "monopoly", "h1_rent", "h2_rent", "h3_rent", "h4_rent", "hotel_rent"]
-    opex_cols = ["maintenance"]
+    # THE CONSOLIDATED COLUMNS (One column for both +/-)
+    core_columns = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel"]
     
-    # Combined list for the math
-    asset_cols = capex_cols + rev_slices + opex_cols
-    
-    # 4. 🧮 Calculate "Cash Inflow (Each Turn)"
-    each_turn = sum(float(slices.get(col, 0)) for col in asset_cols)
+    # 🧮 Calculate Net Impact of this event
+    net_impact = sum(float(slices.get(col, 0)) for col in core_columns)
 
-    # 5. 📈 Calculate "Cash Inflow (Running Total)"
-    # Use .get() to safely handle cases where the previous entry is missing the key
-    prev_total = float(ledger[-1].get("Cash Inflow (Running Total)", 0.0)) if ledger else 0.0
-    running_total = prev_total + each_turn
+    # 📈 Calculate Running Total
+    prev_total = float(ledger[-1].get("Running_Balance", 0.0)) if ledger else 0.0
+    running_total = prev_total + net_impact
 
-    # 6. 📝 Build the Entry
     entry = {
-        # Force a fresh pull from session_state every time
-        "turn": int(st.session_state.get("turn_count", 0)), 
+        "turn": int(st.session_state.get("turn_count", 0)),
         "Event": str(event),
-        **{col: float(slices.get(col, 0)) for col in asset_cols},
-        "Cash Inflow (Each Turn)": each_turn,
-        "Cash Inflow (Running Total)": running_total
+        # Stamp every core column (0.0 if not affected)
+        **{col: float(slices.get(col, 0)) for col in core_columns},
+        "Net_Impact": net_impact,
+        "Running_Balance": running_total
     }
 
-    # 7. 💾 Save to State
     ledger.append(entry)
     st.session_state.property_ledgers[pid_str] = ledger
 
@@ -156,8 +137,8 @@ def get_rent_slices(pid, roll=7, override_total=None):
 
     # --- 1. THE OVERRIDE (e.g. Chance Card 10x Roll) ---
     if override_total is not None:
-        # Renamed 'deed' -> 'base_rent' to distinguish from the Deed Purchase cost
-        slices["base_rent"] = float(override_total)
+        # Income from a property you own hits the 'deed' bucket by default
+        slices["deed"] = float(override_total)
         return slices
 
     # --- 2. RAILROAD PORTFOLIO LOGIC ---
@@ -167,7 +148,7 @@ def get_rent_slices(pid, roll=7, override_total=None):
         base = 25.0 if rr_count > 0 else 0.0
         total = 25.0 * (2**(rr_count-1)) if rr_count > 0 else 0.0
         
-        slices["base_rent"] = base
+        slices["deed"] = base
         if total > base:
             slices["monopoly"] = total - base 
         return slices
@@ -176,69 +157,67 @@ def get_rent_slices(pid, roll=7, override_total=None):
     if info['type'] == "Utility":
         util_count = sum(1 for u_idx in [12, 28] 
                          if st.session_state.ownership.get(str(u_idx)) == owner)
-        slices["base_rent"] = float(4 * roll)
+        slices["deed"] = float(4 * roll)
         if util_count == 2:
-            slices["monopoly"] = float(6 * roll)
+            slices["monopoly"] = float(6 * roll) # The bonus from owning both
         return slices
 
-    # --- 4. STREET LOGIC (Existing Step-up Logic) ---
+    # --- 4. STREET LOGIC (Unified Columns) ---
     rent_list = info.get('rent', [0, 0, 0, 0, 0, 0])
     h_count = st.session_state.houses.get(str(pid), 0)
     has_monopoly = check_monopoly(pid)
     
-    # The 'Base' rent goes into base_rent
-    slices["base_rent"] = float(rent_list[0])
+    # Standard Rent hits the 'deed' column
+    slices["deed"] = float(rent_list[0])
     
-    # The Monopoly double-rent bonus goes into monopoly
+    # The Monopoly bonus (double rent on unimproved) hits 'monopoly'
     if has_monopoly and h_count == 0:
         slices["monopoly"] = float(rent_list[0])
     
     if h_count >= 1:
-        # base_threshold is just a helper for the math, not a ledger column
+        # Math helper: determining what the rent would have been WITHOUT houses
         base_threshold = rent_list[0] * (2 if has_monopoly else 1)
         
-        # HOUSE RENT SLICES (Renamed to match rev_slices in t_forensic)
-        slices["h1_rent"] = float(rent_list[1] - base_threshold)
-        if h_count >= 2: slices["h2_rent"] = float(rent_list[2] - rent_list[1])
-        if h_count >= 3: slices["h3_rent"] = float(rent_list[3] - rent_list[2])
-        if h_count >= 4: slices["h4_rent"] = float(rent_list[4] - rent_list[3])
-        if h_count >= 5: slices["hotel_rent"] = float(rent_list[5] - rent_list[4])
+        # HOUSE RENT: Mapped to the same keys as the construction costs
+        slices["h1"] = float(rent_list[1] - base_threshold)
+        if h_count >= 2: slices["h2"] = float(rent_list[2] - rent_list[1])
+        if h_count >= 3: slices["h3"] = float(rent_list[3] - rent_list[2])
+        if h_count >= 4: slices["h4"] = float(rent_list[4] - rent_list[3])
+        if h_count >= 5: slices["hotel"] = float(rent_list[5] - rent_list[4])
         
     return slices
 
 
 def execute_repairs_sequence(p, card):
-    """
-    Calculates total repair cost, stamps individual property ledgers,
-    and returns the total cost to be charged to the player.
-    """
     total_cost = 0
-    # card['h'] is cost per house, card['H'] is cost per hotel
     h_fee = int(card.get('h', 0))
     hotel_fee = int(card.get('H', 0))
 
-    # Iterate through every property to find what the player owns
     for pid, owner_name in st.session_state.ownership.items():
         if str(owner_name).strip().lower() == str(p['name']).strip().lower():
             h_count = st.session_state.houses.get(pid, 0)
+            repair_slices = {}
             prop_cost = 0
             
-            if h_count == 5: # Hotel
+            if h_count == 5:  # 🏨 Hotel Repair
                 prop_cost = hotel_fee
-            else: # Houses
+                repair_slices["hotel"] = -float(hotel_fee)
+            elif h_count > 0: # 🏠 House Repairs
                 prop_cost = h_count * h_fee
+                # Attribute the fee equally across every house on this property
+                for i in range(1, h_count + 1):
+                    repair_slices[f"h{i}"] = -float(h_fee)
             
             if prop_cost > 0:
                 total_cost += prop_cost
-                # 🟢 STAMP: Record the maintenance expense on the specific property
+                # 🟢 STAMP: Record the maintenance expense directly against the asset layers
                 stamp_property_ledger(
                     pid=int(pid), 
-                    event=f"🛠️ Repairs: {card['text'][:20]}...", 
-                    slices={"maintenance": -float(prop_cost)}
+                    event=f"🛠️ Repairs (${prop_cost})", 
+                    slices=repair_slices
                 )
     
     return total_cost
-
 
 
 for pid, info in PROPERTIES.items():
@@ -2130,36 +2109,28 @@ elif st.session_state.phase == "LIVE":
             ledger_data = st.session_state.property_ledgers[selected_pid]
             df_ledger = pd.DataFrame(ledger_data)
             
-            # 🟢 NEW MASTER DEFINITION: Granular Forensic Slices
-            capex_cols = ['deed', 'h1', 'h2', 'h3', 'h4', 'hotel'] # Negative values (Purchases)
-            rev_slices = ['base_rent', 'monopoly', 'h1_rent', 'h2_rent', 'h3_rent', 'h4_rent', 'hotel_rent'] # Positive values (Income)
-            opex_cols = ['maintenance'] # Negative values (Expenses)
+            # 🟢 THE UNIFIED COLUMNS (Matches your new stamp/rent logic)
+            core_columns = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel"]
             
-            # Combine all for the running balance / total ROI
-            money_cols = capex_cols + rev_slices + opex_cols
-            
-            for col in money_cols:
+            # Ensure all core columns exist for math safety
+            for col in core_columns:
                 if col not in df_ledger.columns:
                     df_ledger[col] = 0.0
             
             df_ledger = df_ledger.fillna(0)
-            df_ledger['Running_Balance'] = df_ledger[df_ledger.columns.intersection(money_cols)].sum(axis=1).cumsum()
             
             # 3. Calculate Key Metrics
             if not df_ledger.empty:
-                # Use intersection to sum only columns that exist in the current dataframe
-                total_capex = df_ledger[df_ledger.columns.intersection(capex_cols)].sum().sum()
+                # Total Investment = Sum of all NEGATIVE values (Purchases/Repairs)
+                total_capex = df_ledger[core_columns].clip(upper=0).sum().sum()
                 
-                # NEW: Sum all revenue slices to get the Gross Rent
-                total_rev = df_ledger[df_ledger.columns.intersection(rev_slices)].sum().sum()
+                # Gross Rent Income = Sum of all POSITIVE values (Rent)
+                total_rev = df_ledger[core_columns].clip(lower=0).sum().sum()
                 
-                # Sum maintenance/opex
-                total_opex = df_ledger[df_ledger.columns.intersection(opex_cols)].sum().sum()
+                # Final ROI calculation (Final state of the running balance)
+                net_roi = df_ledger['Running_Balance'].iloc[-1]         
                 
-                # Final ROI calculation
-                net_roi = total_rev + total_capex + total_opex         
-                
-                # 4. Display Metrics (No changes needed to the metric display itself)
+                # 4. Display Metrics
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Total Investment", f"${abs(total_capex):,.0f}")
                 m2.metric("Gross Rent Income", f"${total_rev:,.0f}")
@@ -2170,14 +2141,13 @@ elif st.session_state.phase == "LIVE":
                 st.markdown("---")
                 
                 # 🟢 TOGGLE FOR COMPARISON
-                compare_on = st.toggle("🚀 Enable Comparison Mode (Select a 2nd Asset)")
+                compare_on = st.toggle("🚀 Enable Comparison Mode")
                 
                 if compare_on:
-                    # Create the list first so we can check its length
                     other_options = [pid for pid in active_prop_ids if pid != selected_pid]
                     
                     if not other_options:
-                        st.warning("⚠️ Only one property has been traded so far. You need at least two active properties to use Comparison Mode.")
+                        st.warning("⚠️ Need at least two active properties for Comparison Mode.")
                     else:
                         other_pid = st.selectbox(
                             "Select Second Property to Compare:",
@@ -2185,35 +2155,21 @@ elif st.session_state.phase == "LIVE":
                             format_func=lambda x: prop_options[x]
                         )
                     
-                    df_ledger2 = pd.DataFrame(st.session_state.property_ledgers[other_pid])
-                    
-                    if not df_ledger2.empty:
-                        # 1. Ensure all money columns exist and calculate the running balance for the 2nd property
-                        for col in money_cols:
-                            if col not in df_ledger2.columns: 
-                                df_ledger2[col] = 0.0
+                        df_ledger2 = pd.DataFrame(st.session_state.property_ledgers[other_pid])
                         
-                        # Calculate cumulative balance for the second property
-                        df_ledger2['Running_Balance_2'] = df_ledger2[df_ledger2.columns.intersection(money_cols)].sum(axis=1).cumsum()
-                        
-                        # 2. Standardize both DataFrames to use 'turn' (or 'Turn') as the index
-                        # Check your ledger column name capitalization - matching 'turn' here
-                        d1 = df_ledger[['turn', 'Running_Balance']].copy().set_index('turn')
-                        d2 = df_ledger2[['turn', 'Running_Balance_2']].copy().set_index('turn')
-                        
-                        # 3. Outer Join ensures we see the full timeline of both properties
-                        comparison_df = d1.join(d2, how='outer')
-                        
-                        # 4. Forward Fill ensures lines don't drop to zero between transactions
-                        comparison_df = comparison_df.ffill().fillna(0)
-                        
-                        # 5. Rename columns for a clean legend
-                        comparison_df.columns = [prop_options[selected_pid], prop_options[other_pid]]
-                        
-                        st.write(f"**ROI Race: {prop_options[selected_pid]} vs {prop_options[other_pid]}**")
-                        st.line_chart(comparison_df)
-                    else:
-                        st.info("The selected second property has no transaction history to compare yet.")
+                        if not df_ledger2.empty:
+                            # Standardize indices by grouping by turn (handles multi-event turns)
+                            d1 = df_ledger.groupby('turn')['Running_Balance'].last().to_frame()
+                            d2 = df_ledger2.groupby('turn')['Running_Balance'].last().to_frame()
+                            
+                            # Join on the turn timeline
+                            comparison_df = d1.join(d2, how='outer', lsuffix='_ref', rsuffix='_comp')
+                            comparison_df = comparison_df.ffill().fillna(0)
+                            
+                            comparison_df.columns = [prop_options[selected_pid], prop_options[other_pid]]
+                            
+                            st.write(f"**ROI Race: {prop_options[selected_pid]} vs {prop_options[other_pid]}**")
+                            st.line_chart(comparison_df)
                 
                 else:
                     # 5. Visual: The J-Curve
@@ -2227,14 +2183,18 @@ elif st.session_state.phase == "LIVE":
                         current_deficit = df_ledger['Running_Balance'].iloc[-1]
                         st.warning(f"📉 **Property is still ${abs(current_deficit):,.0f} away from break-even.**")
                     
-                    st.area_chart(df_ledger['Running_Balance'])
+                    # Group by turn for a cleaner area chart
+                    chart_series = df_ledger.groupby('turn')['Running_Balance'].last()
+                    st.area_chart(chart_series)
                 
-                # 6. Raw Data (Positioned to show regardless of Comparison toggle)
+                # 6. Raw Data: The "Single Story" Log
                 with st.expander("View Forensic Transaction Log"):
-                    st.dataframe(df_ledger, use_container_width=True, hide_index=True)
+                    display_cols = ['turn', 'Event'] + core_columns + ['Net_Impact', 'Running_Balance']
+                    # Display the slice of the dataframe containing the unified columns
+                    st.dataframe(df_ledger[display_cols], use_container_width=True, hide_index=True)
             
             else:
-                st.info("No transaction data recorded for this property yet. Buy the deed or collect rent to see the audit trail.")
+                st.info("No transaction data recorded for this property yet.")
             
     with t_bank:
         st.header("🏦 Central Bank Audit Warehouse")
