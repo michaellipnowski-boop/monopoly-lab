@@ -2199,9 +2199,16 @@ elif st.session_state.phase == "LIVE":
                 
                 # 6. Raw Data: Transaction Log
                 with st.expander("View Forensic Transaction Log"):
-                    # Only show columns that actually have data
-                    display_cols = ['turn', 'Event'] + [c for c in core_columns if c in df_ledger.columns] + ['Net_Impact', 'Running_Balance']
-                    st.dataframe(df_ledger[display_cols], use_container_width=True, hide_index=True)
+                    # Define all columns we WANT to see
+                    preferred_cols = ['turn', 'Event', 'Net_Impact', 'Running_Balance'] + core_columns
+                    
+                    # 🛠️ Filter: Only grab columns that ACTUALLY exist in the DataFrame
+                    available_cols = [c for c in preferred_cols if c in df_ledger.columns]
+                    
+                    if not df_ledger.empty and available_cols:
+                        st.dataframe(df_ledger[available_cols], use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Log columns are initializing... perform an action to refresh.")
             else:
                 st.info("No transaction data recorded for this property yet.")
             
