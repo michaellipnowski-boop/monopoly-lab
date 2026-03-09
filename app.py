@@ -98,32 +98,149 @@ COLOR_GROUPS = {}
 RAILROADS = []
 UTILITIES = []
 
-def stamp_property_ledger(pid, event, deed=0.0, h1=0.0, h2=0.0, h3=0.0, h4=0.0, hotel=0.0, rent_inc=0.0, rent_exp=0.0, maintenance=0.0):
-    # 1. Force the key to be a string
+def stamp_property_ledger(pid, event, slices=None):
+    """
+    pid: Property ID (int)
+    event: Description of the event (string)
+    slices: Dictionary of impacts, e.g., {"deed": -60} or {"h1": 5, "h2": 20}
+    """
     pid_str = str(pid)
-    
-    # 2. 🛡️ THE SAFETY CATCH: If session_state was wiped or corrupted, re-initialize it
-    if "property_ledgers" not in st.session_state or not isinstance(st.session_state.property_ledgers, dict):
-        st.session_state.property_ledgers = {str(i): [] for i in range(40)}
+    if slices is None:
+        slices = {}
 
-    # 3. Ensure this specific property has a list
+    # 1. 🛡️ Safety: Ensure the ledger exists in session state
+    if "property_ledgers" not in st.session_state:
+        st.session_state.property_ledgers = {str(i): [] for i in range(40)}
+    
+    # 2. Grab the specific list for this property
     if pid_str not in st.session_state.property_ledgers:
         st.session_state.property_ledgers[pid_str] = []
     
-    # 4. Create the entry with explicit float casting for math safety
+    ledger = st.session_state.property_ledgers[pid_str]
+
+    # 3. 🛡️ UPDATE: Include the new forensic rent columns
+    capex_cols = ["deed", "h1", "h2", "h3", "h4", "hotel"]
+    rev_slices = ["base_rent", "monopoly", "h1_rent", "h2_rent", "h3_rent", "h4_rent", "hotel_rent"]
+    opex_cols = ["maintenance"]
+    
+    # Combined list for the math
+    asset_cols = capex_cols + rev_slices + opex_cols
+    
+    # 4. 🧮 Calculate "Cash Inflow (Each Turn)"
+    each_turn = sum(float(slices.get(col, 0)) for col in asset_cols)
+
+    # 5. 📈 Calculate "Cash Inflow (Running Total)"
+    # Look at the last entry in the list to get the previous balance
+    prev_total = float(ledger[-1]["Cash Inflow (Running Total)"]) if ledger else 0.0
+    running_total = prev_total + each_turn
+
+    # 6. 📝 Build the Entry
+    # We use dictionary unpacking (**) to merge the slices into the entry
     entry = {
-        "turn": int(st.session_state.get("turn_count", 0)),
-        "event": str(event),
-        "deed": float(deed),
-        "h1": float(h1), "h2": float(h2), "h3": float(h3), "h4": float(h4), "hotel": float(hotel),
-        "rent_inc": float(rent_inc),
-        "rent_exp": float(rent_exp),
-        "maintenance": float(maintenance)
+        "Turn": int(st.session_state.get("turn_count", 0)),
+        "Event": str(event),
+        # Ensure every asset column exists in the row (even as 0.0) for table consistency
+        **{col: float(slices.get(col, 0)) for col in asset_cols},
+        "Cash Inflow (Each Turn)": each_turn,
+        "Cash Inflow (Running Total)": running_total
     }
+
+    # 7. 💾 Save to State
+    ledger.append(entry)
+    st.session_state.property_ledgers[pid_str] = ledger
+
+
+def get_rent_slices(pid, roll=7, override_total=None):
+    info = PROPERTIES[pid]
+    owner = st.session_state.ownership.get(str(pid), "Bank")
+    slices = {}
+
+    # --- 1. THE OVERRIDE (e.g. Chance Card 10x Roll) ---
+    if override_total is not None:
+        # Renamed 'deed' -> 'base_rent' to distinguish from the Deed Purchase cost
+        slices["base_rent"] = float(override_total)
+        return slices
+
+    # --- 2. RAILROAD PORTFOLIO LOGIC ---
+    if info['type'] == "Railroad":
+        rr_count = sum(1 for r_idx in [5, 15, 25, 35] 
+                       if st.session_state.ownership.get(str(r_idx)) == owner)
+        base = 25.0 if rr_count > 0 else 0.0
+        total = 25.0 * (2**(rr_count-1)) if rr_count > 0 else 0.0
+        
+        slices["base_rent"] = base
+        if total > base:
+            slices["monopoly"] = total - base 
+        return slices
+
+    # --- 3. UTILITY MONOPOLY SPLIT ---
+    if info['type'] == "Utility":
+        util_count = sum(1 for u_idx in [12, 28] 
+                         if st.session_state.ownership.get(str(u_idx)) == owner)
+        slices["base_rent"] = float(4 * roll)
+        if util_count == 2:
+            slices["monopoly"] = float(6 * roll)
+        return slices
+
+    # --- 4. STREET LOGIC (Existing Step-up Logic) ---
+    rent_list = info.get('rent', [0, 0, 0, 0, 0, 0])
+    h_count = st.session_state.houses.get(str(pid), 0)
+    has_monopoly = check_monopoly(pid)
     
-    # 5. Append to the ledger
-    st.session_state.property_ledgers[pid_str].append(entry)
+    # The 'Base' rent goes into base_rent
+    slices["base_rent"] = float(rent_list[0])
     
+    # The Monopoly double-rent bonus goes into monopoly
+    if has_monopoly and h_count == 0:
+        slices["monopoly"] = float(rent_list[0])
+    
+    if h_count >= 1:
+        # base_threshold is just a helper for the math, not a ledger column
+        base_threshold = rent_list[0] * (2 if has_monopoly else 1)
+        
+        # HOUSE RENT SLICES (Renamed to match rev_slices in t_forensic)
+        slices["h1_rent"] = float(rent_list[1] - base_threshold)
+        if h_count >= 2: slices["h2_rent"] = float(rent_list[2] - rent_list[1])
+        if h_count >= 3: slices["h3_rent"] = float(rent_list[3] - rent_list[2])
+        if h_count >= 4: slices["h4_rent"] = float(rent_list[4] - rent_list[3])
+        if h_count >= 5: slices["hotel_rent"] = float(rent_list[5] - rent_list[4])
+        
+    return slices
+
+
+def execute_repairs_sequence(p, card):
+    """
+    Calculates total repair cost, stamps individual property ledgers,
+    and returns the total cost to be charged to the player.
+    """
+    total_cost = 0
+    # card['h'] is cost per house, card['H'] is cost per hotel
+    h_fee = int(card.get('h', 0))
+    hotel_fee = int(card.get('H', 0))
+
+    # Iterate through every property to find what the player owns
+    for pid, owner_name in st.session_state.ownership.items():
+        if str(owner_name).strip().lower() == str(p['name']).strip().lower():
+            h_count = st.session_state.houses.get(pid, 0)
+            prop_cost = 0
+            
+            if h_count == 5: # Hotel
+                prop_cost = hotel_fee
+            else: # Houses
+                prop_cost = h_count * h_fee
+            
+            if prop_cost > 0:
+                total_cost += prop_cost
+                # 🟢 STAMP: Record the maintenance expense on the specific property
+                stamp_property_ledger(
+                    pid=int(pid), 
+                    event=f"🛠️ Repairs: {card['text'][:20]}...", 
+                    slices={"maintenance": -float(prop_cost)}
+                )
+    
+    return total_cost
+
+
 
 for pid, info in PROPERTIES.items():
     if info.get('type') == "Street":
@@ -301,27 +418,36 @@ def log_bank_transaction(p_name, reason, amount):
 
 
 def log_parachuted_asset(p_name, property_name):
-    """Logs asset allocation to both the UI highlights and the Excel audit."""
+    """Logs asset allocation and stamps ledger with market value cost."""
     turn = st.session_state.get('turn_count', 0)
     event_text = f"🪂 PARACHUTED: Received {property_name} via setup/allocation."
     
-    # 1. Update Critical Moments for the UI
+    # 1. Update Critical Moments (UI)
     for p in st.session_state.players:
         if p['name'] == p_name:
-            if 'critical_moments' not in p['stats']: 
-                p['stats']['critical_moments'] = []
-            p['stats']['critical_moments'].append({
+            p.setdefault('stats', {}).setdefault('critical_moments', []).append({
                 'turn': turn, 
                 'event': event_text
             })
             break
     
-    # 2. Update Banker's Audit for the spreadsheet ($0 transaction)
-    log_bank_transaction(
-        p_name=p_name,
-        reason=f"Asset Allocation: {property_name} (Parachuted)",
-        amount=0  
-    )
+    # 2. Update Banker's Audit ($0 transaction because no cash moved)
+    log_bank_transaction(p_name=p_name, reason=f"Allocation: {property_name}", amount=0)
+
+    # 3. 🟢 FORENSIC STAMP
+    # Find the PID and Price from PROPERTIES
+    for pid, data in PROPERTIES.items():
+        if data.get('name') == property_name:
+            market_price = float(data.get('price', 0))
+            
+            # Record the 'deed' cost so the property starts at a deficit
+            stamp_property_ledger(
+                pid=pid,
+                event="Parachuted Allocation",
+                slices={"deed": -market_price}
+            )
+            break
+
 
 def generate_true_audit_excel():
     import io
@@ -787,7 +913,7 @@ def attempt_buy_houses(p):
                     stamp_property_ledger(
                         int(target_idx), 
                         f"Built {label}", 
-                        **{column_key: -h_price}
+                        slices={column_key: -h_price} # This correctly fills the 'slices' parameter
                     )
                     
                     # 📝 Grouping Logic for Storybook
@@ -881,40 +1007,23 @@ def draw_card(p, deck_type):
                 p['cash'] += gift
                 
     elif card['effect'] == "repairs":
-        cost = 0
-        for pid, h_count in st.session_state.houses.items():
-            owner = get_owner(pid) # 🛡️ Use the shield instead of .get()
-            if owner and str(owner).strip().lower() == str(p['name']).strip().lower():
-                this_prop_cost = 0
-                if h_count == 5: # Hotel
-                    this_prop_cost = int(card['H'])
-                else: # Houses
-                    this_prop_cost = (h_count * int(card['h']))
-                
-                cost += this_prop_cost
-                
-                # 🟢 [NEW] FORENSIC STAMP: Log maintenance per property
-                if this_prop_cost > 0:
-                    stamp_property_ledger(
-                        int(pid), 
-                        f"🛠️ Repairs: {card['text'][:20]}...", 
-                        maintenance=-this_prop_cost
-                    )
+        # 1. Delegate everything to the helper
+        cost = execute_repairs_sequence(p, card)
         
+        # 2. Financial settlement
         charge_player(p, cost)
         
         if cost > 0:
-            # 🟢 Cleaned: Removed -float(cost)
             log_bank_transaction(
                 p_name=p['name'], 
                 reason="Maintenance: Property Repairs (Card)", 
                 amount=-cost
             )
-            # 🟢 TICKER FIX: Added visibility
             msg += f" | 🔧 Paid ${cost} in repairs."
             
-        if "property_stats" in st.session_state and cost > 0:
-            p['stats']['rent_paid'] += cost
+            # Keep your stat tracking for rent_paid (if you use it for wealth)
+            if "property_stats" in st.session_state:
+                p['stats']['rent_paid'] += cost
         
     elif card['effect'] == "move_nearest_rr":
         targets = [5, 15, 25, 35]
@@ -953,94 +1062,91 @@ def draw_card(p, deck_type):
             else: 
                 st.session_state.ch_deck_idx.append(idx)
                 
-    # --- POST-MOVE EVALUATION (Refined for Square Interactions) ---
+    # --- POST-MOVE EVALUATION (Forensic Asset Tracking) ---
     move_effects = ["move", "move_relative", "move_nearest_rr", "move_nearest_util"]
     if card['effect'] in move_effects:
         sq = PROPERTIES[p['pos']]
-        owner = get_owner(p['pos']) # 🛡️ Use the shield!
+        owner = get_owner(p['pos'])
         
         # 1. Handle Property/Rent Interactions
         if sq['type'] in ["Street", "Railroad", "Utility"]:
             if owner != "Bank" and str(owner).lower() != str(p['name']).lower():
-                # --- CUMULATIVE MULTIPLIER LOGIC ---
                 multiplier = 1
                 reasons = []
 
-                # A. Handle Special Card Effects
                 if card['effect'] == "move_nearest_rr":
                     multiplier *= 2
                     reasons.append("2x Card Bonus")
                 
-                # B. Handle Utility Special Case (10x NEW Roll)
                 if card['effect'] == "move_nearest_util":
-                    # 🎲 NEW: Official rules require a fresh throw for this card
-                    new_d1 = random.randint(1, 6)
-                    new_d2 = random.randint(1, 6)
+                    # Official rules: fresh dice throw for utility cards
+                    new_d1, new_d2 = random.randint(1, 6), random.randint(1, 6)
                     new_roll = new_d1 + new_d2
-                    
                     rent = 10 * new_roll
                     reasons.append(f"10x NEW Roll [{new_d1}+{new_d2}={new_roll}]")
+                    # For special 10x utility cards, we attribute the whole total to 'deed' level rent
+                    rent_slices = {"deed": float(rent)}
                 else:
-                    # Standard Rent Calculation (with Monopoly check)
-                    base_rent = int(get_rent(p['pos']))
-                    if sq['type'] == "Street" and check_monopoly(p['pos']):
-                        if st.session_state.houses.get(str(p['pos']), 0) == 0:
-                            # We don't multiply here because get_rent already did it!
-                            reasons.append("2x Monopoly Bonus")
-                    
-                    rent = int(base_rent * multiplier)
+                    # Standard Rent Attribution
+                    rent_slices = get_rent_slices(p['pos'])
+                    # Apply card multipliers (like 2x RR) to every slice
+                    if multiplier != 1:
+                        rent_slices = {k: v * multiplier for k, v in rent_slices.items()}
+                    rent = int(sum(rent_slices.values()))
 
                 # --- EXECUTE TRANSFER ---
                 p['cash'] -= rent
                 p['stats']['rent_paid'] += rent
-                
-                # 🟢 [NEW] FORENSIC STAMP: Expense side
-                stamp_property_ledger(p['pos'], f"Rent Paid (via {name} Card)", rent_exp=-rent)
-                
                 for op in st.session_state.players:
                     if str(op['name']).lower() == str(owner).lower():
                         op['cash'] += rent
                         op['stats']['rent_collected'] += rent
                         
-                        # 🟢 [NEW] FORENSIC STAMP: Income side
-                        stamp_property_ledger(p['pos'], f"Rent Collected (via Card)", rent_inc=rent)
+                        # 🟢 STAMP: Forensic Attribution
+                        stamp_property_ledger(
+                            pid=p['pos'], 
+                            event=f"Rent via {name} Card", 
+                            slices=rent_slices
+                        )
                 
-                # Build the "Forensic Receipt"
                 receipt = f" ({' + '.join(reasons)})" if reasons else ""
                 msg += f" | Paid ${rent} rent to {owner}{receipt}."
             
+            # 2. Handle Purchase via Card
             elif owner == "Bank":
                 price = int(sq.get('price', 150))
                 pol = p['policy'].get('buy_prop', "Always")
                 
+                # Check player policy
                 should_buy_card = False
-                if pol == "Always":
-                    should_buy_card = True
+                if pol == "Always": should_buy_card = True
                 elif pol == "Keep Reserve":
                     floor = get_effective_reserve(p, 'buy_prop')
-                    if p['cash'] - price >= floor:
-                        should_buy_card = True
+                    if p['cash'] - price >= floor: should_buy_card = True
                 
                 if should_buy_card and p['cash'] >= price:
                     st.session_state.ownership[str(p['pos'])] = p['name']
                     charge_player(p, price, destination="bank")
                     
-                    # 🟢 [NEW] FORENSIC STAMP: Record the Investment
-                    stamp_property_ledger(p['pos'], "Property Purchase (via Card)", deed=-price)
+                    # 🟢 STAMP: Forensic Deed Purchase
+                    stamp_property_ledger(
+                        pid=p['pos'], 
+                        event="Purchase via Card", 
+                        slices={"deed": -float(price)}
+                    )
                     
-                    # 🎯 [NEW] MONOPOLY CHECK: Does this buy double the rent?
+                    # 🎯 MONOPOLY CHECK
                     if check_monopoly(p['pos']):
                         color = PROPERTIES[p['pos']]['color']
-                        for idx, prop in enumerate(PROPERTIES):
+                        for idx, prop in PROPERTIES.items():
                             if prop.get('color') == color:
-                                stamp_property_ledger(str(idx), "🎯 Monopoly Achieved") # 🛡️ Force str(idx)
-                    
-                    if "property_stats" in st.session_state:
-                        st.session_state.property_stats[str(p['pos'])]["expenses"] += price
+                                stamp_property_ledger(int(idx), "🎯 Monopoly Achieved")
                     
                     event_text = f"🏠 Bought {sq['name']} (-${price}) via card"
-                    if 'critical_moments' not in p['stats']: p['stats']['critical_moments'] = []
-                    p['stats']['critical_moments'].append({'turn': st.session_state.turn_count, 'event': event_text})
+                    p['stats'].setdefault('critical_moments', []).append({
+                        'turn': st.session_state.turn_count, 
+                        'event': event_text
+                    })
                     msg += f" | {event_text}."
 
         # 2. Handle Tax Interactions (Fixes the Income Tax bug!)
@@ -1185,18 +1291,22 @@ def run_turn(jail_action=None, silent=False):
             p['cash'] -= rent
             p['stats']['rent_paid'] += rent
 
-            # 🟢 FORENSIC STAMP: Log the Expense (The Payer's side)
-            stamp_property_ledger(p['pos'], f"Rent Paid by {p['name']}", rent_exp=-rent)
+            # 1. Get the forensic breakdown of what is being paid
+            rent_slices = get_rent_slices(p['pos'])
             
-            # Transfer rent to owner
+            # 2. Transfer the cash
             for op in st.session_state.players:
                 if str(op['name']).lower() == str(owner).lower():
                     op['cash'] += rent
                     op['stats']['rent_collected'] += rent
-
-                    # 🟢 FORENSIC STAMP: Log the Income (The Owner's side)
-                    # This now only fires exactly once when the owner is found.
-                    stamp_property_ledger(p['pos'], f"Rent Collected by {op['name']}", rent_inc=rent)
+                    
+                    # 🟢 FORENSIC STAMP: The Single Source of Truth
+                    # We stamp the property once to show the income it just generated
+                    stamp_property_ledger(
+                        pid=p['pos'], 
+                        event=f"Rent from {p['name']}", 
+                        slices=rent_slices
+                    )
             
             msg += f"Paid ${rent} rent to {owner}. "
             
@@ -1613,15 +1723,14 @@ elif st.session_state.phase == "SETUP":
                 st.session_state.property_ledgers[prop_id_str] = [{
                     "turn": 0,
                     "event": "Parachute Setup (Basis)",
-                    "deed": -prop_price,
-                    "h1": -h_price if h_count >= 1 else 0,
-                    "h2": -h_price if h_count >= 2 else 0,
-                    "h3": -h_price if h_count >= 3 else 0,
-                    "h4": -h_price if h_count >= 4 else 0,
-                    "hotel": -h_price if h_count >= 5 else 0,
-                    "rent_inc": 0,
-                    "rent_exp": 0,
-                    "maintenance": 0
+                    "deed": -float(prop_price),
+                    "monopoly": 0,
+                    "h1": -float(h_price) if h_count >= 1 else 0,
+                    "h2": -float(h_price) if h_count >= 2 else 0,
+                    "h3": -float(h_price) if h_count >= 3 else 0,
+                    "h4": -float(h_price) if h_count >= 4 else 0,
+                    "hotel": -float(h_price) if h_count >= 5 else 0,
+                    "maintenance": 0 
                 }]
 
                 # 📜 2. Master Log: The Deed Assignment
@@ -2011,10 +2120,13 @@ elif st.session_state.phase == "LIVE":
             ledger_data = st.session_state.property_ledgers[selected_pid]
             df_ledger = pd.DataFrame(ledger_data)
             
-            # 🟢 MASTER DEFINITION
-            capex_cols = ['deed', 'h1', 'h2', 'h3', 'h4', 'hotel']
-            opex_cols = ['rent_inc', 'rent_exp', 'maintenance']
-            money_cols = capex_cols + opex_cols
+            # 🟢 NEW MASTER DEFINITION: Granular Forensic Slices
+            capex_cols = ['deed', 'h1', 'h2', 'h3', 'h4', 'hotel'] # Negative values (Purchases)
+            rev_slices = ['base_rent', 'monopoly', 'h1_rent', 'h2_rent', 'h3_rent', 'h4_rent', 'hotel_rent'] # Positive values (Income)
+            opex_cols = ['maintenance'] # Negative values (Expenses)
+            
+            # Combine all for the running balance / total ROI
+            money_cols = capex_cols + rev_slices + opex_cols
             
             for col in money_cols:
                 if col not in df_ledger.columns:
@@ -2025,12 +2137,19 @@ elif st.session_state.phase == "LIVE":
             
             # 3. Calculate Key Metrics
             if not df_ledger.empty:
-                total_capex = df_ledger[capex_cols].sum().sum()
-                total_rev = df_ledger['rent_inc'].sum()
-                total_opex = df_ledger[opex_cols].sum().sum()
+                # Use intersection to sum only columns that exist in the current dataframe
+                total_capex = df_ledger[df_ledger.columns.intersection(capex_cols)].sum().sum()
+                
+                # NEW: Sum all revenue slices to get the Gross Rent
+                total_rev = df_ledger[df_ledger.columns.intersection(rev_slices)].sum().sum()
+                
+                # Sum maintenance/opex
+                total_opex = df_ledger[df_ledger.columns.intersection(opex_cols)].sum().sum()
+                
+                # Final ROI calculation
                 net_roi = total_rev + total_capex + total_opex         
                 
-                # 4. Display Metrics
+                # 4. Display Metrics (No changes needed to the metric display itself)
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Total Investment", f"${abs(total_capex):,.0f}")
                 m2.metric("Gross Rent Income", f"${total_rev:,.0f}")
