@@ -135,11 +135,10 @@ def stamp_property_ledger(pid, event, slices=None):
     running_total = prev_total + each_turn
 
     # 6. 📝 Build the Entry
-    # We use dictionary unpacking (**) to merge the slices into the entry
     entry = {
-        "Turn": int(st.session_state.get("turn_count", 0)),
+        # Force a fresh pull from session_state every time
+        "turn": int(st.session_state.get("turn_count", 0)), 
         "Event": str(event),
-        # Ensure every asset column exists in the row (even as 0.0) for table consistency
         **{col: float(slices.get(col, 0)) for col in asset_cols},
         "Cash Inflow (Each Turn)": each_turn,
         "Cash Inflow (Running Total)": running_total
@@ -2187,16 +2186,29 @@ elif st.session_state.phase == "LIVE":
                         )
                     
                     df_ledger2 = pd.DataFrame(st.session_state.property_ledgers[other_pid])
+                    
                     if not df_ledger2.empty:
+                        # 1. Ensure all money columns exist and calculate the running balance for the 2nd property
                         for col in money_cols:
-                            if col not in df_ledger2.columns: df_ledger2[col] = 0.0
+                            if col not in df_ledger2.columns: 
+                                df_ledger2[col] = 0.0
                         
-                        df_ledger2['Balance_2'] = df_ledger2[df_ledger2.columns.intersection(money_cols)].sum(axis=1).cumsum()
+                        # Calculate cumulative balance for the second property
+                        df_ledger2['Running_Balance_2'] = df_ledger2[df_ledger2.columns.intersection(money_cols)].sum(axis=1).cumsum()
                         
-                        comparison_df = pd.DataFrame({
-                            prop_options[selected_pid]: df_ledger['Running_Balance'], 
-                            prop_options[other_pid]: df_ledger2['Balance_2']
-                        }).ffill().fillna(0)
+                        # 2. Standardize both DataFrames to use 'turn' (or 'Turn') as the index
+                        # Check your ledger column name capitalization - matching 'turn' here
+                        d1 = df_ledger[['turn', 'Running_Balance']].copy().set_index('turn')
+                        d2 = df_ledger2[['turn', 'Running_Balance_2']].copy().set_index('turn')
+                        
+                        # 3. Outer Join ensures we see the full timeline of both properties
+                        comparison_df = d1.join(d2, how='outer')
+                        
+                        # 4. Forward Fill ensures lines don't drop to zero between transactions
+                        comparison_df = comparison_df.ffill().fillna(0)
+                        
+                        # 5. Rename columns for a clean legend
+                        comparison_df.columns = [prop_options[selected_pid], prop_options[other_pid]]
                         
                         st.write(f"**ROI Race: {prop_options[selected_pid]} vs {prop_options[other_pid]}**")
                         st.line_chart(comparison_df)
