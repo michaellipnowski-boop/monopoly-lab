@@ -130,8 +130,8 @@ def stamp_property_ledger(pid, event, slices=None):
     each_turn = sum(float(slices.get(col, 0)) for col in asset_cols)
 
     # 5. 📈 Calculate "Cash Inflow (Running Total)"
-    # Look at the last entry in the list to get the previous balance
-    prev_total = float(ledger[-1]["Cash Inflow (Running Total)"]) if ledger else 0.0
+    # Use .get() to safely handle cases where the previous entry is missing the key
+    prev_total = float(ledger[-1].get("Cash Inflow (Running Total)", 0.0)) if ledger else 0.0
     running_total = prev_total + each_turn
 
     # 6. 📝 Build the Entry
@@ -435,16 +435,27 @@ def log_parachuted_asset(p_name, property_name):
     log_bank_transaction(p_name=p_name, reason=f"Allocation: {property_name}", amount=0)
 
     # 3. 🟢 FORENSIC STAMP
-    # Find the PID and Price from PROPERTIES
     for pid, data in PROPERTIES.items():
         if data.get('name') == property_name:
+            pid_str = str(pid)
             market_price = float(data.get('price', 0))
+            h_cost = float(data.get('h_cost', 0)) if data.get('type') == 'Street' else 0
             
-            # Record the 'deed' cost so the property starts at a deficit
+            # Initial slices dictionary
+            setup_slices = {"deed": -market_price}
+            
+            # 🏗️ Add House/Hotel Investment
+            h_count = st.session_state.houses.get(pid_str, 0)
+            if h_count > 0:
+                for i in range(1, h_count + 1):
+                    key = "hotel" if i == 5 else f"h{i}"
+                    setup_slices[key] = -h_cost
+
+            # Record the full initial investment (Deed + Improvements)
             stamp_property_ledger(
                 pid=pid,
-                event="Parachuted Allocation",
-                slices={"deed": -market_price}
+                event="Parachuted Allocation (incl. Improvements)",
+                slices=setup_slices
             )
             break
 
