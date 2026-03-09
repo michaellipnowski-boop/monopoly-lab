@@ -2091,14 +2091,20 @@ elif st.session_state.phase == "LIVE":
     with t_forensic:
         st.subheader("Property-Level Investment & ROI")
         
-        # 1. Selection logic
-        active_prop_ids = list(st.session_state.get('property_ledgers', {}).keys())
+        # 1. Selection logic (FILTERED to Owned Properties only)
+        all_ledger_ids = list(st.session_state.get('property_ledgers', {}).keys())
+        
+        active_prop_ids = [
+            pid for pid in all_ledger_ids 
+            if st.session_state.ownership.get(str(pid), "Bank") != "Bank"
+        ]
         
         if not active_prop_ids:
-            st.info("No property transactions recorded yet. Once properties are bought or rent is paid, the audit trails will appear here.")
+            st.info("No properties are currently owned by players. Audit trails will appear once a deed is purchased.")
         else:
-            # Map IDs to Names
+            # Map IDs to Names for the dropdown
             prop_options = {pid: PROPERTIES[int(pid)]['name'] for pid in active_prop_ids}
+            
             selected_pid = st.selectbox(
                 "Select a Property to Audit:", 
                 options=active_prop_ids, 
@@ -2109,7 +2115,7 @@ elif st.session_state.phase == "LIVE":
             ledger_data = st.session_state.property_ledgers[selected_pid]
             df_ledger = pd.DataFrame(ledger_data)
             
-            # 🟢 THE UNIFIED COLUMNS (Matches your new stamp/rent logic)
+            # 🟢 THE UNIFIED COLUMNS
             core_columns = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel"]
             
             # Ensure all core columns exist for math safety
@@ -2121,13 +2127,13 @@ elif st.session_state.phase == "LIVE":
             
             # 3. Calculate Key Metrics
             if not df_ledger.empty:
-                # Total Investment = Sum of all NEGATIVE values (Purchases/Repairs)
+                # Total Investment = Sum of NEGATIVE values (Purchases/Repairs)
                 total_capex = df_ledger[core_columns].clip(upper=0).sum().sum()
                 
-                # Gross Rent Income = Sum of all POSITIVE values (Rent)
+                # Gross Rent Income = Sum of POSITIVE values (Rent)
                 total_rev = df_ledger[core_columns].clip(lower=0).sum().sum()
                 
-                # Final ROI calculation (Final state of the running balance)
+                # Final ROI calculation
                 net_roi = df_ledger['Running_Balance'].iloc[-1]         
                 
                 # 4. Display Metrics
@@ -2144,10 +2150,11 @@ elif st.session_state.phase == "LIVE":
                 compare_on = st.toggle("🚀 Enable Comparison Mode")
                 
                 if compare_on:
+                    # Filter: Only owned properties, excluding the one already selected
                     other_options = [pid for pid in active_prop_ids if pid != selected_pid]
                     
                     if not other_options:
-                        st.warning("⚠️ Need at least two active properties for Comparison Mode.")
+                        st.warning("⚠️ Need at least two owned properties to use Comparison Mode.")
                     else:
                         other_pid = st.selectbox(
                             "Select Second Property to Compare:",
@@ -2158,14 +2165,11 @@ elif st.session_state.phase == "LIVE":
                         df_ledger2 = pd.DataFrame(st.session_state.property_ledgers[other_pid])
                         
                         if not df_ledger2.empty:
-                            # Standardize indices by grouping by turn (handles multi-event turns)
                             d1 = df_ledger.groupby('turn')['Running_Balance'].last().to_frame()
                             d2 = df_ledger2.groupby('turn')['Running_Balance'].last().to_frame()
                             
-                            # Join on the turn timeline
                             comparison_df = d1.join(d2, how='outer', lsuffix='_ref', rsuffix='_comp')
                             comparison_df = comparison_df.ffill().fillna(0)
-                            
                             comparison_df.columns = [prop_options[selected_pid], prop_options[other_pid]]
                             
                             st.write(f"**ROI Race: {prop_options[selected_pid]} vs {prop_options[other_pid]}**")
@@ -2183,14 +2187,12 @@ elif st.session_state.phase == "LIVE":
                         current_deficit = df_ledger['Running_Balance'].iloc[-1]
                         st.warning(f"📉 **Property is still ${abs(current_deficit):,.0f} away from break-even.**")
                     
-                    # Group by turn for a cleaner area chart
                     chart_series = df_ledger.groupby('turn')['Running_Balance'].last()
                     st.area_chart(chart_series)
                 
                 # 6. Raw Data: The "Single Story" Log
                 with st.expander("View Forensic Transaction Log"):
                     display_cols = ['turn', 'Event'] + core_columns + ['Net_Impact', 'Running_Balance']
-                    # Display the slice of the dataframe containing the unified columns
                     st.dataframe(df_ledger[display_cols], use_container_width=True, hide_index=True)
             
             else:
