@@ -99,20 +99,29 @@ RAILROADS = []
 UTILITIES = []
 
 def stamp_property_ledger(pid, event, deed=0.0, h1=0.0, h2=0.0, h3=0.0, h4=0.0, hotel=0.0, rent_inc=0.0, rent_exp=0.0, maintenance=0.0):
+    # 1. Force the key to be a string
     pid_str = str(pid)
+    
+    # 2. 🛡️ THE SAFETY CATCH: If session_state was wiped or corrupted, re-initialize it
+    if "property_ledgers" not in st.session_state or not isinstance(st.session_state.property_ledgers, dict):
+        st.session_state.property_ledgers = {str(i): [] for i in range(40)}
+
+    # 3. Ensure this specific property has a list
     if pid_str not in st.session_state.property_ledgers:
         st.session_state.property_ledgers[pid_str] = []
     
+    # 4. Create the entry with explicit float casting for math safety
     entry = {
-        "turn": st.session_state.turn_count,
-        "event": event,
-        "deed": deed,
-        "h1": h1, "h2": h2, "h3": h3, "h4": h4, "hotel": hotel,
-        "rent_inc": rent_inc,
-        "rent_exp": rent_exp,
-        "maintenance": maintenance  # This maps the value to the column
+        "turn": int(st.session_state.get("turn_count", 0)),
+        "event": str(event),
+        "deed": float(deed),
+        "h1": float(h1), "h2": float(h2), "h3": float(h3), "h4": float(h4), "hotel": float(hotel),
+        "rent_inc": float(rent_inc),
+        "rent_exp": float(rent_exp),
+        "maintenance": float(maintenance)
     }
     
+    # 5. Append to the ledger
     st.session_state.property_ledgers[pid_str].append(entry)
     
 
@@ -584,11 +593,18 @@ def verify_sim_integrity():
 
 # --- HELPER LOGIC ---
 def check_monopoly(pos):
+    # 1. Type Guard: Ensure ownership is a dictionary
+    if not isinstance(st.session_state.get('ownership'), dict):
+        # If it's an int/None, reset it to an empty dict so .get() works
+        st.session_state.ownership = {} 
+        return False
+
     sq = PROPERTIES[pos]
     if sq['type'] != "Street":
         return False
     
     color = sq.get('color')
+    # 2. Key Guard: Force string lookup
     owner = st.session_state.ownership.get(str(pos))
     
     if not owner or owner == "Bank":
@@ -600,7 +616,7 @@ def check_monopoly(pos):
         if p.get('color') == color
     ]
     
-    # Check if the same owner owns all of them
+    # 3. Consistency Guard: Check if the same owner owns all of them
     return all(
         st.session_state.ownership.get(str(idx)) == owner 
         for idx in same_color_indices
