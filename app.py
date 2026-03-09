@@ -100,7 +100,7 @@ UTILITIES = []
 
 def stamp_property_ledger(pid, event, slices=None):
     pid_str = str(pid)
-    # Ensure slices is a dict and convert all values to float immediately
+    # Ensure slices is a dict and convert all values to float
     raw_slices = slices if slices is not None else {}
     processed_slices = {k: float(v) for k, v in raw_slices.items()}
 
@@ -109,13 +109,12 @@ def stamp_property_ledger(pid, event, slices=None):
     
     ledger = st.session_state.property_ledgers[pid_str]
 
-    # THE CONSOLIDATED COLUMNS
     core_columns = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel"]
     
-    # 🧮 Calculate Net Impact using the processed floats
+    # Calculate Net Impact from the passed slices
     net_impact = sum(processed_slices.get(col, 0.0) for col in core_columns)
 
-    # 📈 Calculate Running Total
+    # Calculate Running Total based on previous history
     prev_total = 0.0
     if ledger:
         prev_total = float(ledger[-1].get("Running_Balance", 0.0))
@@ -125,7 +124,6 @@ def stamp_property_ledger(pid, event, slices=None):
     entry = {
         "turn": int(st.session_state.get("turn_count", 0)),
         "Event": str(event),
-        # Map every core column, ensuring 0.0 for those not in slices
         **{col: processed_slices.get(col, 0.0) for col in core_columns},
         "Net_Impact": net_impact,
         "Running_Balance": running_total
@@ -2096,9 +2094,8 @@ elif st.session_state.phase == "LIVE":
     with t_forensic:
         st.subheader("Property-Level Investment & ROI")
         
-        # 1. Selection logic (FILTERED to Owned Properties only)
+        # 1. Filtered Selection Logic
         all_ledger_ids = list(st.session_state.get('property_ledgers', {}).keys())
-        
         active_prop_ids = [
             pid for pid in all_ledger_ids 
             if st.session_state.ownership.get(str(pid), "Bank") != "Bank"
@@ -2107,7 +2104,7 @@ elif st.session_state.phase == "LIVE":
         if not active_prop_ids:
             st.info("No properties are currently owned by players. Audit trails will appear once a deed is purchased.")
         else:
-            # Map IDs to Names for the dropdown
+            # Map IDs to Names
             prop_options = {pid: PROPERTIES[int(pid)]['name'] for pid in active_prop_ids}
             
             selected_pid = st.selectbox(
@@ -2116,29 +2113,30 @@ elif st.session_state.phase == "LIVE":
                 format_func=lambda x: prop_options[x]
             )
             
-            # 2. Process Ledger Data
-            ledger_data = st.session_state.property_ledgers[selected_pid]
-            df_ledger = pd.DataFrame(ledger_data)
+            # 2. Process Ledger Data with Repair Layer
+            ledger_raw = st.session_state.property_ledgers.get(selected_pid, [])
+            df_ledger = pd.DataFrame(ledger_raw)
             
-            # 🟢 THE UNIFIED COLUMNS
             core_columns = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel"]
             
-            # Ensure all core columns exist for math safety
-            for col in core_columns:
-                if col not in df_ledger.columns:
-                    df_ledger[col] = 0.0
-            
-            df_ledger = df_ledger.fillna(0)
-            
-            # 3. Calculate Key Metrics
             if not df_ledger.empty:
-                # Total Investment = Sum of NEGATIVE values (Purchases/Repairs)
+                # 🛠️ REPAIR LAYER: Ensure core columns exist
+                for col in core_columns:
+                    if col not in df_ledger.columns:
+                        df_ledger[col] = 0.0
+                
+                # 🛠️ REPAIR LAYER: Reconstruct Running_Balance if missing or corrupted
+                if 'Net_Impact' not in df_ledger.columns:
+                    df_ledger['Net_Impact'] = df_ledger[core_columns].sum(axis=1)
+                
+                if 'Running_Balance' not in df_ledger.columns:
+                    df_ledger['Running_Balance'] = df_ledger['Net_Impact'].cumsum()
+
+                df_ledger = df_ledger.fillna(0)
+                
+                # 3. Calculate Key Metrics
                 total_capex = df_ledger[core_columns].clip(upper=0).sum().sum()
-                
-                # Gross Rent Income = Sum of POSITIVE values (Rent)
                 total_rev = df_ledger[core_columns].clip(lower=0).sum().sum()
-                
-                # Final ROI calculation
                 net_roi = df_ledger['Running_Balance'].iloc[-1]         
                 
                 # 4. Display Metrics
@@ -2155,11 +2153,11 @@ elif st.session_state.phase == "LIVE":
                 compare_on = st.toggle("🚀 Enable Comparison Mode")
                 
                 if compare_on:
-                    # Filter: Only owned properties, excluding the one already selected
+                    # Only show other owned properties
                     other_options = [pid for pid in active_prop_ids if pid != selected_pid]
                     
                     if not other_options:
-                        st.warning("⚠️ Need at least two owned properties to use Comparison Mode.")
+                        st.warning("⚠️ Need at least two owned properties for Comparison Mode.")
                     else:
                         other_pid = st.selectbox(
                             "Select Second Property to Compare:",
@@ -2167,11 +2165,15 @@ elif st.session_state.phase == "LIVE":
                             format_func=lambda x: prop_options[x]
                         )
                     
-                        df_ledger2 = pd.DataFrame(st.session_state.property_ledgers[other_pid])
+                        ld2 = pd.DataFrame(st.session_state.property_ledgers.get(other_pid, []))
                         
-                        if not df_ledger2.empty:
+                        if not ld2.empty:
+                            # Apply Repair Layer to second property too
+                            if 'Running_Balance' not in ld2.columns:
+                                ld2['Running_Balance'] = ld2[core_columns].sum(axis=1).cumsum()
+                            
                             d1 = df_ledger.groupby('turn')['Running_Balance'].last().to_frame()
-                            d2 = df_ledger2.groupby('turn')['Running_Balance'].last().to_frame()
+                            d2 = ld2.groupby('turn')['Running_Balance'].last().to_frame()
                             
                             comparison_df = d1.join(d2, how='outer', lsuffix='_ref', rsuffix='_comp')
                             comparison_df = comparison_df.ffill().fillna(0)
@@ -2195,11 +2197,11 @@ elif st.session_state.phase == "LIVE":
                     chart_series = df_ledger.groupby('turn')['Running_Balance'].last()
                     st.area_chart(chart_series)
                 
-                # 6. Raw Data: The "Single Story" Log
+                # 6. Raw Data: Transaction Log
                 with st.expander("View Forensic Transaction Log"):
-                    display_cols = ['turn', 'Event'] + core_columns + ['Net_Impact', 'Running_Balance']
+                    # Only show columns that actually have data
+                    display_cols = ['turn', 'Event'] + [c for c in core_columns if c in df_ledger.columns] + ['Net_Impact', 'Running_Balance']
                     st.dataframe(df_ledger[display_cols], use_container_width=True, hide_index=True)
-            
             else:
                 st.info("No transaction data recorded for this property yet.")
             
