@@ -439,7 +439,10 @@ def log_parachuted_asset(p_name, property_name):
     log_bank_transaction(p_name=p_name, reason=f"Allocation: {property_name}", amount=0)
 
     # 3. 🟢 FORENSIC STAMP
-    for pid, data in PROPERTIES.items():
+    # Safer way to iterate regardless of list or dict
+    props_iterable = PROPERTIES.items() if isinstance(PROPERTIES, dict) else enumerate(PROPERTIES)
+    
+    for pid, data in props_iterable:
         if data.get('name') == property_name:
             pid_str = str(pid)
             market_price = float(data.get('price', 0))
@@ -1375,9 +1378,13 @@ def run_turn(jail_action=None, silent=False):
             send_to_jail(p)
             msg += "Go To Jail!"
         else:
-            # Delegate movement and card-purchases to draw_card
+            # draw_card handles the movement AND the forensic stamp.
             card_msg = draw_card(p, sq.get('deck', 'chance'))
             msg += f" {card_msg}"
+            
+            # Since draw_card handled everything, we explicitly 
+            # prevent any further financial logic this turn.
+            sq = PROPERTIES.get(p['pos'])
 
     elif sq['name'] == "Free Parking" and st.session_state.rules["fp_jackpot"]:
         if st.session_state.jackpot > 0:
