@@ -113,17 +113,19 @@ def stamp_property_ledger(pid, event, slices=None):
 
     # 2. Logic: Prioritize Breakdown vs Total
     # 'rent' is a "Total" field. The others are "Slices".
-    breakdown_cols = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel"]
+    # Added "railroad" and "utility" to catch card-based landings on those squares.
+    breakdown_cols = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel", "railroad", "utility"]
     
     # Calculate the sum of the detailed parts
     breakdown_sum = sum(processed_slices.get(col, 0.0) for col in breakdown_cols)
     
     # ⚖️ The Decision Engine: 
-    # If we have breakdown data, use it. 
+    # If we have breakdown data (including RR/Util), use it. 
     # Otherwise, check if 'rent' was passed as a generic total.
     if breakdown_sum != 0:
         net_impact = breakdown_sum
     else:
+        # Fallback to 'rent' if it's the only key provided
         net_impact = processed_slices.get("rent", 0.0)
 
     # 3. Debug Alert
@@ -140,7 +142,7 @@ def stamp_property_ledger(pid, event, slices=None):
     # 5. Build Entry (Matches your UI core_columns)
     entry = {
         "turn": int(st.session_state.get("turn_count", 0)),
-        "Event": str(event),
+        "Event": str(event) if event else "Unknown Card Event",
         # Ensure 'rent' is also stored for visualization, even if not in the net_impact sum
         **{col: processed_slices.get(col, 0.0) for col in (breakdown_cols + ["rent"])},
         "Net_Impact": net_impact,
