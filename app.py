@@ -99,32 +99,50 @@ RAILROADS = []
 UTILITIES = []
 
 def stamp_property_ledger(pid, event, slices=None):
+    # 1. Initialize safety
+    if slices is None:
+        slices = {}
+
     pid_str = str(pid)
-    # Ensure slices is a dict and convert all values to float
-    raw_slices = slices if slices is not None else {}
-    processed_slices = {k: float(v) for k, v in raw_slices.items()}
+    processed_slices = {k: float(v) for k, v in slices.items()}
 
     if "property_ledgers" not in st.session_state:
         st.session_state.property_ledgers = {str(i): [] for i in range(40)}
     
     ledger = st.session_state.property_ledgers[pid_str]
 
-    core_columns = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel"]
+    # 2. Logic: Prioritize Breakdown vs Total
+    # 'rent' is a "Total" field. The others are "Slices".
+    breakdown_cols = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel"]
     
-    # Calculate Net Impact from the passed slices
-    net_impact = sum(processed_slices.get(col, 0.0) for col in core_columns)
+    # Calculate the sum of the detailed parts
+    breakdown_sum = sum(processed_slices.get(col, 0.0) for col in breakdown_cols)
+    
+    # ⚖️ The Decision Engine: 
+    # If we have breakdown data, use it. 
+    # Otherwise, check if 'rent' was passed as a generic total.
+    if breakdown_sum != 0:
+        net_impact = breakdown_sum
+    else:
+        net_impact = processed_slices.get("rent", 0.0)
 
-    # Calculate Running Total based on previous history
+    # 3. Debug Alert
+    if net_impact == 0 and event not in ["Status Check", "🎯 Monopoly Achieved"]:
+        print(f"DEBUG: Zero impact recorded for {event} on Turn {st.session_state.get('turn_count', 0)}")
+
+    # 4. Calculate Running Total
     prev_total = 0.0
     if ledger:
         prev_total = float(ledger[-1].get("Running_Balance", 0.0))
     
     running_total = prev_total + net_impact
 
+    # 5. Build Entry (Matches your UI core_columns)
     entry = {
         "turn": int(st.session_state.get("turn_count", 0)),
         "Event": str(event),
-        **{col: processed_slices.get(col, 0.0) for col in core_columns},
+        # Ensure 'rent' is also stored for visualization, even if not in the net_impact sum
+        **{col: processed_slices.get(col, 0.0) for col in (breakdown_cols + ["rent"])},
         "Net_Impact": net_impact,
         "Running_Balance": running_total
     }
@@ -165,29 +183,32 @@ def get_rent_slices(pid, roll=7, override_total=None):
             slices["monopoly"] = float(6 * roll) # The bonus from owning both
         return slices
 
-    # --- 4. STREET LOGIC (Unified Columns) ---
+    # --- 4. STREET LOGIC (Persistent Monopoly Breakdown) ---
     rent_list = info.get('rent', [0, 0, 0, 0, 0, 0])
     h_count = st.session_state.houses.get(str(pid), 0)
     has_monopoly = check_monopoly(pid)
     
-    # Standard Rent hits the 'deed' column
+    # 1. Base Rent (Deed) is ALWAYS the raw unimproved rent
     slices["deed"] = float(rent_list[0])
     
-    # The Monopoly bonus (double rent on unimproved) hits 'monopoly'
-    if has_monopoly and h_count == 0:
+    # 2. Monopoly Bonus: Now persists even if houses exist!
+    if has_monopoly:
         slices["monopoly"] = float(rent_list[0])
     
+    # 3. House Logic: Calculate the "Step Up" from the Monopoly floor
     if h_count >= 1:
-        # Math helper: determining what the rent would have been WITHOUT houses
-        base_threshold = rent_list[0] * (2 if has_monopoly else 1)
+        # The 'Monopoly Floor' is rent_list[0] * 2
+        monopoly_floor = rent_list[0] * 2
         
-        # HOUSE RENT: Mapped to the same keys as the construction costs
-        slices["h1"] = float(rent_list[1] - base_threshold)
+        # h1 is ONLY the value added above the monopoly floor
+        slices["h1"] = float(rent_list[1] - monopoly_floor)
+        
+        # h2-hotel remain the same (jumps between house levels)
         if h_count >= 2: slices["h2"] = float(rent_list[2] - rent_list[1])
         if h_count >= 3: slices["h3"] = float(rent_list[3] - rent_list[2])
         if h_count >= 4: slices["h4"] = float(rent_list[4] - rent_list[3])
         if h_count >= 5: slices["hotel"] = float(rent_list[5] - rent_list[4])
-        
+            
     return slices
 
 
@@ -1077,7 +1098,8 @@ def draw_card(p, deck_type):
                     rent = 10 * new_roll
                     reasons.append(f"10x NEW Roll [{new_d1}+{new_d2}={new_roll}]")
                     # For special 10x utility cards, we attribute the whole total to 'deed' level rent
-                    rent_slices = {"deed": float(rent)}
+                    # ✅ FIXED:
+                    rent_slices = get_rent_slices(p['pos'], override_total=rent)
                 else:
                     # Standard Rent Attribution
                     rent_slices = get_rent_slices(p['pos'])
@@ -1127,12 +1149,16 @@ def draw_card(p, deck_type):
                         slices={"deed": -float(price)}
                     )
                     
-                    # 🎯 MONOPOLY CHECK
+                    # 🎯 MONOPOLY CHECK (Unified for Spot 1 & Spot 2)
                     if check_monopoly(p['pos']):
-                        color = PROPERTIES[p['pos']]['color']
-                        for idx, prop in PROPERTIES.items():
-                            if prop.get('color') == color:
-                                stamp_property_ledger(int(idx), "🎯 Monopoly Achieved")
+                        color = sq.get('color')
+                        if color:
+                            # Loop through all properties to find those with the same color
+                            # Note: Using PROPERTIES.items() if it's a dict, or enumerate() if a list
+                            for idx, prop in (PROPERTIES.items() if isinstance(PROPERTIES, dict) else enumerate(PROPERTIES)):
+                                if prop.get('color') == color:
+                                    # Stamp the "Status" to explain future 2x rent
+                                    stamp_property_ledger(int(idx), "🎯 Monopoly Achieved: Rent Doubled")
                     
                     event_text = f"🏠 Bought {sq['name']} (-${price}) via card"
                     p['stats'].setdefault('critical_moments', []).append({
@@ -1282,9 +1308,10 @@ def run_turn(jail_action=None, silent=False):
             rent = get_rent(p['pos'], roll=roll_sum)
             p['cash'] -= rent
             p['stats']['rent_paid'] += rent
-
-            # 1. Get the forensic breakdown of what is being paid
-            rent_slices = get_rent_slices(p['pos'])
+        
+            # 1. Get the forensic breakdown 
+            # (Ensure this function returns the dict we refined earlier)
+            rent_slices = get_rent_slices(p['pos'], roll=roll_sum)
             
             # 2. Transfer the cash
             for op in st.session_state.players:
@@ -1292,8 +1319,8 @@ def run_turn(jail_action=None, silent=False):
                     op['cash'] += rent
                     op['stats']['rent_collected'] += rent
                     
-                    # 🟢 FORENSIC STAMP: The Single Source of Truth
-                    # We stamp the property once to show the income it just generated
+                    # 🟢 FORENSIC STAMP
+                    # We trust get_rent_slices to have the correct keys for core_columns
                     stamp_property_ledger(
                         pid=p['pos'], 
                         event=f"Rent from {p['name']}", 
@@ -1311,16 +1338,23 @@ def run_turn(jail_action=None, silent=False):
                     st.session_state.ownership[str(p['pos'])] = p['name']
                     charge_player(p, price, destination="bank")
                     
-                    # 🟢 [NEW] FORENSIC STAMP: Record the Deed Purchase
-                    stamp_property_ledger(p['pos'], "Property Purchase", deed=-price)
+                    # 🟢 CORRECTED STAMP for Spot 2:
+                    stamp_property_ledger(
+                        pid=p['pos'], 
+                        event="Property Purchase", 
+                        slices={"deed": -float(price)} 
+                    )
 
-                    # 🎯 [NEW] MONOPOLY CHECK: Does this buy double the rent?
+                    # 🎯 MONOPOLY CHECK (Unified for Spot 1 & Spot 2)
                     if check_monopoly(p['pos']):
-                        color = PROPERTIES[p['pos']]['color']
-                        # Stamp EVERY property in this color set so their history explains the 2x rent
-                        for idx, prop in enumerate(PROPERTIES):
-                            if prop.get('color') == color:
-                                stamp_property_ledger(idx, "🎯 Monopoly Achieved")
+                        color = sq.get('color')
+                        if color:
+                            # Loop through all properties to find those with the same color
+                            # Note: Using PROPERTIES.items() if it's a dict, or enumerate() if a list
+                            for idx, prop in (PROPERTIES.items() if isinstance(PROPERTIES, dict) else enumerate(PROPERTIES)):
+                                if prop.get('color') == color:
+                                    # Stamp the "Status" to explain future 2x rent
+                                    stamp_property_ledger(int(idx), "🎯 Monopoly Achieved: Rent Doubled")
 
                     # --- EXISTING: UI & Logs ---
                     p['stats']['critical_moments'].append({
