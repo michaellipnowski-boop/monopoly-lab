@@ -627,8 +627,12 @@ def restart_game():
                 # 🔍 Find the player object to update their specific UI highlights
                 owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
                 
-                # 🟢 [NEW] STAMP: Land investment for Property Ledger
-                stamp_property_ledger(pid_int, "🪂 INITIAL: Parachuted Deed", deed=-price)
+                # ✅ New, Forensic-ready call
+                stamp_property_ledger(
+                    pid_int, 
+                    "🪂 INITIAL: Parachuted Deed", 
+                    slices={"deed": -price}
+                )
 
                 # 🟢 [NEW] STAMP: Monopoly status (if applicable at start)
                 if check_monopoly(pid_int):
@@ -649,12 +653,12 @@ def restart_game():
                     total_h_val = h_count * h_cost
                     label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
                     
-                    # 🟢 [NEW] STAMP: Sequential house investments for Property Ledger
-                    if h_count >= 1: stamp_property_ledger(pid_int, "🪂 INITIAL: House 1", h1=-h_cost)
-                    if h_count >= 2: stamp_property_ledger(pid_int, "🪂 INITIAL: House 2", h2=-h_cost)
-                    if h_count >= 3: stamp_property_ledger(pid_int, "🪂 INITIAL: House 3", h3=-h_cost)
-                    if h_count >= 4: stamp_property_ledger(pid_int, "🪂 INITIAL: House 4", h4=-h_cost)
-                    if h_count == 5: stamp_property_ledger(pid_int, "🪂 INITIAL: Hotel", hotel=-h_cost)
+                    # 🟢 [FIXED] STAMP: Sequential house investments
+                    if h_count >= 1: stamp_property_ledger(pid_int, "🪂 INITIAL: House 1", slices={"h1": -h_cost})
+                    if h_count >= 2: stamp_property_ledger(pid_int, "🪂 INITIAL: House 2", slices={"h2": -h_cost})
+                    if h_count >= 3: stamp_property_ledger(pid_int, "🪂 INITIAL: House 3", slices={"h3": -h_cost})
+                    if h_count >= 4: stamp_property_ledger(pid_int, "🪂 INITIAL: House 4", slices={"h4": -h_cost})
+                    if h_count == 5: stamp_property_ledger(pid_int, "🪂 INITIAL: Hotel", slices={"hotel": -h_cost})
 
                     if owner_obj:
                         owner_obj['stats']['critical_moments'].append({
