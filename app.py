@@ -1759,18 +1759,29 @@ elif st.session_state.phase == "SETUP":
                 h_count = current_houses.get(str(pid), 0)
                 h_price = p_info.get('house_price', p_info.get('h_cost', 50))
                 
-                st.session_state.property_ledgers[prop_id_str] = [{
-                    "turn": 0,
-                    "event": "Parachute Setup (Basis)",
-                    "deed": -float(prop_price),
-                    "monopoly": 0,
-                    "h1": -float(h_price) if h_count >= 1 else 0,
-                    "h2": -float(h_price) if h_count >= 2 else 0,
-                    "h3": -float(h_price) if h_count >= 3 else 0,
-                    "h4": -float(h_price) if h_count >= 4 else 0,
-                    "hotel": -float(h_price) if h_count >= 5 else 0,
-                    "maintenance": 0 
-                }]
+                # 🟢 NEW: Stamp the Property Forensic Ledger using the official function
+                # This ensures Net_Impact and Running_Balance are calculated automatically.
+                
+                # 1. Stamp the Deed
+                stamp_property_ledger(
+                    pid, 
+                    "🪂 INITIAL: Parachuted Deed", 
+                    slices={"deed": -float(prop_price)}
+                )
+
+                # 2. Stamp the Houses/Hotel (if any exist)
+                if h_count > 0:
+                    h_price = p_info.get('house_price', p_info.get('h_cost', 50))
+                    h_slices = {}
+                    for i in range(1, h_count + 1):
+                        col = f"h{i}" if i < 5 else "hotel"
+                        h_slices[col] = -float(h_price)
+                    
+                    stamp_property_ledger(
+                        pid, 
+                        f"🏗️ INITIAL: {h_count} Development", 
+                        slices=h_slices
+                    )
 
                 # 📜 2. Master Log: The Deed Assignment
                 st.session_state.master_log.append({
