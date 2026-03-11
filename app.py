@@ -2245,22 +2245,29 @@ elif st.session_state.phase == "LIVE":
             prop_options = {pid: PROPERTIES[int(pid)]['name'] for pid in active_prop_ids}
             selected_pid = st.selectbox("Select a Property to Audit:", options=active_prop_ids, format_func=lambda x: prop_options[x])
             
-            # 2. Process Ledger Data with Repair Layer
+            # 2. Process Ledger Data with Surgical Repair Layer
             ledger_raw = st.session_state.property_ledgers.get(selected_pid, [])
             df_ledger = pd.DataFrame(ledger_raw)
             
             if not df_ledger.empty:
-                # 🛠️ REPAIR LAYER: Use GLOBAL constants
-                for col in CORE_COLUMNS:
-                    if col not in df_ledger.columns:
-                        df_ledger[col] = 0.0
+                # 🛠️ SURGICAL REPAIR: 
+                # 1. Identify columns that exist in the ledger
+                existing_cols = [col for col in CORE_COLUMNS if col in df_ledger.columns]
                 
+                # 2. Filter further: Only keep columns where at least one row is NOT 0.0
+                # This hides h4/hotel until you actually spend/earn money on them.
+                actual_cols = [
+                    col for col in existing_cols 
+                    if (df_ledger[col] != 0).any()
+                ]
+                
+                # Ensure Net_Impact and Running_Balance are calculated using only these active columns
                 if 'Net_Impact' not in df_ledger.columns:
-                    df_ledger['Net_Impact'] = df_ledger[CORE_COLUMNS].sum(axis=1)
+                    df_ledger['Net_Impact'] = df_ledger[actual_cols].sum(axis=1)
                 
                 if 'Running_Balance' not in df_ledger.columns:
                     df_ledger['Running_Balance'] = df_ledger['Net_Impact'].cumsum()
-    
+
                 df_ledger = df_ledger.fillna(0)
                 
                 # 3. Calculate Key Metrics
@@ -2290,8 +2297,11 @@ elif st.session_state.phase == "LIVE":
                         ld2 = pd.DataFrame(st.session_state.property_ledgers.get(other_pid, []))
                         
                         if not ld2.empty:
+                            # 🛠️ SURGICAL REPAIR (Property 2): Only sum columns with actual values
+                            second_actual = [c for c in CORE_COLUMNS if c in ld2.columns and (ld2[c] != 0).any()]
+                            
                             if 'Running_Balance' not in ld2.columns:
-                                ld2['Running_Balance'] = ld2[CORE_COLUMNS].sum(axis=1).cumsum()
+                                ld2['Running_Balance'] = ld2[second_actual].sum(axis=1).cumsum()
                             
                             d1 = df_ledger.groupby('turn')['Running_Balance'].last().to_frame()
                             d2 = ld2.groupby('turn')['Running_Balance'].last().to_frame()
