@@ -2,9 +2,10 @@ import streamlit as st
 import random
 import pandas as pd  # Added for data processing and Excel/CSV exports
 from collections import defaultdict
+import io
 
 
-# --- DATA CONSTANTS ---
+# --- GLOBAL UI & DATA CONSTANTS ---
 COLOR_MAP = {
     "Brown": "#955436", "Light Blue": "#AAE0FA", "Pink": "#D93A96", "Orange": "#F7941D",
     "Red": "#ED1B24", "Yellow": "#FEF200", "Green": "#1FB25A", "Dark Blue": "#0072BB",
@@ -53,6 +54,11 @@ PROPERTIES = {
     38: {"name": "Luxury Tax", "type": "Tax", "cost": 100},
     39: {"name": "Boardwalk", "type": "Street", "color": "Dark Blue", "rent": [50, 200, 600, 1400, 1700, 2000], "price": 400, "h_cost": 200}
 }
+
+# These ensure the Excel and the UI always show the same columns in the same order
+CORE_COLUMNS = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel", "railroad", "utility"]
+PREFERRED_COLS = ['turn', 'Event', 'Net_Impact', 'Running_Balance'] + CORE_COLUMNS
+
 
 # --- DECKS ---
 CHANCE_DECK = [
@@ -139,7 +145,7 @@ def stamp_property_ledger(pid, event, slices=None):
     
     running_total = prev_total + net_impact
 
-    # 5. Build Entry (Matches your UI core_columns)
+    # 5. Build Entry (Matches your UI CORE_COLUMNS)
     entry = {
         "turn": int(st.session_state.get("turn_count", 0)),
         "Event": str(event) if event else "Unknown Card Event",
@@ -517,6 +523,58 @@ def generate_true_audit_excel():
                 pd.DataFrame(columns=["Turn", "Event", "Money In", "Running Total Money In"]).to_excel(writer, sheet_name=sheet_label, index=False)
 
     return output.getvalue()
+
+
+def export_to_excel():
+    # 1. Setup the In-Memory Buffer
+    output = io.BytesIO()
+    
+    # 2. Start the Excel Writer
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        
+        # --- TAB 1: THE PORTFOLIO SUMMARY ---
+        summary_data = []
+        for pid_str, ledger in st.session_state.property_ledgers.items():
+            # Only include if the ledger actually has data (Turn 0 or beyond)
+            if ledger:
+                name = PROPERTIES[int(pid_str)]['name']
+                owner = st.session_state.ownership.get(pid_str, "Bank")
+                
+                total_invested = sum(row.get('Net_Impact', 0) for row in ledger if row.get('Net_Impact', 0) < 0)
+                total_revenue = sum(row.get('rent', 0) for row in ledger)
+                current_bal = ledger[-1].get('Running_Balance', 0)
+                
+                summary_data.append({
+                    "Property": name,
+                    "Owner": owner,
+                    "Total Outflow": abs(total_invested),
+                    "Total Rent": total_revenue,
+                    "Net Position": current_bal
+                })
+        
+        if summary_data:
+            df_summary = pd.DataFrame(summary_data)
+            df_summary.to_excel(writer, sheet_name='Executive Summary', index=False)
+
+        # --- TABS 2-N: INDIVIDUAL PROPERTY LEDGERS ---
+        for pid_str, owner_name in st.session_state.ownership.items():
+            if owner_name and owner_name != "Bank":
+                ledger = st.session_state.property_ledgers.get(pid_str, [])
+                if ledger:
+                    name = PROPERTIES[int(pid_str)]['name']
+                    sheet_name = f"Log_{name[:25]}" 
+                    
+                    df_prop = pd.DataFrame(ledger)
+                    
+                    # 🟢 ENFORCE COLUMN ORDER (Matches your UI exactly)
+                    available_cols = [c for c in PREFERRED_COLS if c in df_prop.columns]
+                    df_prop = df_prop[available_cols] 
+                    
+                    df_prop.to_excel(writer, sheet_name=sheet_name, index=False)
+                    
+    # 3. Prepare for Streamlit Download
+    processed_data = output.getvalue()
+    return processed_data
 
 
 
@@ -1329,7 +1387,7 @@ def run_turn(jail_action=None, silent=False):
                     op['stats']['rent_collected'] += rent
                     
                     # 🟢 FORENSIC STAMP
-                    # We trust get_rent_slices to have the correct keys for core_columns
+                    # We trust get_rent_slices to have the correct keys for CORE_COLUMNS
                     stamp_property_ledger(
                         pid=p['pos'], 
                         event=f"Rent from {p['name']}", 
@@ -2150,51 +2208,64 @@ elif st.session_state.phase == "LIVE":
 
     # 🟢 NEW TAB: PROPERTY FORENSIC AUDIT
     with t_forensic:
-        st.subheader("Property-Level Investment & ROI")
+        st.subheader("Property-Level Cash Flow")
+    
+        # 🟢 IMPROVED: On-Demand Export Row
+        ex_col1, ex_col2 = st.columns([2, 1])
+        with ex_col1:
+            prep_report = st.checkbox("🛠️ Prepare Excel Portfolio Report")
+            if prep_report:
+                st.caption("Data is now synced and ready for download.")
+        
+        with ex_col2:
+            if prep_report:
+                try:
+                    excel_data = export_to_excel()
+                    st.download_button(
+                        label="📥 Download Portfolio (.xlsx)",
+                        data=excel_data,
+                        file_name=f"monopoly_audit_turn_{st.session_state.turn_count}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                except Exception as e:
+                    st.error(f"Export failed: {e}")
+            else:
+                st.button("📥 Download Portfolio", disabled=True, use_container_width=True)
+        
+        st.markdown("---")
         
         # 1. Filtered Selection Logic
         all_ledger_ids = list(st.session_state.get('property_ledgers', {}).keys())
-        active_prop_ids = [
-            pid for pid in all_ledger_ids 
-            if st.session_state.ownership.get(str(pid), "Bank") != "Bank"
-        ]
+        active_prop_ids = [pid for pid in all_ledger_ids if st.session_state.ownership.get(str(pid), "Bank") != "Bank"]
         
         if not active_prop_ids:
             st.info("No properties are currently owned by players. Audit trails will appear once a deed is purchased.")
         else:
-            # Map IDs to Names
             prop_options = {pid: PROPERTIES[int(pid)]['name'] for pid in active_prop_ids}
-            
-            selected_pid = st.selectbox(
-                "Select a Property to Audit:", 
-                options=active_prop_ids, 
-                format_func=lambda x: prop_options[x]
-            )
+            selected_pid = st.selectbox("Select a Property to Audit:", options=active_prop_ids, format_func=lambda x: prop_options[x])
             
             # 2. Process Ledger Data with Repair Layer
             ledger_raw = st.session_state.property_ledgers.get(selected_pid, [])
             df_ledger = pd.DataFrame(ledger_raw)
             
-            core_columns = ["deed", "monopoly", "h1", "h2", "h3", "h4", "hotel"]
-            
             if not df_ledger.empty:
-                # 🛠️ REPAIR LAYER: Ensure core columns exist
-                for col in core_columns:
+                # 🛠️ REPAIR LAYER: Use GLOBAL constants
+                for col in CORE_COLUMNS:
                     if col not in df_ledger.columns:
                         df_ledger[col] = 0.0
                 
-                # 🛠️ REPAIR LAYER: Reconstruct Running_Balance if missing or corrupted
                 if 'Net_Impact' not in df_ledger.columns:
-                    df_ledger['Net_Impact'] = df_ledger[core_columns].sum(axis=1)
+                    df_ledger['Net_Impact'] = df_ledger[CORE_COLUMNS].sum(axis=1)
                 
                 if 'Running_Balance' not in df_ledger.columns:
                     df_ledger['Running_Balance'] = df_ledger['Net_Impact'].cumsum()
-
+    
                 df_ledger = df_ledger.fillna(0)
                 
                 # 3. Calculate Key Metrics
-                total_capex = df_ledger[core_columns].clip(upper=0).sum().sum()
-                total_rev = df_ledger[core_columns].clip(lower=0).sum().sum()
+                total_capex = df_ledger[CORE_COLUMNS].clip(upper=0).sum().sum()
+                total_rev = df_ledger[CORE_COLUMNS].clip(lower=0).sum().sum()
                 net_roi = df_ledger['Running_Balance'].iloc[-1]         
                 
                 # 4. Display Metrics
@@ -2211,65 +2282,44 @@ elif st.session_state.phase == "LIVE":
                 compare_on = st.toggle("🚀 Enable Comparison Mode")
                 
                 if compare_on:
-                    # Only show other owned properties
                     other_options = [pid for pid in active_prop_ids if pid != selected_pid]
-                    
                     if not other_options:
                         st.warning("⚠️ Need at least two owned properties for Comparison Mode.")
                     else:
-                        other_pid = st.selectbox(
-                            "Select Second Property to Compare:",
-                            options=other_options,
-                            format_func=lambda x: prop_options[x]
-                        )
-                    
+                        other_pid = st.selectbox("Select Second Property to Compare:", options=other_options, format_func=lambda x: prop_options[x])
                         ld2 = pd.DataFrame(st.session_state.property_ledgers.get(other_pid, []))
                         
                         if not ld2.empty:
-                            # Apply Repair Layer to second property too
                             if 'Running_Balance' not in ld2.columns:
-                                ld2['Running_Balance'] = ld2[core_columns].sum(axis=1).cumsum()
+                                ld2['Running_Balance'] = ld2[CORE_COLUMNS].sum(axis=1).cumsum()
                             
                             d1 = df_ledger.groupby('turn')['Running_Balance'].last().to_frame()
                             d2 = ld2.groupby('turn')['Running_Balance'].last().to_frame()
-                            
-                            comparison_df = d1.join(d2, how='outer', lsuffix='_ref', rsuffix='_comp')
-                            comparison_df = comparison_df.ffill().fillna(0)
+                            comparison_df = d1.join(d2, how='outer', lsuffix='_ref', rsuffix='_comp').ffill().fillna(0)
                             comparison_df.columns = [prop_options[selected_pid], prop_options[other_pid]]
                             
                             st.write(f"**ROI Race: {prop_options[selected_pid]} vs {prop_options[other_pid]}**")
                             st.line_chart(comparison_df)
-                
                 else:
-                    # 5. Visual: The J-Curve
                     st.write("**Cumulative Cash Flow (Break-even Analysis)**")
-                    
                     profitable_turns = df_ledger[df_ledger['Running_Balance'] >= 0]
                     if not profitable_turns.empty:
-                        be_turn = profitable_turns.iloc[0]['turn']
-                        st.success(f"✅ **Break-even reached at Turn {be_turn}**")
+                        st.success(f"✅ **Break-even reached at Turn {profitable_turns.iloc[0]['turn']}**")
                     else:
-                        current_deficit = df_ledger['Running_Balance'].iloc[-1]
-                        st.warning(f"📉 **Property is still ${abs(current_deficit):,.0f} away from break-even.**")
+                        st.warning(f"📉 **Property is still ${abs(df_ledger['Running_Balance'].iloc[-1]):,.0f} away from break-even.**")
                     
-                    chart_series = df_ledger.groupby('turn')['Running_Balance'].last()
-                    st.area_chart(chart_series)
+                    st.area_chart(df_ledger.groupby('turn')['Running_Balance'].last())
                 
                 # 6. Raw Data: Transaction Log
                 with st.expander("View Forensic Transaction Log"):
-                    # Define all columns we WANT to see
-                    preferred_cols = ['turn', 'Event', 'Net_Impact', 'Running_Balance'] + core_columns
-                    
-                    # 🛠️ Filter: Only grab columns that ACTUALLY exist in the DataFrame
-                    available_cols = [c for c in preferred_cols if c in df_ledger.columns]
-                    
+                    available_cols = [c for c in PREFERRED_COLS if c in df_ledger.columns]
                     if not df_ledger.empty and available_cols:
                         st.dataframe(df_ledger[available_cols], use_container_width=True, hide_index=True)
                     else:
-                        st.info("Log columns are initializing... perform an action to refresh.")
+                        st.info("Log columns are initializing...")
             else:
                 st.info("No transaction data recorded for this property yet.")
-            
+                
     with t_bank:
         st.header("🏦 Central Bank Audit Warehouse")
         st.info("This ledger tracks the 'Money Supply' across specialized accounting tabs.")
