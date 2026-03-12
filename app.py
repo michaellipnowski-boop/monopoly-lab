@@ -318,10 +318,6 @@ if "phase" not in st.session_state:
 
 #--- SPREADSHEET FUNCTIONALITY ---
 def get_full_log_excel(mode="audit"):
-    import io
-    import pandas as pd
-    import streamlit as st
-    
     # 🟢 SAFE MODE: Ensure data exists
     if not st.session_state.get('bank_audit') and mode == "audit":
         return None
@@ -361,6 +357,7 @@ def get_full_log_excel(mode="audit"):
 
                     if player_summary:
                         df_p_summary = pd.DataFrame(player_summary)
+                        df_p_summary = df_p_summary.infer_objects() 
                         p_totals = df_p_summary.select_dtypes(include=['number']).sum()
                         
                         global_leaderboard.append({
@@ -374,11 +371,20 @@ def get_full_log_excel(mode="audit"):
                         df_p_summary.loc[len(df_p_summary)] = ["TOTAL PORTFOLIO", *p_totals]
                         player_tabs[player_name] = df_p_summary
 
-                # Step B: Write Global Leaderboard (First Tab)
+                # Step B: Write Global Leaderboard
                 if global_leaderboard:
                     df_leader = pd.DataFrame(global_leaderboard).sort_values(by="Net Position", ascending=False)
                     df_leader.to_excel(writer, sheet_name='Global Ranking', index=False)
-
+                    
+                    # --- 🟢 ADD VISUAL FLAIR ---
+                    worksheet = writer.sheets['Global Ranking']
+                    red_format = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+                    green_format = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
+                    
+                    # Highlight Net Position: Green for > 0, Red for < 0
+                    worksheet.conditional_format('E2:E100', {'type': 'cell', 'criteria': '>', 'value': 0, 'format': green_format})
+                    worksheet.conditional_format('E2:E100', {'type': 'cell', 'criteria': '<', 'value': 0, 'format': red_format})
+    
                 # Step C: Write Per-Player Summaries
                 for p_name, df_p in player_tabs.items():
                     sheet_name = f"Summary_{p_name[:20]}"
@@ -389,10 +395,14 @@ def get_full_log_excel(mode="audit"):
                     if owner_name and owner_name != "Bank":
                         ledger = st.session_state.property_ledgers.get(pid_str, [])
                         if ledger:
-                            # 🟢 THE MISSING LOGIC:
                             df_prop = pd.DataFrame(ledger)
+
+                            # 🟢 FIX: Convert CORE columns to numeric, turning 'N/A' into NaN
+                            for c in CORE_COLUMNS:
+                                if c in df_prop.columns:
+                                    df_prop[c] = pd.to_numeric(df_prop[c], errors='coerce')
                             
-                            # Remove all-zero columns (like house columns on a Railroad)
+                            # Remove all-zero columns
                             cols_to_drop = [c for c in CORE_COLUMNS if c in df_prop.columns and (df_prop[c] == 0).all()]
                             df_prop = df_prop.drop(columns=cols_to_drop)
                             
@@ -406,8 +416,8 @@ def get_full_log_excel(mode="audit"):
             elif mode == "narrative":
                 # --- 📖 TYPE 2: THE PLAY-BY-PLAY LOG ---
                 if st.session_state.get('master_log'):
-                    df_master = pd.DataFrame(st.session_state.master_log)
-                    # ... rest of narrative logic ...
+                    # Convert to DF and force all columns to strings to avoid 'N/A' vs int64 crashes
+                    df_master = pd.DataFrame(st.session_state.master_log).astype(str)
                     df_master.to_excel(writer, sheet_name="Full_Play_by_Play", index=False)
 
             elif mode == "milestones":
@@ -1805,7 +1815,7 @@ elif st.session_state.phase == "SETUP":
                 slider_pos = st.select_slider(f"Board Position", options=valid_indices, format_func=get_square_label, value=p['pos'] if not jail_val else 10, disabled=jail_val, key=f"set_p_{i}")
                 p['pos'] = 10 if jail_val else slider_pos
 
-    if st.button("Start Live Simulation", type="primary", use_container_width=True):
+    if st.button("Start Live Simulation", type="primary", width="stretch"):
         import copy 
     
         # --- 📸 0. THE BOARD BLUEPRINT ---
@@ -2132,7 +2142,7 @@ elif st.session_state.phase == "LIVE":
     # 1. Permanent Automation Row (Always Available)
     lc1, lc2 = st.columns([1, 2])
     with lc1:
-        if st.button("Next Turn", use_container_width=True, type="primary"):
+        if st.button("Next Turn", width="stretch", type="primary"):
             run_turn()
             st.rerun()
     with lc2:
@@ -2140,7 +2150,7 @@ elif st.session_state.phase == "LIVE":
         with col_v:
             j_val = st.number_input("Turns to Jump", 1, 1000000, 100, label_visibility="collapsed", key="jump_input")
         with col_b:
-            if st.button(f"Jump {j_val} Turns", use_container_width=True):
+            if st.button(f"Jump {j_val} Turns", width="stretch"):
                 # 1. Initialize the Progress Bar
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -2254,7 +2264,7 @@ elif st.session_state.phase == "LIVE":
                     data=narrative_excel,
                     file_name=f"monopoly_play_by_play_T{st.session_state.turn_count}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
+                    width="stretch",
                     # 🟢 ADDED 'wealth_tab_' prefix to make it unique
                     key=f"wealth_tab_dl_{st.session_state.turn_count}" 
                 )
@@ -2279,12 +2289,12 @@ elif st.session_state.phase == "LIVE":
                         data=excel_data,
                         file_name=f"monopoly_audit_turn_{st.session_state.turn_count}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
+                        width="stretch"
                     )
                 except Exception as e:
                     st.error(f"Export failed: {e}")
             else:
-                st.button("📥 Download Portfolio", disabled=True, use_container_width=True)
+                st.button("📥 Download Portfolio", disabled=True, width="stretch")
         
         st.markdown("---")
         
@@ -2387,7 +2397,7 @@ elif st.session_state.phase == "LIVE":
                     available_cols = [c for c in PREFERRED_COLS if c in df_display.columns]
                     
                     if not df_display.empty and available_cols:
-                        st.dataframe(df_display[available_cols], use_container_width=True, hide_index=True)
+                        st.dataframe(df_display[available_cols], width="stretch", hide_index=True)
                     else:
                         st.info("Log columns are initializing...")
             else:
@@ -2447,21 +2457,21 @@ elif st.session_state.phase == "LIVE":
                 
                 st.subheader("Transaction History")
                 cols_master = ["Turn", "Player", "Event", "Money In", "Running Total Money In"]
-                st.dataframe(df_base[cols_master], use_container_width=True, hide_index=True)
+                st.dataframe(df_base[cols_master], width="stretch", hide_index=True)
         
             # --- TAB 2: INJECTIONS & GO CARDS ---
             with tabs[1]:
                 df_injections = df_base[df_base["Money In"] > 0].copy()
                 df_injections["Running Total Money In"] = df_injections["Money In"].cumsum()
                 st.dataframe(df_injections[["Turn", "Player", "Event", "Money In", "Running Total Money In"]], 
-                             use_container_width=True, hide_index=True)
+                             width="stretch", hide_index=True)
     
             # --- TAB 3: SINKS, ASSETS & TAXES ---
             with tabs[2]:
                 df_sinks = df_base[df_base["Money In"] < 0].copy()
                 df_sinks["Running Total Money In"] = df_sinks["Money In"].cumsum()
                 st.dataframe(df_sinks[["Turn", "Player", "Event", "Money In", "Running Total Money In"]], 
-                             use_container_width=True, hide_index=True)
+                             width="stretch", hide_index=True)
     
             # --- TABS 4+: PLAYER SPECIFIC LEDGERS ---
             for i, p in enumerate(st.session_state.players):
@@ -2469,7 +2479,7 @@ elif st.session_state.phase == "LIVE":
                     df_p = df_base[df_base["Player"] == p['name']].copy()
                     df_p["Running Total Money In"] = df_p["Money In"].cumsum()
                     st.dataframe(df_p[["Turn", "Event", "Money In", "Running Total Money In"]], 
-                                 use_container_width=True, hide_index=True)
+                                 width="stretch", hide_index=True)
     
             # --- 4. 📥 Download Button ---
             st.divider()
@@ -2486,7 +2496,7 @@ elif st.session_state.phase == "LIVE":
                         data=excel_data,
                         file_name=f"bank_audit_turn_{st.session_state.turn_count}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
+                        width="stretch"
                     )
             except Exception as e:
                 st.error(f"Excel Error: {e}")
@@ -2524,7 +2534,7 @@ elif st.session_state.phase == "LIVE":
                     file_name=f"monopoly_milestones_T{st.session_state.turn_count}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key=f"warehouse_milestones_{st.session_state.turn_count}",
-                    use_container_width=True
+                    width="stretch"
                 )
 
         # 📜 2. Full Play-by-Play Master Log
@@ -2533,7 +2543,7 @@ elif st.session_state.phase == "LIVE":
                 df_master = pd.DataFrame(st.session_state.master_log)
                 df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors='coerce')
                 df_master = df_master.sort_values(by=["Turn", "Player"], ascending=[True, True])
-                st.dataframe(df_master, use_container_width=True, hide_index=True)
+                st.dataframe(df_master, width="stretch", hide_index=True)
                 
                 narrative_excel = get_full_log_excel(mode="narrative")
                 if narrative_excel:
@@ -2544,7 +2554,7 @@ elif st.session_state.phase == "LIVE":
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         # 🟢 ADDED 'warehouse_' prefix
                         key=f"warehouse_dl_{st.session_state.turn_count}",
-                        use_container_width=True
+                        width="stretch"
                     )
     else:
         st.info("Start the game to populate the Data Warehouse.")
@@ -2555,14 +2565,14 @@ elif st.session_state.phase == "LIVE":
     st.sidebar.markdown("---")
 
     # 1. RESTART GAME (Keep Policies and Customizations) button
-    if st.sidebar.button("🔄 RESTART GAME (Keep Policies and Customizations)", use_container_width=True):
+    if st.sidebar.button("🔄 RESTART GAME (Keep Policies and Customizations)", width="stretch"):
         if "starting_players" in st.session_state:
             restart_game()
         else:
             st.sidebar.warning("No active simulation to restart!")
 
     # 2. RESET SIMULATION (Full Wipe)
-    if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", use_container_width=True):
+    if st.sidebar.button("⚠️ RESET SIMULATION (Full Wipe)", type="secondary", width="stretch"):
         reset_lab()
 
     # --- SIDEBAR CONTROL CENTER ---
