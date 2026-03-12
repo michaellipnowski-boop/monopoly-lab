@@ -231,9 +231,16 @@ def execute_repairs_sequence(p, card):
             repair_slices = {}
             prop_cost = 0
             
-            if h_count == 5:  # 🏨 Hotel Repair
+            if h_count == 5:  # 🏨 Hotel Repair (Surgical Waterfall)
                 prop_cost = hotel_fee
-                repair_slices["hotel"] = -float(hotel_fee)
+                # Divide the hotel fee by 5 to attribute $20 to each house slot + hotel slot
+                per_slot_fee = -float(hotel_fee) / 5
+                
+                repair_slices["h1"] = per_slot_fee
+                repair_slices["h2"] = per_slot_fee
+                repair_slices["h3"] = per_slot_fee
+                repair_slices["h4"] = per_slot_fee
+                repair_slices["hotel"] = per_slot_fee
             elif h_count > 0: # 🏠 House Repairs
                 prop_cost = h_count * h_fee
                 # Attribute the fee equally across every house on this property
@@ -471,6 +478,23 @@ def log_parachuted_asset(p_name, property_name):
                 slices=setup_slices
             )
             break
+
+# 🟢 WATERFALL REPAIR LOGIC
+def log_general_repair(pid, has_hotel, num_houses):
+    impact_dict = {"turn": st.session_state.turn_count, "Event": "General Repairs"}
+    
+    if has_hotel:
+        # Standard $100 fee split 5 ways ($20 each)
+        split_val = -20.0
+        for col in ['h1', 'h2', 'h3', 'h4', 'hotel']:
+            impact_dict[col] = split_val
+    else:
+        # Standard $25 fee per house
+        house_fee = -25.0
+        for i in range(1, num_houses + 1):
+            impact_dict[f"h{i}"] = house_fee
+            
+    # Append this dict to your st.session_state.property_ledgers[pid]
 
 
 def generate_true_audit_excel():
@@ -2322,9 +2346,19 @@ elif st.session_state.phase == "LIVE":
                 
                 # 6. Raw Data: Transaction Log
                 with st.expander("View Forensic Transaction Log"):
-                    available_cols = [c for c in PREFERRED_COLS if c in df_ledger.columns]
-                    if not df_ledger.empty and available_cols:
-                        st.dataframe(df_ledger[available_cols], use_container_width=True, hide_index=True)
+                    # Create a display copy so we don't mutate the original math data
+                    df_display = df_ledger.copy()
+                    
+                    # 🔍 THE HARD FILTER: 
+                    # Drop any CORE_COLUMN where every single row is 0.0
+                    cols_to_drop = [c for c in CORE_COLUMNS if c in df_display.columns and (df_display[c] == 0).all()]
+                    df_display = df_display.drop(columns=cols_to_drop)
+                    
+                    # Now define which columns from PREFERRED_COLS actually survived the drop
+                    available_cols = [c for c in PREFERRED_COLS if c in df_display.columns]
+                    
+                    if not df_display.empty and available_cols:
+                        st.dataframe(df_display[available_cols], use_container_width=True, hide_index=True)
                     else:
                         st.info("Log columns are initializing...")
             else:
