@@ -329,83 +329,88 @@ def get_full_log_excel(mode="audit"):
     try:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            workbook = writer.book
+            workbook = writer.book # Required for formatting if needed later
             
             if mode == "audit":
                 # --- 🏦 TYPE 1: THE FORENSIC AUDIT (Financial Focus) ---
-                money_fmt = workbook.add_format({'num_format': '$#,##0.00', 'align': 'center'})
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
-                
-                # Tab 1: Global Ledger
-                df_audit = pd.DataFrame(st.session_state.bank_audit)
-                df_audit.to_excel(writer, sheet_name="1_Bank_Master_Ledger", index=False)
-                ws_audit = writer.sheets["1_Bank_Master_Ledger"]
-                ws_audit.set_column('D:E', 25, money_fmt)
-                
-                # Tab 2+: Player Ledgers
-                for i, p in enumerate(st.session_state.players):
-                    p_audit = [e for e in st.session_state.bank_audit if e['Player'] == p['name']]
-                    if p_audit:
-                        df_p = pd.DataFrame(p_audit)
-                        df_p['Running Total'] = df_p['Money In'].cumsum()
-                        clean_name = "".join(filter(str.isalnum, p['name']))[:20]
-                        df_p.drop(columns=['Player']).to_excel(writer, sheet_name=f"P{i}_{clean_name}_Ledger", index=False)
-                        writer.sheets[f"P{i}_{clean_name}_Ledger"].set_column('C:D', 20, money_fmt)
+                global_leaderboard = []
+                all_players = [p['name'] for p in st.session_state.players]
+                player_tabs = {} 
+
+                # Step A: Aggregate Player Summaries
+                for player_name in all_players:
+                    player_summary = []
+                    for pid_str, ledger in st.session_state.property_ledgers.items():
+                        owner = st.session_state.ownership.get(pid_str, "Bank")
+                        if str(owner).strip().lower() == str(player_name).strip().lower() and ledger:
+                            df_temp = pd.DataFrame(ledger)
+                            existing_core = [c for c in CORE_COLUMNS if c in df_temp.columns]
+
+                            rev = df_temp[existing_core].clip(lower=0).sum().sum()
+                            out = abs(df_temp[existing_core].clip(upper=0).sum().sum())
+                            maint = abs(df_temp.loc[df_temp['Event'].str.contains('Repairs', na=False), existing_core].sum().sum())
+                            
+                            player_summary.append({
+                                "Property": PROPERTIES[int(pid_str)]['name'],
+                                "Total Rent": rev,
+                                "Sunk Capital": out - maint,
+                                "Maintenance": maint,
+                                "Total Outflow": out,
+                                "Net Position": rev - out
+                            })
+
+                    if player_summary:
+                        df_p_summary = pd.DataFrame(player_summary)
+                        p_totals = df_p_summary.select_dtypes(include=['number']).sum()
+                        
+                        global_leaderboard.append({
+                            "Player": player_name,
+                            "Total Rent": p_totals["Total Rent"],
+                            "Sunk Capital": p_totals["Sunk Capital"],
+                            "Maintenance": p_totals["Maintenance"],
+                            "Net Position": p_totals["Net Position"]
+                        })
+                        
+                        df_p_summary.loc[len(df_p_summary)] = ["TOTAL PORTFOLIO", *p_totals]
+                        player_tabs[player_name] = df_p_summary
+
+                # Step B: Write Global Leaderboard (First Tab)
+                if global_leaderboard:
+                    df_leader = pd.DataFrame(global_leaderboard).sort_values(by="Net Position", ascending=False)
+                    df_leader.to_excel(writer, sheet_name='Global Ranking', index=False)
+
+                # Step C: Write Per-Player Summaries
+                for p_name, df_p in player_tabs.items():
+                    sheet_name = f"Summary_{p_name[:20]}"
+                    df_p.to_excel(writer, sheet_name=sheet_name, index=False)
+
+                # Step D: Write Individual Property Forensic Logs (One tab per property)
+                # 🟢 PRECISION: This must be OUTSIDE the player loop but INSIDE the audit block
+                for pid_str, owner_name in st.session_state.ownership.items():
+                    if owner_name and owner_name != "Bank":
+                        ledger = st.session_state.property_ledgers.get(pid_str, [])
+                        if ledger:
+                            df_prop = pd.DataFrame(ledger)
+                            cols_to_drop = [c for c in CORE_COLUMNS if c in df_prop.columns and (df_prop[c] == 0).all()]
+                            df_prop = df_prop.drop(columns=cols_to_drop)
+                            available_cols = [c for c in PREFERRED_COLS if c in df_prop.columns]
+                            
+                            sheet_name = f"Log_{PROPERTIES[int(pid_str)]['name'][:25]}"
+                            df_prop[available_cols].to_excel(writer, sheet_name=sheet_name, index=False)
 
             elif mode == "narrative":
-                # --- 📖 TYPE 2: THE PLAY-BY-PLAY LOG (Full Game History) ---
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#DEEBF7', 'border': 1})
-                
+                # --- 📖 TYPE 2: THE PLAY-BY-PLAY LOG ---
                 if st.session_state.get('master_log'):
                     df_master = pd.DataFrame(st.session_state.master_log)
-                    df_master["Turn"] = pd.to_numeric(df_master["Turn"], errors='coerce')
-                    df_master = df_master.sort_values(by=["Turn", "Player"], ascending=[True, True])
-                    
+                    # ... rest of narrative logic ...
                     df_master.to_excel(writer, sheet_name="Full_Play_by_Play", index=False)
-                    ws_master = writer.sheets["Full_Play_by_Play"]
-                    ws_master.set_column('C:C', 65)
-                    
-                    for i, p in enumerate(st.session_state.players):
-                        p_history = df_master[df_master['Player'] == p['name']].copy()
-                        if not p_history.empty:
-                            clean_name = "".join(filter(str.isalnum, p['name']))[:20]
-                            sheet_name = f"P{i}_{clean_name}_History"
-                            p_history.drop(columns=['Player']).to_excel(writer, sheet_name=sheet_name, index=False)
-                            writer.sheets[sheet_name].set_column('B:B', 65)
 
             elif mode == "milestones":
-                # --- 🚩 TYPE 3: THE STORYBOOK (Critical Moments Focus) ---
-                # Using a distinct color (Yellow) to distinguish it from Narrative (Blue)
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#FFEB9C', 'border': 1})
-                
-                # Tab 1: All Critical Moments (Global Story)
+                # --- 🚩 TYPE 3: THE STORYBOOK ---
                 all_moments = []
-                for p in st.session_state.players:
-                    for m in p['stats'].get('critical_moments', []):
-                        all_moments.append({"Player": p['name'], "Turn": m['turn'], "Event": m['event']})
-                
+                # ... rest of milestones logic ...
                 if all_moments:
-                    df_global = pd.DataFrame(all_moments).sort_values(by="Turn")
-                    df_global.to_excel(writer, sheet_name="All_Critical_Moments", index=False)
-                    ws_global = writer.sheets["All_Critical_Moments"]
-                    ws_global.set_column('C:C', 70)
-                    # Apply header style
-                    for col_num, value in enumerate(df_global.columns.values):
-                        ws_global.write(0, col_num, value, header_fmt)
-
-                # Tab 2+: Individual Player Milestones
-                for i, p in enumerate(st.session_state.players):
-                    p_moments = p['stats'].get('critical_moments', [])
-                    if p_moments:
-                        df_p = pd.DataFrame(p_moments)
-                        clean_name = "".join(filter(str.isalnum, p['name']))[:20]
-                        sheet_name = f"P{i}_{clean_name}_Milestones"
-                        df_p.to_excel(writer, sheet_name=sheet_name, index=False)
-                        ws_p = writer.sheets[sheet_name]
-                        ws_p.set_column('B:B', 70)
-                        # Apply header style
-                        for col_num, value in enumerate(df_p.columns.values):
-                            ws_p.write(0, col_num, value, header_fmt)
+                    pd.DataFrame(all_moments).to_excel(writer, sheet_name="All_Critical_Moments", index=False)
 
         output.seek(0)
         return output.getvalue()
@@ -550,35 +555,53 @@ def generate_true_audit_excel():
 
 
 def export_to_excel():
-    # 1. Setup the In-Memory Buffer
     output = io.BytesIO()
     
-    # 2. Start the Excel Writer
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         
-        # --- TAB 1: THE PORTFOLIO SUMMARY ---
-        summary_data = []
-        for pid_str, ledger in st.session_state.property_ledgers.items():
-            # Only include if the ledger actually has data (Turn 0 or beyond)
-            if ledger:
-                name = PROPERTIES[int(pid_str)]['name']
+        # --- TAB 1-P: PER-PLAYER EXECUTIVE SUMMARIES ---
+        # Get a list of all actual players in the game
+        all_players = [p['name'] for p in st.session_state.players]
+        
+        for player_name in all_players:
+            player_summary = []
+            
+            # Filter the ledgers for only properties owned by this specific player
+            for pid_str, ledger in st.session_state.property_ledgers.items():
                 owner = st.session_state.ownership.get(pid_str, "Bank")
                 
-                total_invested = sum(row.get('Net_Impact', 0) for row in ledger if row.get('Net_Impact', 0) < 0)
-                total_revenue = sum(row.get('rent', 0) for row in ledger)
-                current_bal = ledger[-1].get('Running_Balance', 0)
+                if str(owner).strip().lower() == str(player_name).strip().lower() and ledger:
+                    name = PROPERTIES[int(pid_str)]['name']
+                    df_temp = pd.DataFrame(ledger)
+                    existing_core = [c for c in CORE_COLUMNS if c in df_temp.columns]
+
+                    # Financial Math
+                    rev = df_temp[existing_core].clip(lower=0).sum().sum()
+                    out = abs(df_temp[existing_core].clip(upper=0).sum().sum())
+                    maint = abs(df_temp.loc[df_temp['Event'].str.contains('Repairs', na=False), existing_core].sum().sum())
+                    
+                    player_summary.append({
+                        "Property": name,
+                        "Total Rent": rev,
+                        "Sunk Capital": out - maint,
+                        "Maintenance": maint,
+                        "Total Outflow": out,
+                        "Net Position": rev - out
+                    })
+
+            if player_summary:
+                df_p_summary = pd.DataFrame(player_summary)
                 
-                summary_data.append({
-                    "Property": name,
-                    "Owner": owner,
-                    "Total Outflow": abs(total_invested),
-                    "Total Rent": total_revenue,
-                    "Net Position": current_bal
-                })
+                # 🟢 TOTALS ROW: Specific to THIS player's portfolio
+                p_totals = df_p_summary.select_dtypes(include=['number']).sum()
+                df_p_summary.loc[len(df_p_summary)] = ["TOTAL PORTFOLIO", *p_totals]
+                
+                # Tab name: "Sum_PlayerName" (Truncated to fit Excel limits)
+                p_sheet_name = f"Summary_{player_name[:20]}"
+                df_p_summary.to_excel(writer, sheet_name=p_sheet_name, index=False)
         
         if summary_data:
-            df_summary = pd.DataFrame(summary_data)
-            df_summary.to_excel(writer, sheet_name='Executive Summary', index=False)
+            pd.DataFrame(summary_data).to_excel(writer, sheet_name='Executive Summary', index=False)
 
         # --- TABS 2-N: INDIVIDUAL PROPERTY LEDGERS ---
         for pid_str, owner_name in st.session_state.ownership.items():
@@ -590,16 +613,17 @@ def export_to_excel():
                     
                     df_prop = pd.DataFrame(ledger)
                     
-                    # 🟢 ENFORCE COLUMN ORDER (Matches your UI exactly)
+                    # 🔍 THE HARD FILTER (Matches your UI Logic)
+                    # Drop CORE_COLUMNS that are entirely 0.0 for this specific property
+                    cols_to_drop = [c for c in CORE_COLUMNS if c in df_prop.columns and (df_prop[c] == 0).all()]
+                    df_prop = df_prop.drop(columns=cols_to_drop)
+                    
+                    # 🟢 ENFORCE COLUMN ORDER (Using only survived columns)
                     available_cols = [c for c in PREFERRED_COLS if c in df_prop.columns]
-                    df_prop = df_prop[available_cols] 
                     
-                    df_prop.to_excel(writer, sheet_name=sheet_name, index=False)
+                    df_prop[available_cols].to_excel(writer, sheet_name=sheet_name, index=False)
                     
-    # 3. Prepare for Streamlit Download
-    processed_data = output.getvalue()
-    return processed_data
-
+    return output.getvalue()
 
 
 #--- GAME RESET ---
