@@ -2283,7 +2283,8 @@ elif st.session_state.phase == "LIVE":
         with ex_col2:
             if prep_report:
                 try:
-                    excel_data = export_to_excel()
+                    # 🟢 SWAP: Use the safe, updated function here
+                    excel_data = get_full_log_excel(mode="audit")
                     st.download_button(
                         label="📥 Download Portfolio (.xlsx)",
                         data=excel_data,
