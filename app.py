@@ -384,17 +384,22 @@ def get_full_log_excel(mode="audit"):
                     sheet_name = f"Summary_{p_name[:20]}"
                     df_p.to_excel(writer, sheet_name=sheet_name, index=False)
 
-                # Step D: Write Individual Property Forensic Logs (One tab per property)
-                # 🟢 PRECISION: This must be OUTSIDE the player loop but INSIDE the audit block
+                # Step D: Write Individual Property Forensic Logs
                 for pid_str, owner_name in st.session_state.ownership.items():
                     if owner_name and owner_name != "Bank":
                         ledger = st.session_state.property_ledgers.get(pid_str, [])
                         if ledger:
+                            # 🟢 THE MISSING LOGIC:
                             df_prop = pd.DataFrame(ledger)
+                            
+                            # Remove all-zero columns (like house columns on a Railroad)
                             cols_to_drop = [c for c in CORE_COLUMNS if c in df_prop.columns and (df_prop[c] == 0).all()]
                             df_prop = df_prop.drop(columns=cols_to_drop)
+                            
+                            # Filter to preferred order
                             available_cols = [c for c in PREFERRED_COLS if c in df_prop.columns]
                             
+                            # 🟢 YOUR EXISTING TAB LOGIC:
                             sheet_name = f"Log_{PROPERTIES[int(pid_str)]['name'][:25]}"
                             df_prop[available_cols].to_excel(writer, sheet_name=sheet_name, index=False)
 
