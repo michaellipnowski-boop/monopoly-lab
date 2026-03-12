@@ -409,8 +409,10 @@ def get_full_log_excel(mode="audit"):
                             # Filter to preferred order
                             available_cols = [c for c in PREFERRED_COLS if c in df_prop.columns]
                             
-                            # 🟢 YOUR EXISTING TAB LOGIC:
-                            sheet_name = f"Log_{PROPERTIES[int(pid_str)]['name'][:25]}"
+                            # 🟢 NEW TAB LOGIC: Includes Property Name + Owner Name
+                            prop_name = PROPERTIES[int(pid_str)]['name']
+                            sheet_name = f"Log_{prop_name[:15]}_{str(owner_name)[:10]}"
+                            
                             df_prop[available_cols].to_excel(writer, sheet_name=sheet_name, index=False)
 
             elif mode == "narrative":
@@ -566,78 +568,6 @@ def generate_true_audit_excel():
             else:
                 pd.DataFrame(columns=["Turn", "Event", "Money In", "Running Total Money In"]).to_excel(writer, sheet_name=sheet_label, index=False)
 
-    return output.getvalue()
-
-
-def export_to_excel():
-    output = io.BytesIO()
-    
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        
-        # --- TAB 1-P: PER-PLAYER EXECUTIVE SUMMARIES ---
-        # Get a list of all actual players in the game
-        all_players = [p['name'] for p in st.session_state.players]
-        
-        for player_name in all_players:
-            player_summary = []
-            
-            # Filter the ledgers for only properties owned by this specific player
-            for pid_str, ledger in st.session_state.property_ledgers.items():
-                owner = st.session_state.ownership.get(pid_str, "Bank")
-                
-                if str(owner).strip().lower() == str(player_name).strip().lower() and ledger:
-                    name = PROPERTIES[int(pid_str)]['name']
-                    df_temp = pd.DataFrame(ledger)
-                    existing_core = [c for c in CORE_COLUMNS if c in df_temp.columns]
-
-                    # Financial Math
-                    rev = df_temp[existing_core].clip(lower=0).sum().sum()
-                    out = abs(df_temp[existing_core].clip(upper=0).sum().sum())
-                    maint = abs(df_temp.loc[df_temp['Event'].str.contains('Repairs', na=False), existing_core].sum().sum())
-                    
-                    player_summary.append({
-                        "Property": name,
-                        "Total Rent": rev,
-                        "Sunk Capital": out - maint,
-                        "Maintenance": maint,
-                        "Total Outflow": out,
-                        "Net Position": rev - out
-                    })
-
-            if player_summary:
-                df_p_summary = pd.DataFrame(player_summary)
-                
-                # 🟢 TOTALS ROW: Specific to THIS player's portfolio
-                p_totals = df_p_summary.select_dtypes(include=['number']).sum()
-                df_p_summary.loc[len(df_p_summary)] = ["TOTAL PORTFOLIO", *p_totals]
-                
-                # Tab name: "Sum_PlayerName" (Truncated to fit Excel limits)
-                p_sheet_name = f"Summary_{player_name[:20]}"
-                df_p_summary.to_excel(writer, sheet_name=p_sheet_name, index=False)
-        
-        if summary_data:
-            pd.DataFrame(summary_data).to_excel(writer, sheet_name='Executive Summary', index=False)
-
-        # --- TABS 2-N: INDIVIDUAL PROPERTY LEDGERS ---
-        for pid_str, owner_name in st.session_state.ownership.items():
-            if owner_name and owner_name != "Bank":
-                ledger = st.session_state.property_ledgers.get(pid_str, [])
-                if ledger:
-                    name = PROPERTIES[int(pid_str)]['name']
-                    sheet_name = f"Log_{name[:25]}" 
-                    
-                    df_prop = pd.DataFrame(ledger)
-                    
-                    # 🔍 THE HARD FILTER (Matches your UI Logic)
-                    # Drop CORE_COLUMNS that are entirely 0.0 for this specific property
-                    cols_to_drop = [c for c in CORE_COLUMNS if c in df_prop.columns and (df_prop[c] == 0).all()]
-                    df_prop = df_prop.drop(columns=cols_to_drop)
-                    
-                    # 🟢 ENFORCE COLUMN ORDER (Using only survived columns)
-                    available_cols = [c for c in PREFERRED_COLS if c in df_prop.columns]
-                    
-                    df_prop[available_cols].to_excel(writer, sheet_name=sheet_name, index=False)
-                    
     return output.getvalue()
 
 
