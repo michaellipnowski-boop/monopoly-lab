@@ -1767,67 +1767,68 @@ elif st.session_state.phase == "SETUP":
     if st.button("Start Live Simulation", type="primary", width="stretch"):
         import copy 
         
-        # --- 📸 0. THE BOARD BLUEPRINT ---
+        # --- 📸 0. INITIALIZE ---
         current_houses = {str(k): v for k, v in st.session_state.houses.items()}
-        st.session_state.starting_houses = copy.deepcopy(current_houses)
-        st.session_state.starting_ownership = copy.deepcopy(st.session_state.ownership)
-        
-        # Initialize Audit & Logs
         st.session_state.master_log = []
         st.session_state.bank_audit = [] 
-        st.session_state.turn_count = 0 
-        # CRITICAL: Initialize property ledgers here so they are ready for the loop below
         st.session_state.property_ledgers = {str(i): [] for i in range(40)}
+        st.session_state.turn_count = 0 
     
-        # 🟢 STEP 1: Loop through players (CASH & STATS)
+        # --- 🟢 PHASE 1: THE DEEDS (Ownership & Capital) ---
+        # Everyone gets their cash first
         for p in st.session_state.players:
-            p['stats']['cash_history'] = [p['cash']]
-            p['stats']['critical_moments'] = [{
-                'turn': 0, 
-                'event': f"💰 INITIAL: Received starting capital of ${p['cash']}"
-            }]
             log_bank_transaction(p['name'], "SETUP: Starting Cash Injection", p['cash'])
+            p['stats']['critical_moments'] = [{'turn': 0, 'event': f"💰 INITIAL: Started with ${p['cash']}"}]
+            p['stats']['cash_history'] = [p['cash']]
     
-        # 🏗️ STEP 1.5: Record Assets (Your Inline 'Truth Machine')
-        for prop_id_str, owner_name in st.session_state.ownership.items():
+        # Record every owned deed
+        for pid_str, owner_name in st.session_state.ownership.items():
             if owner_name != "Bank":
-                pid = int(prop_id_str)
+                pid = int(pid_str)
                 p_info = PROPERTIES[pid]
-                p_name = p_info['name']
+                price = float(p_info.get('price', 0))
+                
+                stamp_property_ledger(pid, "🪂 INITIAL: Parachuted Deed", slices={"deed": -price})
+                log_bank_transaction(owner_name, f"SETUP: Asset Deed ({p_info['name']})", -price)
                 
                 owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
-                if not owner_obj: continue
+                if owner_obj:
+                    owner_obj['stats']['critical_moments'].append({'turn': 0, 'event': f"🪂 OWNERSHIP: {p_info['name']}"})
+                    st.session_state.master_log.append({
+                        "Turn": 0, "Player": owner_name, "Position": pid,
+                        "Square": p_info['name'], "Cash": owner_obj['cash'],
+                        "Action": f"SETUP: Began game owning {p_info['name']}"
+                    })
     
-                # Pull pricing safely
-                prop_price = float(p_info.get('price', 0))
-                h_count = current_houses.get(str(pid), 0)
-                h_price = float(p_info.get('h_cost', 50))
-    
-                # --- PHASE A: DEED ---
-                stamp_property_ledger(pid, "🪂 INITIAL: Parachuted Deed", slices={"deed": -prop_price})
-                log_bank_transaction(owner_name, f"SETUP: Asset Deed ({p_name})", -prop_price)
-                owner_obj['stats']['critical_moments'].append({
-                    'turn': 0, 'event': f"🪂 PARACHUTED: Started game owning {p_name}"
-                })
-                # 🟢 RE-INSERTED: Master Log entry for narrative completeness
-                st.session_state.master_log.append({
-                    "Turn": 0, "Player": owner_name, "Position": pid,
-                    "Square": p_name, "Cash": owner_obj['cash'],
-                    "Action": f"SETUP: Began game owning {p_name}"
-                })
-    
-                # --- PHASE B: MONOPOLY ---
+        # --- 🎯 PHASE 2: THE MONOPOLY AUDIT ---
+        # Now that ALL deeds are handed out, we check the sets.
+        for pid_str, owner_name in st.session_state.ownership.items():
+            if owner_name != "Bank":
+                pid = int(pid_str)
                 if check_monopoly(pid):
-                    stamp_property_ledger(pid, "🎯 Monopoly Achieved", slices={"monopoly": 0.0})
+                    # Ensure we only stamp the monopoly once per square
+                    ledger = st.session_state.property_ledgers.get(str(pid), [])
+                    if not any(entry['Event'] == "🎯 Monopoly Achieved" for entry in ledger):
+                        stamp_property_ledger(pid, "🎯 Monopoly Achieved", slices={"monopoly": 0.0})
     
-                # --- PHASE C: DEVELOPMENT ---
-                if h_count > 0:
-                    total_h_cost = h_count * h_price
+        # --- 🏗️ PHASE 3: THE DEVELOPMENT (Houses/Hotels) ---
+        # Only allow houses if the monopoly from Phase 2 actually exists
+        for pid_str, h_count in current_houses.items():
+            if h_count > 0:
+                pid = int(pid_str)
+                p_info = PROPERTIES[pid]
+                owner_name = st.session_state.ownership.get(pid_str)
+                
+                if check_monopoly(pid) and owner_name != "Bank":
+                    h_price = float(p_info.get('h_cost', 50))
                     h_slices = {(f"h{i}" if i < 5 else "hotel"): -h_price for i in range(1, h_count + 1)}
                     stamp_property_ledger(pid, f"🏗️ INITIAL: {h_count} Development", slices=h_slices)
-                    log_bank_transaction(owner_name, f"SETUP: Development on {p_name}", -total_h_cost)
-        
-        # 🏁 STEP 2: Finalize Snapshot and Launch
+                    log_bank_transaction(owner_name, f"SETUP: Development on {p_info['name']}", -(h_count * h_price))
+                elif owner_name != "Bank":
+                    # Safety: If user tried to parachute houses on a non-monopoly set, we clear them
+                    st.session_state.houses[pid_str] = 0
+    
+        # 🏁 STEP 4: Launch
         st.session_state.starting_players = copy.deepcopy(st.session_state.players)
         st.session_state.phase = "LIVE"
         st.rerun()
