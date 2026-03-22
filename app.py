@@ -160,41 +160,40 @@ def stamp_property_ledger(pid, event, slices=None):
 
 
 def check_monopoly(pos):
-    # 1. Type Guard: Ensure ownership is a dictionary
+    # 1. Basic Guards
     if not isinstance(st.session_state.get('ownership'), dict):
-        st.session_state.ownership = {} 
         return False
 
-    # 🛡️ Safety: Ensure the specific property is a dictionary
-    try:
-        sq = PROPERTIES[int(pos)]
-        if not isinstance(sq, dict):
-            return False
-    except (IndexError, ValueError, TypeError):
-        return False
-
-    if sq.get('type') != "Street":
+    sq = PROPERTIES.get(int(pos))
+    if not sq or sq.get('type') != "Street":
         return False
     
     color = sq.get('color')
-    owner = st.session_state.ownership.get(str(pos))
+    # Use str() to ensure we match our session_state keys
+    current_pid_str = str(pos)
+    owner = st.session_state.ownership.get(current_pid_str)
     
+    # CRITICAL: If the bank owns this square, it's not a player monopoly
     if not owner or owner == "Bank":
         return False
 
-    # 🛡️ THE TURN 52 FIX: 
-    # We add 'isinstance(p, dict)' to the filter. 
-    # This prevents the AttributeError: 'int' object has no attribute 'get'
+    # 2. Identify the full set requirement
     same_color_indices = [
         i for i, p in enumerate(PROPERTIES) 
         if isinstance(p, dict) and p.get('color') == color
     ]
-    
-    # 3. Consistency Guard: Check if the same owner owns all of them
-    return all(
-        st.session_state.ownership.get(str(idx)) == owner 
-        for idx in same_color_indices
-    )
+
+    # 3. The Strict Loop
+    for idx in same_color_indices:
+        lookup_id = str(idx)
+        actual_owner = st.session_state.ownership.get(lookup_id)
+        
+        # If ANY property in the set is owned by someone else 
+        # OR is still owned by the Bank, the monopoly is broken.
+        if actual_owner != owner:
+            return False
+            
+    return True
 
 
 def log_bank_transaction(p_name, reason, amount):
