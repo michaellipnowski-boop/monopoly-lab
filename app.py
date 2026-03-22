@@ -1763,6 +1763,15 @@ elif st.session_state.phase == "SETUP":
                 slider_pos = st.select_slider(f"Board Position", options=valid_indices, format_func=get_square_label, value=p['pos'] if not jail_val else 10, disabled=jail_val, key=f"set_p_{i}")
                 p['pos'] = 10 if jail_val else slider_pos
 
+    # --- 🔍 PLACE THIS RIGHT HERE ---
+    with st.expander("DEBUG: Forensic Ownership Audit"):
+        # Focus on the problem area (Pinks & Light Blues)
+        test_ids = ["6", "8", "9", "11", "13", "14"] 
+        for pid in test_ids:
+            val = st.session_state.ownership.get(pid, "MISSING")
+            name = PROPERTIES[int(pid)]['name']
+            st.write(f"ID {pid} ({name}): **{val}**")
+    
     if st.button("Start Live Simulation", type="primary", width="stretch"):
         import copy 
         
