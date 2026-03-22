@@ -160,37 +160,43 @@ def stamp_property_ledger(pid, event, slices=None):
 
 
 def check_monopoly(pos):
-    # 1. Basic Guards
-    if not isinstance(st.session_state.get('ownership'), dict):
+    # 1. Basic Guards & Data Retrieval
+    if "ownership" not in st.session_state:
         return False
 
     sq = PROPERTIES.get(int(pos))
-    if not sq or sq.get('type') != "Street":
+    if not sq:
         return False
     
     color = sq.get('color')
-    # Use str() to ensure we match our session_state keys
-    current_pid_str = str(pos)
-    owner = st.session_state.ownership.get(current_pid_str)
-    
-    # CRITICAL: If the bank owns this square, it's not a player monopoly
-    if not owner or owner == "Bank":
+    if not color: # Railroads/Utilities don't have color in some versions
         return False
 
-    # 2. Identify the full set requirement
+    # 2. Who are we checking for?
+    current_pid_str = str(pos)
+    potential_owner = st.session_state.ownership.get(current_pid_str)
+    
+    # ❌ If the Bank owns it, or it's unowned, it's not a player monopoly
+    if potential_owner in ["Bank", None, 0, "0", "", "None"]:
+        return False
+
+    # 3. Identify the full set requirement
+    # We find every square on the board that shares this color
     same_color_indices = [
         i for i, p in enumerate(PROPERTIES) 
         if isinstance(p, dict) and p.get('color') == color
     ]
 
-    # 3. The Strict Loop
+    # 4. The Strict Loop
     for idx in same_color_indices:
         lookup_id = str(idx)
         actual_owner = st.session_state.ownership.get(lookup_id)
         
-        # If ANY property in the set is owned by someone else 
-        # OR is still owned by the Bank, the monopoly is broken.
-        if actual_owner != owner:
+        # 🚨 THE FIX: 
+        # If any property in the set is NOT owned by our 'potential_owner',
+        # the monopoly is impossible. 
+        # This catches 'Bank', 'None', or 'Other Player'.
+        if str(actual_owner).strip() != str(potential_owner).strip():
             return False
             
     return True
