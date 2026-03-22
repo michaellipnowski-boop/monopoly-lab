@@ -160,47 +160,33 @@ def stamp_property_ledger(pid, event, slices=None):
 
 
 def check_monopoly(pos):
-    # 1. Basic Guards & Data Retrieval
     if "ownership" not in st.session_state:
         return False
 
     sq = PROPERTIES.get(int(pos))
-    if not sq:
+    if not sq or 'color' not in sq:
         return False
     
-    color = sq.get('color')
-    if not color: # Railroads/Utilities don't have color in some versions
+    color = sq['color']
+    current_owner = st.session_state.ownership.get(str(pos))
+
+    # 🛑 GUARD 1: If the current square is Bank-owned or Empty, no monopoly is possible
+    if current_owner in ["Bank", None, 0, "0", ""]:
         return False
 
-    # 2. Who are we checking for?
-    current_pid_str = str(pos)
-    potential_owner = st.session_state.ownership.get(current_pid_str)
-    
-    # ❌ If the Bank owns it, or it's unowned, it's not a player monopoly
-    if potential_owner in ["Bank", None, 0, "0", "", "None"]:
-        return False
+    # 🛑 GUARD 2: Identify all squares in this color group
+    same_color_indices = [i for i, p in PROPERTIES.items() if p.get('color') == color]
 
-    # 3. Identify the full set requirement
-    # We find every square on the board that shares this color
-    same_color_indices = [
-        i for i, p in enumerate(PROPERTIES) 
-        if isinstance(p, dict) and p.get('color') == color
-    ]
-
-    # 4. The Strict Loop
+    # 🛑 GUARD 3: The "Total Set" Verification
     for idx in same_color_indices:
-        lookup_id = str(idx)
-        actual_owner = st.session_state.ownership.get(lookup_id)
+        lookup_owner = st.session_state.ownership.get(str(idx))
         
-        # 🚨 THE FIX: 
-        # If any property in the set is NOT owned by our 'potential_owner',
-        # the monopoly is impossible. 
-        # This catches 'Bank', 'None', or 'Other Player'.
-        if str(actual_owner).strip() != str(potential_owner).strip():
+        # If ANY property in the set is not owned by the EXACT same person, 
+        # or if any property is owned by the Bank, return False immediately.
+        if lookup_owner != current_owner:
             return False
             
     return True
-
 
 def log_bank_transaction(p_name, reason, amount):
     if 'bank_audit' not in st.session_state:
@@ -1790,14 +1776,12 @@ elif st.session_state.phase == "SETUP":
         st.session_state.property_ledgers = {str(i): [] for i in range(40)}
         st.session_state.turn_count = 0 
     
-        # --- 🟢 PHASE 1: THE DEEDS (Ownership & Capital) ---
-        # Everyone gets their cash first
+        # --- 🟢 PHASE 1: THE DEEDS ---
         for p in st.session_state.players:
             log_bank_transaction(p['name'], "SETUP: Starting Cash Injection", p['cash'])
             p['stats']['critical_moments'] = [{'turn': 0, 'event': f"💰 INITIAL: Started with ${p['cash']}"}]
             p['stats']['cash_history'] = [p['cash']]
     
-        # Record every owned deed
         for pid_str, owner_name in st.session_state.ownership.items():
             if owner_name != "Bank":
                 pid = int(pid_str)
@@ -1810,38 +1794,39 @@ elif st.session_state.phase == "SETUP":
                 owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
                 if owner_obj:
                     owner_obj['stats']['critical_moments'].append({'turn': 0, 'event': f"🪂 OWNERSHIP: {p_info['name']}"})
-                    st.session_state.master_log.append({
-                        "Turn": 0, "Player": owner_name, "Position": pid,
-                        "Square": p_info['name'], "Cash": owner_obj['cash'],
-                        "Action": f"SETUP: Began game owning {p_info['name']}"
-                    })
     
-        # --- 🎯 PHASE 2: THE MONOPOLY AUDIT ---
-        # Now that ALL deeds are handed out, we check the sets.
+        # --- 🎯 PHASE 2: THE MONOPOLY AUDIT (FIXED) ---
+        audited_colors = set()
         for pid_str, owner_name in st.session_state.ownership.items():
-            if owner_name != "Bank":
-                pid = int(pid_str)
-                if check_monopoly(pid):
-                    # Ensure we only stamp the monopoly once per square
-                    ledger = st.session_state.property_ledgers.get(str(pid), [])
-                    if not any(entry['Event'] == "🎯 Monopoly Achieved" for entry in ledger):
-                        stamp_property_ledger(pid, "🎯 Monopoly Achieved", slices={"monopoly": 0.0})
+            pid = int(pid_str)
+            color = PROPERTIES[pid].get('color')
+            
+            # Skip if: No color, already checked this set, or Bank owned
+            if not color or color in audited_colors or owner_name == "Bank":
+                continue
+                
+            if check_monopoly(pid):
+                # Stamp EVERY property in this color group once
+                for g_pid in COLOR_GROUPS[color]:
+                    stamp_property_ledger(g_pid, "🎯 Monopoly Achieved", slices={"monopoly": 0.0})
+                
+                audited_colors.add(color) # Lock this color so we don't double-stamp
     
-        # --- 🏗️ PHASE 3: THE DEVELOPMENT (Houses/Hotels) ---
-        # Only allow houses if the monopoly from Phase 2 actually exists
+        # --- 🏗️ PHASE 3: THE DEVELOPMENT ---
         for pid_str, h_count in current_houses.items():
             if h_count > 0:
                 pid = int(pid_str)
                 p_info = PROPERTIES[pid]
                 owner_name = st.session_state.ownership.get(pid_str)
                 
+                # Double-check monopoly still exists before allowing houses
                 if check_monopoly(pid) and owner_name != "Bank":
                     h_price = float(p_info.get('h_cost', 50))
                     h_slices = {(f"h{i}" if i < 5 else "hotel"): -h_price for i in range(1, h_count + 1)}
                     stamp_property_ledger(pid, f"🏗️ INITIAL: {h_count} Development", slices=h_slices)
                     log_bank_transaction(owner_name, f"SETUP: Development on {p_info['name']}", -(h_count * h_price))
-                elif owner_name != "Bank":
-                    # Safety: If user tried to parachute houses on a non-monopoly set, we clear them
+                else:
+                    # Wipe houses if they don't belong (illegal setup)
                     st.session_state.houses[pid_str] = 0
     
         # 🏁 STEP 4: Launch
