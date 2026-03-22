@@ -159,6 +159,64 @@ def stamp_property_ledger(pid, event, slices=None):
     st.session_state.property_ledgers[pid_str] = ledger
 
 
+def check_monopoly(pos):
+    # 1. Type Guard: Ensure ownership is a dictionary
+    if not isinstance(st.session_state.get('ownership'), dict):
+        st.session_state.ownership = {} 
+        return False
+
+    # 🛡️ Safety: Ensure the specific property is a dictionary
+    try:
+        sq = PROPERTIES[int(pos)]
+        if not isinstance(sq, dict):
+            return False
+    except (IndexError, ValueError, TypeError):
+        return False
+
+    if sq.get('type') != "Street":
+        return False
+    
+    color = sq.get('color')
+    owner = st.session_state.ownership.get(str(pos))
+    
+    if not owner or owner == "Bank":
+        return False
+
+    # 🛡️ THE TURN 52 FIX: 
+    # We add 'isinstance(p, dict)' to the filter. 
+    # This prevents the AttributeError: 'int' object has no attribute 'get'
+    same_color_indices = [
+        i for i, p in enumerate(PROPERTIES) 
+        if isinstance(p, dict) and p.get('color') == color
+    ]
+    
+    # 3. Consistency Guard: Check if the same owner owns all of them
+    return all(
+        st.session_state.ownership.get(str(idx)) == owner 
+        for idx in same_color_indices
+    )
+
+
+def log_bank_transaction(p_name, reason, amount):
+    if 'bank_audit' not in st.session_state:
+        st.session_state.bank_audit = []
+    
+    # Force whole numbers immediately
+    amt = int(amount)
+    
+    # Calculate global liquidity using integer math
+    prev_total = int(st.session_state.bank_audit[-1]['Running Total Money In']) if st.session_state.bank_audit else 0
+    new_total = prev_total + amt
+
+    st.session_state.bank_audit.append({
+        "Turn": st.session_state.get('turn_count', 0),
+        "Player": p_name,
+        "Event": reason,
+        "Money In": amt,
+        "Running Total Money In": new_total 
+    })
+
+
 def get_rent_slices(pid, roll=7, override_total=None):
     info = PROPERTIES[pid]
     owner = st.session_state.ownership.get(str(pid), "Bank")
@@ -271,8 +329,25 @@ for pid, info in PROPERTIES.items():
 if "phase" not in st.session_state:
     st.session_state.phase = "INIT"
     st.session_state.p_count = 2
+    # Ensure names are set
     st.session_state.p_names = ["Student A", "Student B"]
+    
+    # The "Skeleton" built specifically for your SETUP phase
     st.session_state.players = []
+    for name in st.session_state.p_names:
+        st.session_state.players.append({
+            "name": name,
+            "cash": 1500,
+            "pos": 0,
+            "in_jail": False,  # Matches your SETUP code
+            "jail_turns": 0,
+            "goo_cards": [],   # Must be a list for your card logic
+            "stats": {
+                "total_rent_paid": 0,
+                "total_rent_received": 0,
+                "critical_moments": []
+            }
+        })
     st.session_state.starting_players = None
     # Initialize using the INDEX (i) as the key so it matches game logic
     st.session_state.ownership = {
@@ -303,11 +378,13 @@ if "phase" not in st.session_state:
     st.session_state.bank_audit = []
     
     if st.session_state.rules["fp_jackpot"] and st.session_state.jackpot > 0:
+        seed_amt = int(st.session_state.jackpot)
         st.session_state.bank_audit.append({
-            "turn": 0,
-            "player": "Bank",
-            "reason": "🏦 Initial Jackpot Seed (Game Start)",
-            "amount": float(st.session_state.jackpot)
+            "Turn": 0,
+            "Player": "Bank",
+            "Event": "🏦 Initial Jackpot Seed (Game Start)",
+            "Money In": seed_amt,
+            "Running Total Money In": seed_amt 
         })
 
     # 🟢 Initialize Property Cash Flow Ledgers
@@ -434,26 +511,6 @@ def get_full_log_excel(mode="audit"):
     except Exception as e:
         st.error(f"Excel Export Error: {e}")
         return None
-
-
-def log_bank_transaction(p_name, reason, amount):
-    if 'bank_audit' not in st.session_state:
-        st.session_state.bank_audit = []
-    
-    # Force whole numbers immediately
-    amt = int(amount)
-    
-    # Calculate global liquidity using integer math
-    prev_total = int(st.session_state.bank_audit[-1]['Running Total Money In']) if st.session_state.bank_audit else 0
-    new_total = prev_total + amt
-
-    st.session_state.bank_audit.append({
-        "Turn": st.session_state.get('turn_count', 0),
-        "Player": p_name,
-        "Event": reason,
-        "Money In": amt,
-        "Running Total Money In": new_total 
-    })
 
 
 def log_parachuted_asset(p_name, property_name):
@@ -587,15 +644,11 @@ def restart_game():
     st.session_state.master_log = [] 
     
     # 🟢 This wipes OLD history, NOT the blueprint
-    st.session_state.property_ledgers = {str(i): [] for i in range(40)}
+    st.session_state.property_ledgers = {}
 
     # 1. Restore Board and Game State FROM BLUEPRINT
     st.session_state.ownership = copy.deepcopy(st.session_state.get('starting_ownership', {}))
-    st.session_state.houses = copy.deepcopy(st.session_state.get('starting_houses', {}))
-
-    # 🏦 BANKER'S AUDIT: Full wipe
-    st.session_state.bank_audit = []
-    st.session_state.master_log = [] 
+    st.session_state.houses = copy.deepcopy(st.session_state.get('starting_houses', {})) 
     
     # 🟢 FORENSIC SYNC: Re-seed the Jackpot and Log the Injection
     if st.session_state.rules.get("fp_jackpot"):
@@ -670,61 +723,65 @@ def restart_game():
         # --- LOOP B: ACCOUNT FOR PROPERTY SINKS (RESTART SYNC) ---
         for prop_id, owner_name in st.session_state.ownership.items():
             if owner_name and owner_name != "Bank":
-                pid_int = int(prop_id)
-                p_info = PROPERTIES[pid_int]
+                pid = int(prop_id)
+                p_info = PROPERTIES[pid]
                 p_name = p_info['name']
                 price = p_info.get('price', 150)
                 
-                # 🔍 Find the player object to update their specific UI highlights
+                # 🔍 Find the player object for UI highlights
                 owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
-                
-                # ✅ New, Forensic-ready call
+                h_count = st.session_state.houses.get(str(prop_id), 0)
+                h_price = p_info.get('h_cost', 50)
+
+                # --- PHASE A: DEED ---
                 stamp_property_ledger(
-                    pid_int, 
+                    pid, 
                     "🪂 INITIAL: Parachuted Deed", 
-                    slices={"deed": -price}
+                    slices={"deed": -float(price)}
                 )
-
-                # 🟢 [NEW] STAMP: Monopoly status (if applicable at start)
-                if check_monopoly(pid_int):
-                    stamp_property_ledger(pid_int, "🪂 INITIAL: Monopoly Obtained")
-
-                if owner_obj:
-                    owner_obj['stats']['critical_moments'].append({
-                        "turn": 0, 
-                        "event": f"🪂 RESTART: Restored ownership of {p_name}"
-                    })
-
-                # 🏦 AUDIT: Property values subtracted from Bank liquidity
                 log_bank_transaction(owner_name, f"Setup: {p_name} Value", -float(price))
                 
-                h_count = st.session_state.houses.get(str(prop_id), 0)
-                if h_count > 0:
-                    h_cost = p_info.get('h_cost', 50)
-                    total_h_val = h_count * h_cost
-                    label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
-                    
-                    # 🟢 [FIXED] STAMP: Sequential house investments
-                    if h_count >= 1: stamp_property_ledger(pid_int, "🪂 INITIAL: House 1", slices={"h1": -h_cost})
-                    if h_count >= 2: stamp_property_ledger(pid_int, "🪂 INITIAL: House 2", slices={"h2": -h_cost})
-                    if h_count >= 3: stamp_property_ledger(pid_int, "🪂 INITIAL: House 3", slices={"h3": -h_cost})
-                    if h_count >= 4: stamp_property_ledger(pid_int, "🪂 INITIAL: House 4", slices={"h4": -h_cost})
-                    if h_count == 5: stamp_property_ledger(pid_int, "🪂 INITIAL: Hotel", slices={"hotel": -h_cost})
+                if owner_obj:
+                    owner_obj['stats']['critical_moments'].append({
+                        "turn": 0, "event": f"🪂 RESTART: Restored ownership of {p_name}"
+                    })
 
+                # --- PHASE B: MONOPOLY (Individually Stamped) ---
+                if check_monopoly(pid):
+                    # We check THIS specific property's ledger to see if it's been stamped yet
+                    current_ledger = st.session_state.property_ledgers.get(str(pid), [])
+                    if not any(entry['Event'] == "🎯 Monopoly Achieved" for entry in current_ledger):
+                        stamp_property_ledger(
+                            pid, 
+                            "🎯 Monopoly Achieved", 
+                            slices={"monopoly": 0.0}
+                        )
+
+                # --- PHASE C: DEVELOPMENT ---
+                if h_count > 0:
+                    label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
+                    total_h_val = h_count * h_price
+                    
+                    # 🟢 Forensic Stamp: Consolidated list for a cleaner Excel row
+                    h_slices = {(f"h{i}" if i < 5 else "hotel"): -float(h_price) for i in range(1, h_count + 1)}
+                    stamp_property_ledger(
+                        pid, 
+                        f"🏗️ INITIAL: {h_count} Development", 
+                        slices=h_slices
+                    )
+
+                    log_bank_transaction(owner_name, f"Setup: {p_name} Improvements", -float(total_h_val))
+                    
                     if owner_obj:
                         owner_obj['stats']['critical_moments'].append({
-                            "turn": 0, 
-                            "event": f"🏗️ RESTART: {p_name} restored with {label}"
+                            "turn": 0, "event": f"🏗️ RESTART: {p_name} restored with {label}"
                         })
 
-                    # 🏦 AUDIT: House values subtracted from Bank liquidity
-                    log_bank_transaction(owner_name, f"Setup: {p_name} Improvements", -float(total_h_val))
-                
-                # 📜 LOG: Record the asset restoration in Master Log
+                # --- FINAL LOGGING ---
                 st.session_state.master_log.append({
                     "Turn": 0,
                     "Player": owner_name,
-                    "Position": p_info.get('pos', pid_int),
+                    "Position": pid,
                     "Square": p_name,
                     "Cash": "N/A", 
                     "Action": f"SETUP RESTORED: {p_name} assigned"
@@ -803,44 +860,6 @@ def verify_sim_integrity():
 
 
 # --- HELPER LOGIC ---
-def check_monopoly(pos):
-    # 1. Type Guard: Ensure ownership is a dictionary
-    if not isinstance(st.session_state.get('ownership'), dict):
-        st.session_state.ownership = {} 
-        return False
-
-    # 🛡️ Safety: Ensure the specific property is a dictionary
-    try:
-        sq = PROPERTIES[int(pos)]
-        if not isinstance(sq, dict):
-            return False
-    except (IndexError, ValueError, TypeError):
-        return False
-
-    if sq.get('type') != "Street":
-        return False
-    
-    color = sq.get('color')
-    owner = st.session_state.ownership.get(str(pos))
-    
-    if not owner or owner == "Bank":
-        return False
-
-    # 🛡️ THE TURN 52 FIX: 
-    # We add 'isinstance(p, dict)' to the filter. 
-    # This prevents the AttributeError: 'int' object has no attribute 'get'
-    same_color_indices = [
-        i for i, p in enumerate(PROPERTIES) 
-        if isinstance(p, dict) and p.get('color') == color
-    ]
-    
-    # 3. Consistency Guard: Check if the same owner owns all of them
-    return all(
-        st.session_state.ownership.get(str(idx)) == owner 
-        for idx in same_color_indices
-    )
-
-
 def charge_player(p, amt, destination="bank"):
     # 1. Physical wallet deduction
     p['cash'] -= amt
@@ -1747,9 +1766,8 @@ elif st.session_state.phase == "SETUP":
 
     if st.button("Start Live Simulation", type="primary", width="stretch"):
         import copy 
-    
+        
         # --- 📸 0. THE BOARD BLUEPRINT ---
-        # Normalize house keys to strings for reliable lookup
         current_houses = {str(k): v for k, v in st.session_state.houses.items()}
         st.session_state.starting_houses = copy.deepcopy(current_houses)
         st.session_state.starting_ownership = copy.deepcopy(st.session_state.ownership)
@@ -1758,113 +1776,58 @@ elif st.session_state.phase == "SETUP":
         st.session_state.master_log = []
         st.session_state.bank_audit = [] 
         st.session_state.turn_count = 0 
+        # CRITICAL: Initialize property ledgers here so they are ready for the loop below
+        st.session_state.property_ledgers = {str(i): [] for i in range(40)}
     
-        # 🟢 STEP 1: Loop through players (CASH & STATS INITIALIZATION)
+        # 🟢 STEP 1: Loop through players (CASH & STATS)
         for p in st.session_state.players:
-            # Wealth Curve Protection: Start the history with the initial cash
             p['stats']['cash_history'] = [p['cash']]
-            
-            # 📜 NEW: Initialize Critical Moments with the Starting Capital
-            # This ensures the table is NEVER empty on Turn 0.
             p['stats']['critical_moments'] = [{
                 'turn': 0, 
                 'event': f"💰 INITIAL: Received starting capital of ${p['cash']}"
             }]
-
-            # 🏦 BANKER'S AUDIT: Starting Cash Injection for the Excel file
             log_bank_transaction(p['name'], "SETUP: Starting Cash Injection", p['cash'])
-            
-            # 📜 Master Log: Baseline Entry for the turn-by-turn table
-            st.session_state.master_log.append({
-                "Turn": 0, "Player": p['name'], "Position": p['pos'],
-                "Square": PROPERTIES[p['pos']]['name'], "Cash": p['cash'],
-                "Action": f"SETUP: Started with ${p['cash']}"
-            })
-
-        # 🏗️ STEP 1.5: Record Assets (Loop through properties only ONCE)
+    
+        # 🏗️ STEP 1.5: Record Assets (Your Inline 'Truth Machine')
         for prop_id_str, owner_name in st.session_state.ownership.items():
             if owner_name != "Bank":
                 pid = int(prop_id_str)
                 p_info = PROPERTIES[pid]
                 p_name = p_info['name']
                 
-                # Find the owner's object to update their specific stats bucket
                 owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
-                if not owner_obj:
-                    continue
-
-                p_pos = owner_obj['pos']
-                p_cash = owner_obj['cash']
-
-                # 🟢 NEW: Record the Asset in the Player's Critical Moments UI
-                owner_obj['stats']['critical_moments'].append({
-                    'turn': 0, 
-                    'event': f"🪂 PARACHUTED: Started game owning {p_name}"
-                })
-
-                # 🏦 1. Banker's Audit: The Deed Sink
-                prop_price = p_info.get('price', 0)
+                if not owner_obj: continue
+    
+                # Pull pricing safely
+                prop_price = float(p_info.get('price', 0))
+                h_count = current_houses.get(str(pid), 0)
+                h_price = float(p_info.get('h_cost', 50))
+    
+                # --- PHASE A: DEED ---
+                stamp_property_ledger(pid, "🪂 INITIAL: Parachuted Deed", slices={"deed": -prop_price})
                 log_bank_transaction(owner_name, f"SETUP: Asset Deed ({p_name})", -prop_price)
-
-                # 🟢 NEW: Stamp the Property Forensic Ledger for the ROI Tab
-                h_count = current_houses.get(str(pid), 0)
-                h_price = p_info.get('house_price', p_info.get('h_cost', 50))
-                
-                # 🟢 NEW: Stamp the Property Forensic Ledger using the official function
-                # This ensures Net_Impact and Running_Balance are calculated automatically.
-                
-                # 1. Stamp the Deed
-                stamp_property_ledger(
-                    pid, 
-                    "🪂 INITIAL: Parachuted Deed", 
-                    slices={"deed": -float(prop_price)}
-                )
-
-                # 2. Stamp the Houses/Hotel (if any exist)
-                if h_count > 0:
-                    h_price = p_info.get('house_price', p_info.get('h_cost', 50))
-                    h_slices = {}
-                    for i in range(1, h_count + 1):
-                        col = f"h{i}" if i < 5 else "hotel"
-                        h_slices[col] = -float(h_price)
-                    
-                    stamp_property_ledger(
-                        pid, 
-                        f"🏗️ INITIAL: {h_count} Development", 
-                        slices=h_slices
-                    )
-
-                # 📜 2. Master Log: The Deed Assignment
-                st.session_state.master_log.append({
-                    "Turn": 0, "Player": owner_name, "Position": p_pos,
-                    "Square": PROPERTIES[p_pos]['name'], "Cash": p_cash,
-                    "Action": f"PARACHUTE ASSET: Began game owning {p_name}"
+                owner_obj['stats']['critical_moments'].append({
+                    'turn': 0, 'event': f"🪂 PARACHUTED: Started game owning {p_name}"
                 })
-
-                # 🏠 3. Houses/Hotels (Consolidated per Property)
-                h_count = current_houses.get(str(pid), 0)
+                # 🟢 RE-INSERTED: Master Log entry for narrative completeness
+                st.session_state.master_log.append({
+                    "Turn": 0, "Player": owner_name, "Position": pid,
+                    "Square": p_name, "Cash": owner_obj['cash'],
+                    "Action": f"SETUP: Began game owning {p_name}"
+                })
+    
+                # --- PHASE B: MONOPOLY ---
+                if check_monopoly(pid):
+                    stamp_property_ledger(pid, "🎯 Monopoly Achieved", slices={"monopoly": 0.0})
+    
+                # --- PHASE C: DEVELOPMENT ---
                 if h_count > 0:
-                    h_price = p_info.get('house_price', p_info.get('h_cost', 50))
                     total_h_cost = h_count * h_price
-                    label = "a HOTEL" if h_count == 5 else f"{h_count} House(s)"
-                    
-                    # 🟢 NEW: Record Development in Critical Moments UI
-                    owner_obj['stats']['critical_moments'].append({
-                        'turn': 0, 
-                        'event': f"🏗️ SETUP: {p_name} pre-developed with {label}"
-                    })
-
-                    # 🏦 Banker's Audit: Consolidated Entry
-                    log_bank_transaction(owner_name, f"SETUP: {label} on {p_name}", -total_h_cost)
-
-                    # 📜 Master Log: The Development Summary
-                    st.session_state.master_log.append({
-                        "Turn": 0, "Player": owner_name, "Position": p_pos,
-                        "Square": PROPERTIES[p_pos]['name'], "Cash": p_cash,
-                        "Action": f"PARACHUTE SETUP: Started with {label} on {p_name}"
-                    })
+                    h_slices = {(f"h{i}" if i < 5 else "hotel"): -h_price for i in range(1, h_count + 1)}
+                    stamp_property_ledger(pid, f"🏗️ INITIAL: {h_count} Development", slices=h_slices)
+                    log_bank_transaction(owner_name, f"SETUP: Development on {p_name}", -total_h_cost)
         
-        # 🏁 STEP 2: Finalize Snapshot and Launch the LIVE phase
+        # 🏁 STEP 2: Finalize Snapshot and Launch
         st.session_state.starting_players = copy.deepcopy(st.session_state.players)
         st.session_state.phase = "LIVE"
         st.rerun()
@@ -1883,6 +1846,7 @@ elif st.session_state.phase == "CHOICE":
         # 🏦 STEP 0: INITIALIZE AUDITS & BOARD (The Clean Slate)
         st.session_state.master_log = []
         st.session_state.bank_audit = [] 
+        st.session_state.property_ledgers = {}
         st.session_state.turn_count = 0 
         st.session_state.ownership = {}
         st.session_state.houses = {str(i): 0 for i in range(40)}
