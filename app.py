@@ -348,12 +348,14 @@ if "phase" not in st.session_state:
             }
         })
     st.session_state.starting_players = None
-    # Initialize using the INDEX (i) as the key so it matches game logic
-    st.session_state.ownership = {
-        i: "Bank" for i, p in PROPERTIES.items() 
-        if isinstance(p, dict) and ("rent" in p or p.get("type") in ["Railroad", "Utility"])
-    }
-    st.session_state.houses = {pid: 0 for pid in range(40)}
+    # 🟢 1. Initialize Ownership (Full 0-39 board, STRING keys)
+    # This ensures "Go", "Jail", and "Free Parking" exist as "Bank" 
+    # and prevents the "MISSING" error in your debugger.
+    st.session_state.ownership = {str(i): "Bank" for i in range(40)}
+    # 🟢 2. Initialize Houses (Full 0-39 board, STRING keys)
+    # Standardizing on strings here prevents "Ghost Houses" that 
+    # the simulation can't see.
+    st.session_state.houses = {str(i): 0 for i in range(40)}
     st.session_state.last_move = ""
     st.session_state.turn_count = 0
     st.session_state.current_p = 0
@@ -386,10 +388,8 @@ if "phase" not in st.session_state:
             "Running Total Money In": seed_amt 
         })
 
-    # 🟢 Initialize Property Cash Flow Ledgers
-    # Stores a list of 'stamps' for every square on the board (0-39)
-    if "property_ledgers" not in st.session_state:
-        st.session_state.property_ledgers = {str(i): [] for i in range(40)}
+    # 🟢 3. Initialize Property Ledgers (Already strings, just verifying)
+    st.session_state.property_ledgers = {str(i): [] for i in range(40)}
 
 
 #--- SPREADSHEET FUNCTIONALITY ---
@@ -790,24 +790,13 @@ def restart_game():
     st.rerun()
 
 def get_house_count(pid):
-    # Checks for "1" then checks for 1. Returns 0 if neither found.
-    return st.session_state.houses.get(str(pid), st.session_state.houses.get(int(pid), 0))
-
+    # Same here: Direct string lookup is now the only way.
+    return st.session_state.houses.get(str(pid), 0)
+    
 def get_owner(pid):
-    # 🛡️ THE MASTER GUARD: Ensure ownership is a dictionary
-    obs = st.session_state.get('ownership')
-    if not isinstance(obs, dict):
-        # If the state is 'mucked', we fix it and return Bank
-        st.session_state.ownership = {}
-        return "Bank"
-        
-    # 🛡️ THE KEY SEARCH: Strings are our standard, Ints are legacy
-    # We use .get() on 'obs' because we just verified it's a dict
-    res = obs.get(str(pid))
-    if res is None:
-        res = obs.get(int(pid), "Bank")
-        
-    return res
+    # Since Item 1 guarantees string keys for 0-39, we only need one check.
+    # We use .get() with "Bank" as a fallback just in case of an invalid ID.
+    return st.session_state.ownership.get(str(pid), "Bank")
 
 def get_effective_reserve(p, action_context):
     """
@@ -1196,7 +1185,7 @@ def draw_card(p, deck_type):
                         
                         # 🟢 STAMP: Forensic Attribution
                         stamp_property_ledger(
-                            pid=p['pos'], 
+                            pid=str(p['pos']), 
                             event=f"Rent via {name} Card", 
                             slices=rent_slices
                         )
@@ -1222,7 +1211,7 @@ def draw_card(p, deck_type):
                     
                     # 🟢 STAMP: Forensic Deed Purchase
                     stamp_property_ledger(
-                        pid=p['pos'], 
+                        pid=str(p['pos']), 
                         event="Purchase via Card", 
                         slices={"deed": -float(price)}
                     )
@@ -1231,12 +1220,11 @@ def draw_card(p, deck_type):
                     if check_monopoly(p['pos']):
                         color = sq.get('color')
                         if color:
-                            # Loop through all properties to find those with the same color
-                            # Note: Using PROPERTIES.items() if it's a dict, or enumerate() if a list
-                            for idx, prop in (PROPERTIES.items() if isinstance(PROPERTIES, dict) else enumerate(PROPERTIES)):
+                            props_iter = PROPERTIES.items() if isinstance(PROPERTIES, dict) else enumerate(PROPERTIES)
+                            for idx, prop in props_iter:
                                 if prop.get('color') == color:
-                                    # Stamp the "Status" to explain future 2x rent
-                                    stamp_property_ledger(int(idx), "🎯 Monopoly Achieved: Rent Doubled")
+                                    # 🟢 Use str(idx) to ensure the ledger stamp matches our string keys
+                                    stamp_property_ledger(str(idx), "🎯 Monopoly Achieved: Rent Doubled")
                     
                     event_text = f"🏠 Bought {sq['name']} (-${price}) via card"
                     p['stats'].setdefault('critical_moments', []).append({
@@ -1423,16 +1411,19 @@ def run_turn(jail_action=None, silent=False):
                         slices={"deed": -float(price)} 
                     )
 
-                    # 🎯 MONOPOLY CHECK (Unified for Spot 1 & Spot 2)
+                    # 🎯 MONOPOLY CHECK (Refined for String Consistency)
                     if check_monopoly(p['pos']):
                         color = sq.get('color')
                         if color:
-                            # Loop through all properties to find those with the same color
-                            # Note: Using PROPERTIES.items() if it's a dict, or enumerate() if a list
-                            for idx, prop in (PROPERTIES.items() if isinstance(PROPERTIES, dict) else enumerate(PROPERTIES)):
+                            # Iterate through the board to find matching color properties
+                            props_iter = PROPERTIES.items() if isinstance(PROPERTIES, dict) else enumerate(PROPERTIES)
+                            for idx, prop in props_iter:
                                 if prop.get('color') == color:
-                                    # Stamp the "Status" to explain future 2x rent
-                                    stamp_property_ledger(int(idx), "🎯 Monopoly Achieved: Rent Doubled")
+                                    # 🟢 Use str(idx) to ensure the ledger stamp matches our string keys
+                                    stamp_property_ledger(
+                                        pid=str(idx), 
+                                        event="🎯 Monopoly Achieved: Rent Doubled"
+                                    )
 
                     # --- EXISTING: UI & Logs ---
                     p['stats']['critical_moments'].append({
@@ -1672,44 +1663,55 @@ elif st.session_state.phase == "SETUP":
                     st.rerun()
     
     with t2:
+        # 🎯 This loop only shows groups where a Monopoly exists
         for color, pids in COLOR_GROUPS.items():
-            # 1. Force everything to strings for a clean lookup
+            # 1. Standardized string lookup for owners
             owners = [st.session_state.ownership.get(str(p), "Bank") for p in pids]
             
-            # 2. Strict Check: If the set length is 1, everyone in the list is the same owner
-            if len(set(owners)) == 1 and owners[0] not in ["Bank", None, "None", ""]:
-                # THE UI WILL NOW APPEAR
-                st.markdown(f'<div style="background:{COLOR_MAP[color]}; padding:5px; border-radius:3px; color:white;"><b>{color} Group ({owners[0]})</b></div>', unsafe_allow_html=True)
+            # 2. Strict Monopoly Check
+            unique_owners = set(owners)
+            # Condition: Exactly 1 owner, and that owner is NOT the Bank or empty
+            is_monopoly = len(unique_owners) == 1 and list(unique_owners)[0] not in ["Bank", None, "", "None"]
+            
+            if is_monopoly:
+                owner_name = list(unique_owners)[0]
+                bg_color = COLOR_MAP.get(color, "#333")
+                
+                # 🟢 Group Header
+                st.markdown(f'''
+                    <div style="background:{bg_color}; padding:8px; border-radius:5px; color:white; margin-bottom:10px;">
+                        <b>{color} Group | Owner: {owner_name}</b>
+                    </div>
+                ''', unsafe_allow_html=True)
                 
                 for pid in pids:
                     c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
-                    c1.write(PROPERTIES[pid]['name'])
+                    prop_name = PROPERTIES[pid]['name']
                     
-                    # 3. Safe house count lookup
-                    h = st.session_state.houses.get(pid, 0) if pid in st.session_state.houses else st.session_state.houses.get(str(pid), 0)
+                    # 3. Pull house count using string key
+                    h = st.session_state.houses.get(str(pid), 0)
                     
-                    # 4. Get house counts for others in the set (for even-building rules)
-                    others = []
-                    for p in pids:
-                        if p != pid:
-                            val_h = st.session_state.houses.get(p, 0) if p in st.session_state.houses else st.session_state.houses.get(str(p), 0)
-                            others.append(val_h)
+                    # 4. Even Building Logic (Checking neighbors in the set)
+                    others = [st.session_state.houses.get(str(p), 0) for p in pids if p != pid]
                     
-                    # 5. Logic for the +/- buttons
                     can_down = h > 0 and all(h >= o for o in others)
                     can_up = h < 5 and all(h <= o for o in others)
                     
-                    if c2.button("➖", key=f"hm{pid}", disabled=not can_down): 
-                        key = pid if pid in st.session_state.houses else str(pid)
-                        st.session_state.houses[key] -= 1
-                        st.rerun()
-                        
-                    c3.write(f"**{h}**")
+                    c1.write(f"**{prop_name}**")
                     
-                    if c4.button("➕", key=f"hp_{pid}", disabled=not can_up): 
-                        key = pid if pid in st.session_state.houses else str(pid)
-                        st.session_state.houses[key] += 1
+                    # Minus Button
+                    if c2.button("➖", key=f"hm_{pid}", disabled=not can_down): 
+                        st.session_state.houses[str(pid)] -= 1
                         st.rerun()
+                    
+                    c3.write(f"### {h}") # Large number for visibility
+                    
+                    # Plus Button
+                    if c4.button("➕", key=f"hp_{pid}", disabled=not can_up): 
+                        st.session_state.houses[str(pid)] += 1
+                        st.rerun()
+                    
+                    st.divider()
     
     with t3:
         st.markdown("### 🎫 Get Out of Jail Free Cards")
