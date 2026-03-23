@@ -1795,7 +1795,7 @@ elif st.session_state.phase == "SETUP":
                 if owner_obj:
                     owner_obj['stats']['critical_moments'].append({'turn': 0, 'event': f"🪂 OWNERSHIP: {p_info['name']}"})
     
-        # --- 🎯 PHASE 2: THE MONOPOLY AUDIT (FIXED) ---
+        # --- 🎯 PHASE 2: THE MONOPOLY AUDIT (STORYBOOK FIX) ---
         audited_colors = set()
         for pid_str, owner_name in st.session_state.ownership.items():
             pid = int(pid_str)
@@ -1806,13 +1806,28 @@ elif st.session_state.phase == "SETUP":
                 continue
                 
             if check_monopoly(pid):
-                # Stamp EVERY property in this color group once
+                # 1. Stamp the Property Ledgers (The "Warehouse" for the board)
                 for g_pid in COLOR_GROUPS[color]:
                     stamp_property_ledger(g_pid, "🎯 Monopoly Achieved", slices={"monopoly": 0.0})
                 
+                # 2. Update the Player's Storybook (The "Highlights" page)
+                owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
+                if owner_obj:
+                    owner_obj['stats']['critical_moments'].append({
+                        'turn': 0, 
+                        'event': f"🎯 SETUP: Achieved {color} Monopoly!"
+                    })
+                    
+                    # 3. Add to Master Log (The "Excel Export" source)
+                    st.session_state.master_log.append({
+                        "Turn": 0, "Player": owner_name, "Position": pid,
+                        "Square": color, "Cash": owner_obj['cash'],
+                        "Action": f"🎯 SETUP: Completed the {color} set."
+                    })
+                
                 audited_colors.add(color) # Lock this color so we don't double-stamp
     
-        # --- 🏗️ PHASE 3: THE DEVELOPMENT ---
+        # --- 🏗️ PHASE 3: THE DEVELOPMENT (STORYBOOK FIX) ---
         for pid_str, h_count in current_houses.items():
             if h_count > 0:
                 pid = int(pid_str)
@@ -1822,9 +1837,28 @@ elif st.session_state.phase == "SETUP":
                 # Double-check monopoly still exists before allowing houses
                 if check_monopoly(pid) and owner_name != "Bank":
                     h_price = float(p_info.get('h_cost', 50))
+                    total_cost = h_count * h_price
                     h_slices = {(f"h{i}" if i < 5 else "hotel"): -h_price for i in range(1, h_count + 1)}
+                    
+                    # 1. Stamp the Property Ledger (The Board's History)
                     stamp_property_ledger(pid, f"🏗️ INITIAL: {h_count} Development", slices=h_slices)
-                    log_bank_transaction(owner_name, f"SETUP: Development on {p_info['name']}", -(h_count * h_price))
+                    log_bank_transaction(owner_name, f"SETUP: Development on {p_info['name']}", -total_cost)
+                    
+                    # 2. Update the Player's Storybook (The Highlights Page)
+                    owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
+                    if owner_obj:
+                        label = f"{h_count} Houses" if h_count < 5 else "a Hotel"
+                        owner_obj['stats']['critical_moments'].append({
+                            'turn': 0, 
+                            'event': f"🏗️ SETUP: Built {label} on {p_info['name']} (-${total_cost:,.0f})"
+                        })
+                        
+                        # 3. Add to Master Log (The Excel Export Source)
+                        st.session_state.master_log.append({
+                            "Turn": 0, "Player": owner_name, "Position": pid,
+                            "Square": p_info['name'], "Cash": owner_obj['cash'],
+                            "Action": f"🏗️ SETUP: Developed {p_info['name']} with {h_count} units."
+                        })
                 else:
                     # Wipe houses if they don't belong (illegal setup)
                     st.session_state.houses[pid_str] = 0
