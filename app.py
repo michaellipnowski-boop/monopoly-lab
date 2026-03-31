@@ -387,13 +387,15 @@ if "phase" not in st.session_state:
 #--- SPREADSHEET FUNCTIONALITY ---
 def get_full_log_excel(mode="audit"):
     # 🟢 SAFE MODE: Ensure data exists
-    if not st.session_state.get('bank_audit') and mode == "audit":
+    if mode == "audit" and not st.session_state.get('bank_audit'):
+        return None
+    if mode == "narrative" and not st.session_state.get('master_log'):
         return None
 
     try:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            workbook = writer.book # Required for formatting if needed later
+            workbook = writer.book 
             
             if mode == "audit":
                 # --- 🏦 TYPE 1: THE FORENSIC AUDIT (Financial Focus) ---
@@ -401,7 +403,6 @@ def get_full_log_excel(mode="audit"):
                 all_players = [p['name'] for p in st.session_state.players]
                 player_tabs = {} 
 
-                # Step A: Aggregate Player Summaries
                 for player_name in all_players:
                     player_summary = []
                     for pid_str, ledger in st.session_state.property_ledgers.items():
@@ -409,7 +410,6 @@ def get_full_log_excel(mode="audit"):
                         if str(owner).strip().lower() == str(player_name).strip().lower() and ledger:
                             df_temp = pd.DataFrame(ledger)
                             existing_core = [c for c in CORE_COLUMNS if c in df_temp.columns]
-
                             rev = df_temp[existing_core].clip(lower=0).sum().sum()
                             out = abs(df_temp[existing_core].clip(upper=0).sum().sum())
                             maint = abs(df_temp.loc[df_temp['Event'].str.contains('Repairs', na=False), existing_core].sum().sum())
@@ -424,10 +424,8 @@ def get_full_log_excel(mode="audit"):
                             })
 
                     if player_summary:
-                        df_p_summary = pd.DataFrame(player_summary)
-                        df_p_summary = df_p_summary.infer_objects() 
+                        df_p_summary = pd.DataFrame(player_summary).infer_objects() 
                         p_totals = df_p_summary.select_dtypes(include=['number']).sum()
-                        
                         global_leaderboard.append({
                             "Player": player_name,
                             "Total Rent": p_totals["Total Rent"],
@@ -435,67 +433,62 @@ def get_full_log_excel(mode="audit"):
                             "Maintenance": p_totals["Maintenance"],
                             "Net Position": p_totals["Net Position"]
                         })
-                        
                         df_p_summary.loc[len(df_p_summary)] = ["TOTAL PORTFOLIO", *p_totals]
                         player_tabs[player_name] = df_p_summary
 
-                # Step B: Write Global Leaderboard
                 if global_leaderboard:
                     df_leader = pd.DataFrame(global_leaderboard).sort_values(by="Net Position", ascending=False)
                     df_leader.to_excel(writer, sheet_name='Global Ranking', index=False)
-                    
-                    # --- 🟢 ADD VISUAL FLAIR ---
-                    worksheet = writer.sheets['Global Ranking']
-                    red_format = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-                    green_format = workbook.add_format({'bg_color': '#C6EFCE', 'font_color': '#006100'})
-                    
-                    # Highlight Net Position: Green for > 0, Red for < 0
-                    worksheet.conditional_format('E2:E100', {'type': 'cell', 'criteria': '>', 'value': 0, 'format': green_format})
-                    worksheet.conditional_format('E2:E100', {'type': 'cell', 'criteria': '<', 'value': 0, 'format': red_format})
-    
-                # Step C: Write Per-Player Summaries
+                
                 for p_name, df_p in player_tabs.items():
-                    sheet_name = f"Summary_{p_name[:20]}"
-                    df_p.to_excel(writer, sheet_name=sheet_name, index=False)
+                    df_p.to_excel(writer, sheet_name=f"Summary_{p_name[:20]}", index=False)
 
-                # Step D: Write Individual Property Forensic Logs
                 for pid_str, owner_name in st.session_state.ownership.items():
                     if owner_name and owner_name != "Bank":
                         ledger = st.session_state.property_ledgers.get(pid_str, [])
                         if ledger:
                             df_prop = pd.DataFrame(ledger)
-
-                            # 🟢 FIX: Convert CORE columns to numeric, turning 'N/A' into NaN
-                            for c in CORE_COLUMNS:
-                                if c in df_prop.columns:
-                                    df_prop[c] = pd.to_numeric(df_prop[c], errors='coerce')
-                            
-                            # Remove all-zero columns
-                            cols_to_drop = [c for c in CORE_COLUMNS if c in df_prop.columns and (df_prop[c] == 0).all()]
-                            df_prop = df_prop.drop(columns=cols_to_drop)
-                            
-                            # Filter to preferred order
-                            available_cols = [c for c in PREFERRED_COLS if c in df_prop.columns]
-                            
-                            # 🟢 NEW TAB LOGIC: Includes Property Name + Owner Name
+                            # Cleanup and write individual property logs
                             prop_name = PROPERTIES[int(pid_str)]['name']
                             sheet_name = f"Log_{prop_name[:15]}_{str(owner_name)[:10]}"
-                            
-                            df_prop[available_cols].to_excel(writer, sheet_name=sheet_name, index=False)
+                            df_prop.to_excel(writer, sheet_name=sheet_name, index=False)
 
             elif mode == "narrative":
-                # --- 📖 TYPE 2: THE PLAY-BY-PLAY LOG ---
-                if st.session_state.get('master_log'):
-                    # Convert to DF and force all columns to strings to avoid 'N/A' vs int64 crashes
-                    df_master = pd.DataFrame(st.session_state.master_log).astype(str)
-                    df_master.to_excel(writer, sheet_name="Full_Play_by_Play", index=False)
+                # --- 📖 TYPE 2: THE PLAY-BY-PLAY (Restored Multi-Tab) ---
+                df_master = pd.DataFrame(st.session_state.master_log)
+                # Sheet 1: The Full Log
+                df_master.to_excel(writer, sheet_name="Full_Play_by_Play", index=False)
+                
+                # Sheet 2 to N+1: Player Specific Tabs
+                for p in st.session_state.players:
+                    p_name = p['name']
+                    df_p = df_master[df_master['Player'] == p_name]
+                    sheet_name = f"Moves - {p_name}"[:31]
+                    df_p.to_excel(writer, sheet_name=sheet_name, index=False)
 
             elif mode == "milestones":
-                # --- 🚩 TYPE 3: THE STORYBOOK ---
+                # --- 🚩 TYPE 3: THE STORYBOOK (Now Functional) ---
                 all_moments = []
-                # ... rest of milestones logic ...
+                for p in st.session_state.players:
+                    moments = p['stats'].get('critical_moments', [])
+                    for m in moments:
+                        all_moments.append({
+                            "Player": p['name'],
+                            "Turn": m.get('turn', 0),
+                            "Highlight": m.get('event', '')
+                        })
+                
                 if all_moments:
-                    pd.DataFrame(all_moments).to_excel(writer, sheet_name="All_Critical_Moments", index=False)
+                    df_mils = pd.DataFrame(all_moments)
+                    # Sheet 1: Master Milestone list
+                    df_mils.to_excel(writer, sheet_name="All_Critical_Moments", index=False)
+                    
+                    # Individual Story Tabs
+                    for p in st.session_state.players:
+                        p_mils = [m for m in all_moments if m['Player'] == p['name']]
+                        if p_mils:
+                            sheet_name = f"Story - {p['name']}"[:31]
+                            pd.DataFrame(p_mils).to_excel(writer, sheet_name=sheet_name, index=False)
 
         output.seek(0)
         return output.getvalue()
