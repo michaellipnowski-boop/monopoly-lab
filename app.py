@@ -1769,7 +1769,7 @@ elif st.session_state.phase == "SETUP":
         st.session_state.property_ledgers = {str(i): [] for i in range(40)}
         st.session_state.turn_count = 0 
     
-        # --- 🟢 PHASE 1: THE DEEDS ---
+        # --- 🟢 PHASE 1: THE DEEDS (FIXED FOR EXCEL) ---
         for p in st.session_state.players:
             log_bank_transaction(p['name'], "SETUP: Starting Cash Injection", p['cash'])
             p['stats']['critical_moments'] = [{'turn': 0, 'event': f"💰 INITIAL: Started with ${p['cash']}"}]
@@ -1781,12 +1781,24 @@ elif st.session_state.phase == "SETUP":
                 p_info = PROPERTIES[pid]
                 price = float(p_info.get('price', 0))
                 
+                # 1. Update the square's ledger and the bank audit
                 stamp_property_ledger(pid, "🪂 INITIAL: Parachuted Deed", slices={"deed": -price})
                 log_bank_transaction(owner_name, f"SETUP: Asset Deed ({p_info['name']})", -price)
                 
                 owner_obj = next((pl for pl in st.session_state.players if pl['name'] == owner_name), None)
                 if owner_obj:
+                    # 2. Update the UI highlights (Critical Moments)
                     owner_obj['stats']['critical_moments'].append({'turn': 0, 'event': f"🪂 OWNERSHIP: {p_info['name']}"})
+                    
+                    # 3. ✍️ NEW: Update the Master Log (This feeds the Excel Play-by-Play)
+                    st.session_state.master_log.append({
+                        "Turn": 0, 
+                        "Player": owner_name, 
+                        "Position": pid,
+                        "Square": p_info['name'], 
+                        "Cash": owner_obj['cash'],
+                        "Action": f"SETUP: Began game owning {p_info['name']}"
+                    })
     
         # --- 🎯 PHASE 2: THE MONOPOLY AUDIT (STORYBOOK FIX) ---
         audited_colors = set()
