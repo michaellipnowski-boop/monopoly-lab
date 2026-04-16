@@ -1887,9 +1887,15 @@ elif st.session_state.phase == "CHOICE":
         # 🏦 STEP 0: INITIALIZE AUDITS & BOARD (The Clean Slate)
         st.session_state.master_log = []
         st.session_state.bank_audit = [] 
-        st.session_state.property_ledgers = {}
+        
+        # 🟢 FIX: Initialize with all 40 squares as string keys
+        st.session_state.property_ledgers = {str(i): [] for i in range(40)}
+        
         st.session_state.turn_count = 0 
-        st.session_state.ownership = {}
+        
+        # 🟢 FIX: Initialize ownership for all 40 squares to "Bank"
+        st.session_state.ownership = {str(i): "Bank" for i in range(40)}
+        
         st.session_state.houses = {str(i): 0 for i in range(40)}
     
         # 🟢 STEP 1: Loop through EXISTING players to reset values
